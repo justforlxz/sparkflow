@@ -1,0 +1,34 @@
+// 媒体资源夹与原始图片（docs/prd/01-media-collection.md、docs/prd/00-overview.md 第 5 节）。
+//
+// 任务、结果、发布记录分属「创作任务」「任务与结果」「发布」三个模块，它们的表由各自节点引入。
+// 那些模块在自己的 schema 里用 `collectionId` 外键并声明 `onDelete: Cascade`，这样删除资源夹时
+// 数据库会一并删掉它们（docs/prd/00-overview.md 全局规则 7）。本文件不声明跨模块关系。
+model MediaCollection {
+  id          String   @id @default(uuid())
+  name        String
+  platform    String?
+  sourceUrl   String?  @map("source_url")
+  sourceTitle String?  @map("source_title")
+  sourceBody  String?  @map("source_body")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  assets      MediaAsset[]
+
+  @@map("media_collection")
+}
+
+// 原图。`storageKey` 与记录解耦：解除关联只删这一行，磁盘文件保留（MUST 4）。
+model MediaAsset {
+  id           String          @id @default(uuid())
+  collectionId String          @map("collection_id")
+  storageKey   String          @map("storage_key")
+  fileName     String          @map("file_name")
+  mimeType     String          @map("mime_type")
+  size         Int
+  sortOrder    Int             @default(0) @map("sort_order")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  collection   MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@index([collectionId, sortOrder])
+  @@map("media_asset")
+}

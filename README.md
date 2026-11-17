@@ -7,9 +7,25 @@
 
 ## 当前状态
 
-**只有文档，没有代码。** 本项目按「先定契约，再按功能节点交付代码」推进：
-本仓库先落地产品文档、架构约定与验收规范，然后每个功能由一个 Issue 走完整的
-开发 → 评审 → 功能检测 → 合并流程。
+**骨架已就绪。** 已完成工程基线：Next.js App Router 工程、PostgreSQL + Prisma 迁移、
+账号与会话（首个账号自助注册）、统一响应信封、脱敏日志、功能开关机制、
+容器与 devcontainer、单测 / 集成测试 / e2e 与 CI。
+
+业务功能（资源夹、网关、任务、结果、发布、工作台）按「一个功能一条 Issue、一个 PR」推进，
+每个功能由 Issue 走完整的开发 → 评审 → 功能检测 → 合并流程。
+
+### 本地起步
+
+本地开发统一在 devcontainer 里进行，保证 Node、PostgreSQL 与依赖版本一致（不要在宿主机直接 `pnpm dev`）：
+
+```bash
+devcontainer up --workspace-folder .                # 首次生成 .env、装依赖、跑迁移
+devcontainer exec --workspace-folder . pnpm dev     # http://localhost:3000，首次访问引导注册第一个账号
+```
+
+生产部署见 [docs/development.md](docs/development.md) 第 4 节（`cp .env.example .env` 后
+`docker compose up -d --build`）。忘记密码用 `pnpm auth:reset-password <email>`
+（改密码并撤销该账号全部会话）。
 
 ## 文档索引
 

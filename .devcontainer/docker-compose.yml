@@ -1,0 +1,29 @@
+services:
+  workspace:
+    image: mcr.microsoft.com/devcontainers/typescript-node:22-bookworm
+    command: sleep infinity
+    volumes:
+      - ..:/workspace:cached
+    environment:
+      DATABASE_URL: postgresql://sparkflow:devpassword@db:5432/sparkflow
+      UPLOAD_DIR: /workspace/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sparkflow
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: sparkflow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sparkflow -d sparkflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:

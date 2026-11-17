@@ -1,0 +1,15 @@
+// 生成器与数据源只在主 schema 文件里声明一次；其余 .prisma 文件按领域拆分。
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma"
+
+  // 生成 TypeScript 源码，交给 Next 的打包器编译；
+  // 省略导入扩展名与使用 CommonJS 输出，避免在打包产物里出现 import.meta 依赖。
+  importFileExtension = ""
+  moduleFormat        = "cjs"
+  runtime             = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}

@@ -1,0 +1,8 @@
+// 功能开关：只保存用户/部署层的取值，可用的开关清单在 `src/modules/feature-flags/registry.ts`。
+model FeatureFlag {
+  key       String   @id
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("feature_flag")
+}

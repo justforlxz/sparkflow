@@ -25,13 +25,14 @@ devcontainer exec --workspace-folder . bash
 | `pnpm lint` | ESLint |
 | `pnpm typecheck` | `next typegen` + `tsc --noEmit` |
 | `pnpm test` | Vitest 单元测试 |
-| `pnpm test:e2e` | Playwright 端到端验收（自动起 dev server） |
+| `pnpm test:integration` | Vitest 集成测试（连真实 PostgreSQL，先跑 `pnpm db:deploy`） |
+| `pnpm test:e2e` | Playwright 端到端验收（自动应用迁移并起 dev server） |
 | `pnpm check` | lint + typecheck + 单测，提交前跑 |
 | `pnpm db:generate` | `prisma generate`（改完 schema 后） |
 | `pnpm db:migrate` | `prisma migrate dev`（生成并应用迁移） |
 | `pnpm db:deploy` | `prisma migrate deploy`（只应用已有迁移） |
 | `pnpm db:studio` | `prisma studio` |
-| `pnpm auth:reset-password <email>` | 重置密码并撤销该账号全部会话 |
+| `pnpm auth:reset-password <email>` | 交互式重置密码，并撤销该账号全部会话 |
 
 依赖版本约束（ADR 0001）：`prisma` 与 `@prisma/client`、`@prisma/adapter-pg` 必须同版本，
 且**钉稳定版 7.10.1** —— npm 的 `latest` 标签当前指向 8.0.0 的 RC，不要用 `latest`。

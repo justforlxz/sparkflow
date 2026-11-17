@@ -1,0 +1,35 @@
+// 模型网关与模型条目（docs/prd/02-model-gateway.md）。
+// `protocol`（接口形状）与 `capability`（模型能力）是两件事，都用字符串存，
+// 允许的取值由 `src/modules/gateway/constants.ts` 登记：新增一种形状只加适配器，不改表结构。
+model Gateway {
+  id              String         @id @default(uuid())
+  name            String
+  protocol        String
+  baseUrl         String         @map("base_url")
+  // 由 AUTH_SECRET 派生的子密钥加密后的密文，明文不落库（MUST 1）。
+  encryptedApiKey String         @map("encrypted_api_key")
+  // 最近一次连接测试的结果：`ok` / `failed`，用于列表展示（SHOULD）。
+  lastTestStatus  String?        @map("last_test_status")
+  lastTestMessage String?        @map("last_test_message")
+  lastTestedAt    DateTime?      @map("last_tested_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  models          GatewayModel[]
+
+  @@map("gateway")
+}
+
+model GatewayModel {
+  id         String   @id @default(uuid())
+  gatewayId  String   @map("gateway_id")
+  modelId    String   @map("model_id")
+  // `text` / `image` / `image_input`，见 docs/prd/02-model-gateway.md。
+  capability String
+  createdAt  DateTime @default(now()) @map("created_at")
+  gateway    Gateway  @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+
+  // 同一网关内 model_id 唯一（MUST 5）。
+  @@unique([gatewayId, modelId])
+  @@index([capability])
+  @@map("gateway_model")
+}

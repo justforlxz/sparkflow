@@ -24,6 +24,7 @@
 | 发布 | [prd/08](prd/08-publish.md) | `publish.spec.ts` |
 | 工作台 | [prd/09](prd/09-dashboard.md) | `dashboard.spec.ts` |
 | 功能开关 | [prd/10](prd/10-feature-flags.md) | `features.spec.ts` |
+| 账号与会话 | [prd/11](prd/11-accounts.md) | `accounts.spec.ts` |
 | 全量 | 本文第 5 节 | `full-flow.spec.ts` |
 
 写用例的要求：
@@ -64,6 +65,7 @@ docker compose up -d --build        # 从零部署一次
 
 `tests/e2e/full-flow.spec.ts` 覆盖的完整链路（mock 适配器）：
 
+0. 首次访问：注册第一个账号并登录（`accounts.spec.ts` 已有覆盖，此处串联）。
 1. 设置页：新增网关（校验密钥掩码）、配置两个 Agent（图片 Agent 模型留空）、
    查看功能开关区块（两项均为「本版本未实现」且不可操作）。
 2. 新建资源夹，上传 2 张图片，填写来源信息。

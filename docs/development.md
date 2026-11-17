@@ -31,6 +31,7 @@ devcontainer exec --workspace-folder . bash
 | `pnpm db:migrate` | `prisma migrate dev`（生成并应用迁移） |
 | `pnpm db:deploy` | `prisma migrate deploy`（只应用已有迁移） |
 | `pnpm db:studio` | `prisma studio` |
+| `pnpm auth:reset-password <email>` | 重置密码并撤销该账号全部会话 |
 
 依赖版本约束（ADR 0001）：`prisma` 与 `@prisma/client`、`@prisma/adapter-pg` 必须同版本，
 且**钉稳定版 7.10.1** —— npm 的 `latest` 标签当前指向 8.0.0 的 RC，不要用 `latest`。
@@ -48,13 +49,15 @@ devcontainer exec --workspace-folder . bash
 
 ```bash
 cp .env.example .env
-# 至少改：POSTGRES_PASSWORD、AUTH_PASSWORD、AUTH_SECRET（openssl rand -base64 48）
+# 至少改：POSTGRES_PASSWORD、AUTH_SECRET（openssl rand -base64 48）
 docker compose up -d --build
 ```
 
 - 应用 `http://<host>:${APP_PORT:-3000}`，健康检查 `GET /api/health`（数据库 + 结构版本）。
 - 数据卷：`pgdata`、`uploads`。
-- **访问口令**：`AUTH_PASSWORD` 留空表示不做登录校验，只适合仅内网可达的部署。
+- **首次启动**：浏览器打开首页会被引导到 `/login`，用「创建第一个账号」注册；之后注册入口自动关闭。
+- **忘记密码**：`pnpm auth:reset-password <email>`（在容器内执行 `docker compose exec app pnpm auth:reset-password ...`），
+  改完该账号的全部会话失效。
 - **若将来启用图生图**（ADR 0004）：网关必须能访问本服务的地址，部署时要把对外地址配进环境变量。
 
 ## 5. 备份与恢复

@@ -64,6 +64,8 @@
 | `agent_config` | type（image/copy）、enabled、name、gateway_model_id、role、system_prompt、output_requirements、updated_at | 固定两条 |
 | `feature_flag` | key、enabled、updated_at | key 取自代码里的注册表 |
 | `publish_record` | id、result_id（唯一）、platform、published_at、title_snapshot、selected_asset_ids | 一个结果最多一条 |
+| `user` | id、email（唯一，小写）、name、password_hash、created_at、last_login_at、disabled_at | 账号；第一版只有第一个注册的账号 |
+| `session` | id、token_hash（唯一）、user_id、expires_at、revoked_at、user_agent | 会话；登出与改密码即时失效 |
 | `app_meta` | key、value、updated_at | 结构版本等运行期元数据 |
 
 ## 6. 全局规则
@@ -79,13 +81,15 @@
 9. 文案生成禁止照搬原始文案、虚构参数或体验。
 10. 所有列表、统计、状态来自真实业务数据，不使用演示数据。
 11. 任何「本版本未实现」的能力，都必须通过功能开关判定，不允许在调用点自行写死。
+12. 除 `/login`、`/api/health`、`/api/auth/*` 外，所有页面与接口都要求登录。
 
 ## 7. 非功能要求
 
 - **持久化**：刷新页面、重启服务后，素材、图片、任务、配置、发布记录都存在。
 - **升级兼容**：结构变更必须通过迁移文件交付，换镜像启动即完成升级。
 - **文件安全**：校验类型与大小（以内容为准）；文件名不直接作为存储路径。
-- **凭据安全**：API Key 只在服务端加密保存，接口、日志、错误信息都不出现明文。
+- **凭据与会话安全**：API Key 只在服务端加密保存；密码用 scrypt 派生；会话令牌只存其哈希；
+  接口、日志、错误信息都不出现明文密钥、密码或令牌。
 - **任务可靠性**：生成异步执行，不阻塞请求；重启后不留下永久「处理中」。
 - **可追踪**：任务与阶段都能看到状态、失败原因、重试次数。
 - **交互反馈**：上传、保存、删除、生成、重试、复制、下载、测试连接都有明确反馈。
@@ -104,6 +108,7 @@
 | [08-publish.md](08-publish.md) | 发布准备、导出、发布记录 |
 | [09-dashboard.md](09-dashboard.md) | 工作台与全局状态 |
 | [10-feature-flags.md](10-feature-flags.md) | 功能开关机制与设置区块 |
+| [11-accounts.md](11-accounts.md) | 账号与会话（登录、首个账号注册、密码重置） |
 
 工程约束见 [../architecture.md](../architecture.md)，开发流程见 [../development.md](../development.md)，
 验收规范见 [../acceptance.md](../acceptance.md)。

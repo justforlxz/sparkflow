@@ -30,6 +30,7 @@
 - PostgreSQL + Prisma（迁移随代码提交，换镜像即升级）
 - 图片存本地磁盘（挂载卷），由鉴权路由读取
 - 后台上传/生成任务用进程内 worker，不引入队列
+- 账号登录：cookie + 数据库会话（登出与改密码即时失效），首次访问注册第一个账号
 - Dockerfile + docker compose 部署；本地统一用 devcontainer
 - 出图调用 magpie 的图片 MCP，本项目不实现生图模型
 

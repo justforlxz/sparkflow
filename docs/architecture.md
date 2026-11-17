@@ -65,6 +65,14 @@ tests/e2e/          # 端到端验收
 - 日志统一走 `src/lib/logger.ts`，对 `key|token|secret|password|authorization|cookie` 字段与
   `sk-…`、`Bearer …` 形态脱敏。
 
+### 会话与账号（ADR 0006）
+
+- `user` + `session` 两张表；密码用 Node 内置 `scrypt`，会话令牌只存 SHA-256，因此登出与改密码能真失效。
+- 会话校验集中在 `getCurrentUser()`；`proxy.ts` 只做「无 cookie 跳登录」的快速判断，不查库。
+- 页面放在 `src/app/(app)/` 路由组（受保护），`/login` 与 `/api/auth/*`、`/api/health` 在白名单。
+- 未登录：页面 302 到 `/login?next=...`，接口 401 JSON，二者不可混用。
+- 现在不做工作区维度；所有数据访问集中在模块 `repo.ts`，将来引入 `workspace_id` 时在一处加过滤。
+
 ### 文件
 
 `UPLOAD_DIR` 下两类：`media-assets/<collectionId>/`（原图）、`generated-assets/<resultId>/`（生成图）。

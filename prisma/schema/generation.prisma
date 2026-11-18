@@ -59,7 +59,9 @@ model GenerationResult {
   createdAt    DateTime         @default(now()) @map("created_at")
   collection   MediaCollection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
   task         GenerationTask   @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  assets       GeneratedAsset[]
+  assets        GeneratedAsset[]
+  // 发布记录（prisma/schema/publish.prisma）以 resultId 外键并级联删除。
+  publishRecord PublishRecord?
 
   @@index([collectionId, createdAt])
   @@map("generation_result")

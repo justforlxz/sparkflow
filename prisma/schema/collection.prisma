@@ -17,6 +17,8 @@ model MediaCollection {
   // 以下两组反向关系由创作任务模块（prisma/schema/generation.prisma）声明，删除资源夹时级联。
   tasks       GenerationTask[]
   results     GenerationResult[]
+  // 发布记录的反向关系由发布模块（prisma/schema/publish.prisma）声明。
+  publishRecords PublishRecord[]
 
   @@map("media_collection")
 }

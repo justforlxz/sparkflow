@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { countCollectionUsage } from "@/modules/generation/counts";
+import { countCollectionPublishRecords } from "@/modules/publish/counts";
 import { DEFAULT_THUMBNAIL_WIDTH, type CollectionStatus } from "./constants";
 import { readAssetFile, removeCollectionFiles, writeAssetBytes } from "./files";
 import * as repo from "./repo";
@@ -68,15 +69,18 @@ export interface AssetBytes {
  * 任务与结果的数量来自创作任务模块的 service，不直接查它的表（AGENTS.md 硬性规则 2）。
  * 「运行中任务」指派生状态为 running 的任务：有阶段排队或执行中都算，因为此时改图或删夹会
  * 影响正在进行的任务。
- * 发布记录由发布模块（N9）引入，接入前库里确实没有这些行，计数为 0 —— 这是当前真实状态。
+ * 发布记录数量来自发布模块的计数函数（同样不直接查它的表）：有记录即派生为 `published`。
  */
 async function relatedCounts(collectionId: string): Promise<CollectionCounts> {
-  const usage = await countCollectionUsage(collectionId);
+  const [usage, published] = await Promise.all([
+    countCollectionUsage(collectionId),
+    countCollectionPublishRecords(collectionId),
+  ]);
   return {
     runningTasks: usage.activeTasks,
     tasks: usage.tasks,
     results: usage.results,
-    published: 0,
+    published,
   };
 }
 

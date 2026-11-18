@@ -50,6 +50,8 @@ export interface ResultView {
   id: string;
   /** 结果所属任务：重试失败阶段要用它（ADR 0005）。 */
   taskId: string;
+  /** 结果所属资源夹：发布记录按它归档，并按资源夹筛选（docs/prd/08）。 */
+  collectionId: string;
   title: string | null;
   body: string | null;
   tags: string[];
@@ -152,6 +154,7 @@ export function toResultView(
   return {
     id: result.id,
     taskId: result.taskId,
+    collectionId: result.collectionId,
     title: result.title,
     body: result.body,
     tags: result.tags,

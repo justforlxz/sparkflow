@@ -6,6 +6,10 @@ import { fetchJson } from "@/components/api";
 import { RESULT_COPY } from "@/modules/generation/constants";
 import type { ResultView } from "@/modules/generation/view";
 import { VISUAL_STYLES } from "@/modules/image-generation/styles";
+import { PUBLISH_COPY } from "@/modules/publish/constants";
+import { parseTagInput } from "@/modules/publish/text";
+import type { PublishRecordView } from "@/modules/publish/view";
+import { PublishDialog } from "./publish-dialog";
 
 /**
  * 「AI 创作结果」页签（docs/prd/07「结果页签」）：
@@ -13,10 +17,16 @@ import { VISUAL_STYLES } from "@/modules/image-generation/styles";
  * 2. `partial` 结果在文案区域给出「文案阶段失败」提示与重试入口，不留空白（AC-08-11）。
  * 3. 编辑结果原地更新，不改动原始素材与其它结果（AC-07-6）。
  * 4. 删除整组结果前二次确认，文案写明发布记录会一并删除（AC-07-7）。
+ * 5. 每张结果卡展示发布状态与「发布准备」入口；「分享到小红书」由页面用 `<FeatureGate>`
+ *    渲染后作为 `shareEntry` 传入，客户端组件里不判断功能开关（docs/prd/10 MUST 3）。
  */
 
 interface ResultsPanelProps {
   results: ResultView[];
+  /** 已经有发布记录的结果 id，由服务端查询后传入（不在前端推断，docs/prd/07 MUST NOT）。 */
+  publishedResultIds: string[];
+  /** 功能开关渲染好的分享入口（关闭时是不可操作的占位按钮）。 */
+  shareEntry: React.ReactNode;
 }
 
 interface ResultEnvelope {
@@ -30,14 +40,10 @@ interface EditForm {
   visualStyle: string;
 }
 
-/** 标签输入：逗号或换行分隔，去掉 `#` 前缀与空项，重复的只留第一次（与文案解析同一口径）。 */
-function parseTags(value: string): string[] {
-  const tags = value
-    .split(/[,，\n]/)
-    .map((tag) => tag.trim().replace(/^#/, "").trim())
-    .filter((tag) => tag.length > 0);
-  return [...new Set(tags)];
-}
+/**
+ * 标签输入框的解析与格式化在发布模块里（`publish/text.ts`）：发布准备弹窗也要用同一套规则，
+ * 两处不能各写一份「去 `#`、去重复」。
+ */
 
 function toForm(result: ResultView): EditForm {
   return {
@@ -48,7 +54,11 @@ function toForm(result: ResultView): EditForm {
   };
 }
 
-export function ResultsPanel({ results: serverResults }: ResultsPanelProps) {
+export function ResultsPanel({
+  results: serverResults,
+  publishedResultIds,
+  shareEntry,
+}: ResultsPanelProps) {
   const router = useRouter();
   /* 本地只记「改过的」与「删掉的」，列表由服务端数据派生：
    * `router.refresh()` 之后服务端数据更新，界面自然跟着变，不需要在 effect 里同步 state。 */
@@ -62,7 +72,12 @@ export function ResultsPanel({ results: serverResults }: ResultsPanelProps) {
   const [editing, setEditing] = useState<ResultView | null>(null);
   const [form, setForm] = useState<EditForm | null>(null);
   const [deleting, setDeleting] = useState<ResultView | null>(null);
+  const [publishing, setPublishing] = useState<ResultView | null>(null);
+  const [justPublished, setJustPublished] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+
+  const isPublished = (resultId: string): boolean =>
+    publishedResultIds.includes(resultId) || justPublished.includes(resultId);
 
   function openEdit(result: ResultView) {
     setEditing(result);
@@ -80,7 +95,7 @@ export function ResultsPanel({ results: serverResults }: ResultsPanelProps) {
         body: JSON.stringify({
           title: form.title.trim(),
           body: form.body.trim(),
-          tags: parseTags(form.tags),
+          tags: parseTagInput(form.tags),
           visualStyle: form.visualStyle,
         }),
       });
@@ -210,10 +225,31 @@ export function ResultsPanel({ results: serverResults }: ResultsPanelProps) {
               <p className="text-xs text-zinc-500">
                 {result.visualStyleLabel} · {RESULT_COPY.generatedAtLabel}{" "}
                 {result.createdAt.slice(0, 10)} · {RESULT_COPY.imageCountLabel}{" "}
-                {result.assets.length} 张
+                {result.assets.length} 张 ·{" "}
+                {/* 发布状态由服务端查到的记录决定，前端不推断（docs/prd/07 MUST NOT）。 */}
+                <span
+                  data-testid="publish-status"
+                  className={isPublished(result.id) ? "text-emerald-600" : undefined}
+                >
+                  {isPublished(result.id)
+                    ? PUBLISH_COPY.statusPublished
+                    : PUBLISH_COPY.statusUnpublished}
+                </span>
               </p>
 
               <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid="publish-prepare"
+                  onClick={() => {
+                    setPublishing(result);
+                    setError(null);
+                    setNotice(null);
+                  }}
+                  className="rounded bg-zinc-900 px-3 py-1.5 text-white hover:bg-zinc-700"
+                >
+                  {PUBLISH_COPY.prepareAction}
+                </button>
                 <button
                   type="button"
                   data-testid="edit-result"
@@ -356,6 +392,21 @@ export function ResultsPanel({ results: serverResults }: ResultsPanelProps) {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {publishing ? (
+        <PublishDialog
+          result={publishing}
+          shareEntry={shareEntry}
+          onClose={() => setPublishing(null)}
+          onPublished={(record: PublishRecordView) => {
+            setJustPublished((current) => [...new Set([...current, record.resultId])]);
+            setPublishing(null);
+            setNotice(PUBLISH_COPY.markedNotice);
+            // 服务端数据（结果标题、资源夹状态）跟着变；列表本身由 props 派生。
+            router.refresh();
+          }}
+        />
       ) : null}
     </div>
   );

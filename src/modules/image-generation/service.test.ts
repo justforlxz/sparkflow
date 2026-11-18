@@ -189,17 +189,56 @@ describe("失败如实记录", () => {
     expect(meta.batches[1]).toMatchObject({ n: 1, ok: false, errorCode: "UPSTREAM_REJECTED" });
   });
 
-  it("上游返回的张数少于本批目标时也算失败，不把缺张当完整产出", async () => {
-    const generator = new RecordingGenerator((input) =>
-      Array.from({ length: input.n - 1 }, (_, index) => pngImage(index)),
-    );
+  it("上游一次只回 1 张时按实际张数继续要：要 4 张就发 4 次，张数一张不少", async () => {
+    // 真实 magpie 网关上可用的图片模型多数一次只出 1 张（workbuddy 系），
+    // 也有直接拒绝 n>1 的（sensenova 报 invalid n, should be in [1, 1]）。
+    const generator = new RecordingGenerator(() => [pngImage(0)]);
 
-    const error = await generateImages(buildContext({ imageCount: 3 }), { generator }).catch(
+    const result = await generateImages(buildContext({ imageCount: 4 }), { generator });
+
+    expect(generator.inputs.map((input) => input.n)).toEqual([4, 3, 2, 1]);
+    expect(result.images).toHaveLength(4);
+    // 批次摘要如实记录「要了几张、实际拿到几张」。
+    expect(result.meta.batches.map((batch) => [batch.n, batch.received, batch.ok])).toEqual([
+      [4, 1, true],
+      [3, 1, true],
+      [2, 1, true],
+      [1, 1, true],
+    ]);
+  });
+
+  it("上游拒绝 n>1 时把这一批降到 1 张重试，本阶段后续都按 1 张要", async () => {
+    const generator = new RecordingGenerator((input) => {
+      if (input.n > 1) {
+        throw new StageError("UPSTREAM_REJECTED", "invalid n, should be in [1, 1]");
+      }
+      return [pngImage(0)];
+    });
+
+    const result = await generateImages(buildContext({ imageCount: 3 }), { generator });
+
+    // 只降级一次：第一次按 3 张被拒，之后每批都按 1 张要，不再反复试探。
+    expect(generator.inputs.map((input) => input.n)).toEqual([3, 1, 1, 1]);
+    expect(result.images).toHaveLength(3);
+    expect(result.meta.batches.map((batch) => [batch.n, batch.ok])).toEqual([
+      [3, false],
+      [1, true],
+      [1, true],
+      [1, true],
+    ]);
+  });
+
+  it("上游一张图都没返回时阶段失败，不把空产出当成功", async () => {
+    const generator = new RecordingGenerator(() => []);
+
+    const error = await generateImages(buildContext({ imageCount: 2 }), { generator }).catch(
       (caught: unknown) => caught,
     );
 
+    expect(error).toBeInstanceOf(StageError);
     expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
-    expect((error as Error).message).toContain("只返回 2 张图片");
+    expect((error as Error).message).toContain("上游没有返回图片");
+    expect((error as Error).message).toContain("已取回 0/2 张");
   });
 
   it("适配器抛的不是阶段错误时归为 STAGE_FAILED，批次摘要仍然保留", async () => {

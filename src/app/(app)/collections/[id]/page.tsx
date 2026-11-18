@@ -168,6 +168,10 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
                 ))}
               </ul>
             )}
+
+            {/* 图生图入口：本版本不实现，由功能开关渲染成禁用态，点击只提示、不发请求
+                （docs/prd/05「本版本的范围边界」、docs/prd/10 AC-10-4）。 */}
+            <FeatureGate feature="image-to-image" />
           </div>
 
           <Panel title={COLLECTION_COPY.sourceSection} className="h-fit">

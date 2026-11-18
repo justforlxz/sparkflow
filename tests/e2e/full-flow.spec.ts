@@ -17,10 +17,7 @@ import { ACCOUNT, ensureAccount } from "./support/auth";
  * 模型调用一律走 mock 适配器（`GENERATION_ADAPTER=mock`），失败路径用 `extraPrompt` 里的
  * `MOCK_SCRIPT_HINTS` 标记触发，不新增测试接口，也不消耗真实额度。
  *
- * 两处与文档字面不同，理由写在对应用例里：
- * - 第 10 步（图生图入口）当前无法执行：产品里没有任何页面渲染 `image-to-image` 的开关入口，
- *   全仓 `<FeatureGate feature="image-to-image">` 命中 0 处。按本节点「不新增功能、发现问题另开
- *   issue」的要求，详见 MKACG-893（入口补齐后去掉下面那个 fixme 即可）。
+ * 一处与文档字面不同，理由写在对应位置：
  * - 第 12 步的「重启服务」由同节点的 docker compose 验证执行（AC-F-4）：Playwright 的
  *   webServer 由测试框架持有，用例里不能重启进程。这里断言的正是重启后必须成立的两个事实：
  *   数据仍在、结构版本等于已应用迁移条数。
@@ -686,12 +683,9 @@ test("第 9 步 分享到小红书：只提示「分享功能不可用」，不�
   expect(apiRequests, "分享入口不得发起接口请求").toEqual([]);
 });
 
-test.fixme("第 10 步 图生图入口提示「该功能未启用」且无网络请求", async ({ page }) => {
-  // 本步当前无法执行：产品里没有任何页面渲染 `image-to-image` 的开关入口
-  // （全仓 `<FeatureGate feature="image-to-image">` 命中 0 处，`generateWithReferenceImages`
-  // 也没有调用方），而 docs/acceptance.md 第 5 节第 10 步与 PRD 10 的 AC-10-4 都要求界面上有
-  // 这个入口。本节点按「不新增功能、发现问题另开 issue」的要求交给 MKACG-893，入口补齐后
-  // 去掉 fixme 即可。入口按 PRD 05 的措辞放在资源夹详情（「按原图逐张重绘」）。
+test("第 10 步 AC-10-4 图生图入口提示「该功能未启用」且无网络请求", async ({ page }) => {
+  // 图生图在本版本不实现（docs/prd/05「本版本的范围边界」）：资源夹详情的入口由
+  // <FeatureGate feature="image-to-image"> 渲染成禁用态，点击只出现注册表里的提示文案。
   await loginInBrowser(page);
   await page.goto(`/collections/${chain.collectionId}`);
 
@@ -701,13 +695,13 @@ test.fixme("第 10 步 图生图入口提示「该功能未启用」且无网络
   };
   page.on("request", collect);
 
-  const entry = page.getByRole("button", { name: "按原图逐张重绘" });
+  const entry = page.getByRole("button", { name: "图生图" });
   await expect(entry).toHaveAttribute("aria-disabled", "true");
   await entry.click({ force: true });
   await expect(page.getByRole("status").filter({ hasText: "该功能未启用" })).toBeVisible();
 
   page.off("request", collect);
-  expect(apiRequests).toEqual([]);
+  expect(apiRequests, "图生图入口不得发起接口请求").toEqual([]);
 });
 
 test("第 11 步 标记已发布：全局与资源夹内记录一致，重复标记不新增", async ({

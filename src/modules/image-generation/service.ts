@@ -40,7 +40,10 @@ export const MAGPIE_IMAGE_PROTOCOL = "magpie-mcp";
 
 /** 每次上游调用的摘要，写入 `generation_stage.meta`（docs/prd/05「阶段元信息」）。 */
 export interface ImageBatchRecord {
+  /** 这一批**要求**的张数：默认 `min(4, 剩余)`；上游拒绝一次多张之后降为 1。 */
   n: number;
+  /** 上游这一批**实际**返回并采用的张数；失败的批次为 0。 */
+  received: number;
   ms: number;
   ok: boolean;
   errorCode?: string;
@@ -142,8 +145,10 @@ function reasonOf(error: unknown): string {
  * 按批次出图（MUST 2、MUST 7）：
  *
  * - 每批 `n = min(4, 剩余张数)`，要 9 张就是 4 + 4 + 1 三次；
- * - 任何一批失败或张数不足，整个阶段按失败处理（docs/prd/04 MUST 3：生图失败不创建结果），
- *   失败消息与 `meta` 如实写明已取回几张、第几批出了什么问题；
+ * - 上游一次给不满 n 张时，按**实际拿到的张数**继续要剩余的（真实网关的图片模型多数一次只出 1 张）；
+ *   上游明确拒绝 n > 1 时，本阶段降到每批 1 张，不把「一次画不了 4 张」当成业务失败；
+ * - 一张都没返回、或上游报错（超时 / 鉴权 / 格式 / 其它拒绝），整个阶段按失败处理
+ *   （docs/prd/04 MUST 3：生图失败不创建结果），消息与 `meta` 如实写明已取回几张、第几批出了什么问题；
  * - 成功时返回全部图片与调用摘要，落盘由 runner 完成。
  */
 export async function generateImages(
@@ -173,57 +178,80 @@ export async function generateImages(
   const batches: ImageBatchRecord[] = [];
   const images: GeneratedImage[] = [];
   let remaining = requested;
+  // 本阶段实际可用的批次大小：默认 4；上游明确拒绝一次多张时降到 1，之后不再回升。
+  let batchSize = MAX_IMAGES_PER_BATCH;
 
-  while (remaining > 0) {
-    const n = Math.min(MAX_IMAGES_PER_BATCH, remaining);
+  const buildMeta = (): ImageGenerationMeta => ({
+    model: baseInput.model,
+    batches,
+    totalMs: now() - startedAt,
+  });
+
+  /**
+   * 发一次上游请求并记账。三种结果：
+   * - 返回图片（可能不足 n 张）：照单收下，由调用方按实际张数继续要；
+   * - 上游拒绝 n > 1：返回 "retry-with-single"，调用方把这一批降到 1 张再要一次；
+   * - 其他失败，或一张都没返回：直接抛阶段错误（docs/prd/04 MUST 3）。
+   */
+  const callBatch = async (n: number): Promise<GeneratedImage[] | "retry-with-single"> => {
     const batchStartedAt = now();
 
     try {
       const batch = await generator.generate({ ...baseInput, n }, { signal: context.signal });
       const ms = now() - batchStartedAt;
+      const kept = batch.slice(0, n);
+      const record: ImageBatchRecord = { n, received: kept.length, ms, ok: kept.length > 0 };
+      if (kept.length === 0) record.errorCode = IMAGE_ERROR_CODES.rejected;
+      batches.push(record);
 
-      if (batch.length < n) {
-        batches.push({
-          n,
-          ms,
-          ok: false,
-          errorCode: IMAGE_ERROR_CODES.rejected,
-        });
-        const meta: ImageGenerationMeta = {
-          model: baseInput.model,
-          batches,
-          totalMs: now() - startedAt,
-        };
+      if (kept.length === 0) {
         throw new StageError(
           IMAGE_ERROR_CODES.rejected,
-          `第 ${batches.length} 批（${n} 张）只返回 ${batch.length} 张图片。` +
+          `第 ${batches.length} 批（${n} 张）上游没有返回图片。` +
             `已取回 ${images.length}/${requested} 张，阶段未产出结果`,
-          { meta: { ...meta } },
+          { meta: { ...buildMeta() } },
         );
       }
 
-      images.push(...batch.slice(0, n));
-      batches.push({ n, ms, ok: true });
-      remaining -= n;
+      return kept;
     } catch (error) {
+      // 上面那条「一张都没返回」已经带 meta，原样上抛，不再重复记一批。
       if (error instanceof StageError && error.meta) throw error;
 
       const ms = now() - batchStartedAt;
       const errorCode = errorCodeOf(error);
-      batches.push({ n, ms, ok: false, errorCode });
-      const meta: ImageGenerationMeta = {
-        model: baseInput.model,
-        batches,
-        totalMs: now() - startedAt,
-      };
+      batches.push({ n, received: 0, ms, ok: false, errorCode });
+
+      // 真实网关的图片模型多数一次只出 1 张，有的还直接拒绝 n > 1（400 invalid n）：
+      // 这是上游的出图粒度不同，不是业务失败，把这一批降到 1 张再要一次。
+      if (n > 1 && errorCode === IMAGE_ERROR_CODES.rejected) return "retry-with-single";
 
       throw new StageError(
         errorCode,
         `第 ${batches.length} 批（${n} 张）失败：${reasonOf(error)}。` +
           `已取回 ${images.length}/${requested} 张，阶段未产出结果`,
-        { meta: { ...meta }, cause: error },
+        { meta: { ...buildMeta() }, cause: error },
       );
     }
+  };
+
+  while (remaining > 0) {
+    let outcome = await callBatch(Math.min(batchSize, remaining));
+
+    if (outcome === "retry-with-single") {
+      batchSize = 1;
+      outcome = await callBatch(1);
+    }
+
+    if (outcome === "retry-with-single") {
+      // n = 1 不会再走降级分支；留一处兜底，避免把「没降级」当成产出。
+      throw new StageError(STAGE_ERROR_CODES.stageFailed, "生图阶段无法确定批次结果", {
+        meta: { ...buildMeta() },
+      });
+    }
+
+    images.push(...outcome);
+    remaining -= outcome.length;
   }
 
   const meta: ImageGenerationMeta = {

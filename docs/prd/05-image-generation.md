@@ -38,7 +38,11 @@
 
 1. 适配器接口 `ImageGenerator`：`generate(input) => Promise<GeneratedImage[]>`，
    第一个实现 `MagpieMcpImageGenerator`；业务代码只依赖接口。
-2. 按 `n = min(4, 剩余张数)` 分批调用：要 9 张就是 3 次（4+4+1）。
+2. 按 `n = min(4, 剩余张数)` 分批调用：要 9 张就是 3 次（4+4+1）。上游一次给不满 `n` 张时，
+   按**实际拿到的张数**继续要剩余的；上游明确拒绝 `n > 1`（例如 magpie 转出的
+   `400 invalid n, should be in [1, 1]`）时，本阶段降到每批 1 张。真实 magpie 网关上可用的图片模型
+   多数一次只出 1 张，所以「目标张数 4」可能拆成多次调用 —— 判定标准是**最终取满 `imageCount` 张**，
+   不是「一定只调用 `ceil(imageCount / 4)` 次」。
 3. 拿到图片后**立刻下载并落盘**（`<UPLOAD_DIR>/generated-assets/<resultId>/<uuid>.<ext>`），
    再写 `generated_asset`。不得只保存网关 URL。
 4. 上游返回 `id`（未就绪）时，用 `generation_result` 轮询（间隔 3 秒，上限为任务超时），
@@ -75,7 +79,8 @@
 下游写入：`generated_asset`（id、result_id、storage_key、file_name、mime_type、sort_order、width、height）。
 
 阶段元信息（`generation_stage.error` 之外的调用摘要，字段名自定）：
-`{ model, batches: [{ n, ms, ok, errorCode? }], totalMs }`。
+`{ model, batches: [{ n, received, ms, ok, errorCode? }], totalMs }`：
+`n` 是这一批要求的张数，`received` 是上游实际返回并采用的张数（上游一次只给 1 张时两者不等）。
 
 ## 验收标准
 
@@ -93,7 +98,7 @@
 ## 验证方式
 
 ```bash
-pnpm test        # 分批、不传参考图、model 省略、轮询、部分失败、开关拦截
+pnpm test        # 分批、上游一次只回 1 张时续要、拒绝 n>1 时降级、不传参考图、model 省略、轮询、部分失败、开关拦截
 pnpm test:e2e    # mock 适配器跑通任务链路
 ```
 

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { fetchJson } from "@/components/api";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { LoadingState } from "@/components/ui/LoadingState";
 import type { AgentConfigView, AgentModelCandidate } from "@/modules/agent-config/view";
 import { AgentCard, type AgentGatewayOption } from "./AgentCard";
 
@@ -105,11 +107,8 @@ export function AgentSection({ initialAgents, gatewayOptions }: AgentSectionProp
         </button>
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorState message={error} /> : null}
+      {refreshing ? <LoadingState label="正在刷新网关与模型清单…" /> : null}
 
       <div className="space-y-4">
         {agents.map((agent) => (

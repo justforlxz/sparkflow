@@ -19,7 +19,8 @@ test("AC-11-1 空库首次访问被引导到 /login，注册后自动登录进�
   await page.getByRole("button", { name: "创建账号并进入" }).click();
 
   await expect(page).toHaveURL("/");
-  await expect(page.getByRole("heading", { name: "项目骨架已就绪" })).toBeVisible();
+  // 首页是工作台（docs/prd/09-dashboard.md）；登录后侧栏显示当前用户。
+  await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
   await expect(page.getByText(ACCOUNT.name)).toBeVisible();
 });
 

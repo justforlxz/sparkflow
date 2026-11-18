@@ -149,8 +149,10 @@ export const RESULT_COPY = {
   imageCountLabel: "图片",
   openLarge: "查看大图",
   saveFailed: "保存失败",
+  saveSucceeded: "结果已保存",
   deleteFailed: "删除失败",
   retryFailed: "重试失败",
+  retryQueued: "文案阶段已重新排队，完成后刷新页面查看。",
 } as const;
 
 /** 开始创作弹窗的文案（参数与接口见 docs/prd/04「数据与接口」）。 */

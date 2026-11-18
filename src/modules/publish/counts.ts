@@ -9,3 +9,8 @@ import { countRecords } from "./repo";
 export async function countCollectionPublishRecords(collectionId: string): Promise<number> {
   return countRecords(collectionId);
 }
+
+/** 全部发布记录数：工作台「已发布」统计（docs/prd/09 MUST 1）。 */
+export async function countAllPublishRecords(): Promise<number> {
+  return countRecords();
+}

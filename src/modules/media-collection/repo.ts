@@ -124,6 +124,31 @@ export async function listCollections(q?: string): Promise<CollectionRow[]> {
     select: COLLECTION_SELECT,
   });
   return rows.map(toCollectionRow);
+
+}
+/** 工作台「最近的媒体资源夹」：按创建时间倒序取前 N 条，不加载全量（docs/prd/09 MUST 2）。 */
+export async function listRecentCollections(limit: number): Promise<CollectionRow[]> {
+  const rows = await getDb().mediaCollection.findMany({
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: COLLECTION_SELECT,
+  });
+  return rows.map(toCollectionRow);
+}
+
+/** 资源夹总数（工作台统计与侧栏计数）。 */
+export async function countCollections(): Promise<number> {
+  return getDb().mediaCollection.count();
+}
+
+/**
+ * 「待创作」的资源夹数：还没有任何生成结果的资源夹（docs/prd/09 MUST 1）。
+ *
+ * 这是本模块自己的行上的判定（`results` 是 generation 模块在本表上声明的反向关系），
+ * 不代表去读生成结果表的内容，也不改变结果数据。
+ */
+export async function countCollectionsWithoutResults(): Promise<number> {
+  return getDb().mediaCollection.count({ where: { results: { none: {} } } });
 }
 
 export async function findCollection(id: string): Promise<CollectionRow | null> {

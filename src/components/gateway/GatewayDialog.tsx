@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ErrorState } from "@/components/ui/ErrorState";
 import {
   GATEWAY_PROTOCOLS,
   MODEL_CAPABILITIES,
@@ -247,11 +248,7 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
           </section>
         ) : null}
 
-        {error ? (
-          <p role="alert" className="text-sm text-red-600">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ErrorState message={error} /> : null}
 
         <div className="flex justify-end gap-2 border-t border-zinc-200 pt-4">
           <button

@@ -51,13 +51,13 @@ export default async function PublishedPage({ searchParams }: PageProps) {
       </div>
 
       <form method="get" className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="space-y-1">
+        <label className="w-full space-y-1 sm:w-auto">
           <span className="block text-xs text-zinc-500">{PUBLISH_COPY.filterLabel}</span>
           <select
             name="collectionId"
             aria-label={PUBLISH_COPY.filterLabel}
             defaultValue={query.collectionId ?? ""}
-            className="rounded border border-zinc-300 px-3 py-2"
+            className="w-full rounded border border-zinc-300 px-3 py-2 sm:w-auto"
           >
             <option value="">{PUBLISH_COPY.filterAll}</option>
             {collections.items.map((collection) => (

@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Panel } from "@/components/ui/Panel";
+import { Pill } from "@/components/ui/Pill";
+import { COLLECTION_STATUS_TONE } from "@/components/ui/status-tone";
 import {
   COLLECTION_COPY,
   COLLECTION_STATUSES,
@@ -49,7 +53,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
             name="q"
             defaultValue={query.q ?? ""}
             placeholder={COLLECTION_COPY.searchPlaceholder}
-            className="w-72 rounded border border-zinc-300 px-3 py-2"
+            className="w-full rounded border border-zinc-300 px-3 py-2 sm:w-72"
           />
         </label>
         <label className="space-y-1">
@@ -57,7 +61,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
           <select
             name="status"
             defaultValue={query.status ?? ""}
-            className="rounded border border-zinc-300 px-3 py-2"
+            className="max-w-full rounded border border-zinc-300 px-3 py-2"
           >
             <option value="">{COLLECTION_COPY.allStatuses}</option>
             {COLLECTION_STATUSES.map((status) => (
@@ -76,40 +80,40 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
       </form>
 
       {list.items.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 bg-white px-6 py-10 text-center text-sm text-zinc-600">
-          {isFiltered ? COLLECTION_COPY.emptySearch : COLLECTION_COPY.emptyList}
-        </p>
+        <EmptyState message={isFiltered ? COLLECTION_COPY.emptySearch : COLLECTION_COPY.emptyList} />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.items.map((item) => (
-            <li key={item.id} className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-              <Link href={`/collections/${item.id}`} className="block">
-                {item.coverUrl ? (
-                  // 鉴权路由读取原图缩略图，不走 Next 图片优化器。
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={item.coverUrl}
-                    alt={item.name}
-                    className="h-40 w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-40 items-center justify-center bg-zinc-100 text-sm text-zinc-500">
-                    {COLLECTION_COPY.emptyAssets}
+            <li key={item.id}>
+              <Panel className="overflow-hidden" padded={false}>
+                <Link href={`/collections/${item.id}`} className="block">
+                  {item.coverUrl ? (
+                    // 鉴权路由读取原图缩略图，不走 Next 图片优化器。
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.coverUrl}
+                      alt={item.name}
+                      className="h-40 w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-40 items-center justify-center bg-zinc-100 text-sm text-zinc-500">
+                      {COLLECTION_COPY.emptyAssets}
+                    </div>
+                  )}
+                  <div className="space-y-2 p-4 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-medium text-zinc-900">{item.name}</span>
+                      <Pill tone={COLLECTION_STATUS_TONE[item.status]}>
+                        {COLLECTION_STATUS_LABELS[item.status]}
+                      </Pill>
+                    </div>
+                    <p className="text-zinc-500">
+                      {item.platform ?? COLLECTION_COPY.notFoundSource} · {item.createdAt.slice(0, 10)}
+                    </p>
+                    <p className="text-zinc-500">{item.assetCount} 张原图</p>
                   </div>
-                )}
-                <div className="space-y-2 p-4 text-sm">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="font-medium text-zinc-900">{item.name}</span>
-                    <span className="shrink-0 rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
-                      {COLLECTION_STATUS_LABELS[item.status]}
-                    </span>
-                  </div>
-                  <p className="text-zinc-500">
-                    {item.platform ?? COLLECTION_COPY.notFoundSource} · {item.createdAt.slice(0, 10)}
-                  </p>
-                  <p className="text-zinc-500">{item.assetCount} 张原图</p>
-                </div>
-              </Link>
+                </Link>
+              </Panel>
             </li>
           ))}
         </ul>

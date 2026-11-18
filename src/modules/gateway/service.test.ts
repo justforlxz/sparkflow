@@ -178,3 +178,43 @@ describe("连接测试落库（SHOULD）", () => {
     );
   });
 });
+
+describe("阶段执行期取网关参数（docs/prd/04 MUST 4）", () => {
+  it("返回协议、Base URL 与解密后的密钥", async () => {
+    vi.mocked(repo.findGateway).mockResolvedValue(
+      record({ protocol: "magpie-mcp", baseUrl: "https://magpie.example.com" }),
+    );
+
+    await expect(service.getGatewayExecutionTarget("gw-1")).resolves.toEqual({
+      id: "gw-1",
+      protocol: "magpie-mcp",
+      baseUrl: "https://magpie.example.com",
+      apiKey: PLAIN_KEY,
+    });
+  });
+
+  it("网关不存在时抛 NOT_FOUND，不尝试解密", async () => {
+    vi.mocked(repo.findGateway).mockResolvedValue(null);
+
+    await expect(service.getGatewayExecutionTarget("gw-1")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("密钥无法解密时抛 UPSTREAM_FAILED + GATEWAY_KEY_UNREADABLE，日志里没有密钥", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(repo.findGateway).mockResolvedValue(
+      record({ protocol: "magpie-mcp", encryptedApiKey: "v1:broken:broken:broken" }),
+    );
+
+    const error = await service.getGatewayExecutionTarget("gw-1").catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      code: "UPSTREAM_FAILED",
+      details: { code: "GATEWAY_KEY_UNREADABLE" },
+    });
+    expect((error as Error).message).not.toContain(PLAIN_KEY);
+    expect(JSON.stringify([...log.mock.calls, ...errorLog.mock.calls])).not.toContain(PLAIN_KEY);
+  });
+});

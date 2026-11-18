@@ -11,7 +11,8 @@ import { ConnectionTestError, type ProbeDeps, type ProbeRequest, type ProbeTarge
 /** 我们自己开口说话时声明的 MCP 版本；服务端在 `initialize` 回复里给出它选定的版本。 */
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
-const MCP_PATH = "/mcp/magpie/image";
+/** 图片 MCP 的端点路径：连接测试与出图共用（docs/prd/02、05）。 */
+export const MCP_PATH = "/mcp/magpie/image";
 const CLIENT_NAME = "sparkflow";
 
 function baseHeaders(apiKey: string): Record<string, string> {
@@ -56,8 +57,8 @@ export interface JsonRpcEnvelope {
   error?: { code?: number; message?: string };
 }
 
-/** 取最后一条 `data:` 里的 JSON（SSE 回包），否则按整段 JSON 解析。 */
-function parseJsonRpc(bodyText: string): JsonRpcEnvelope | null {
+/** 取最后一条 `data:` 里的 JSON（SSE 回包），否则按整段 JSON 解析。连接测试与出图共用。 */
+export function parseJsonRpc(bodyText: string): JsonRpcEnvelope | null {
   const candidates: string[] = [];
   const dataLines = bodyText
     .split("\n")

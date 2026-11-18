@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { fetchJson } from "@/components/api";
 import type { ResultView } from "@/modules/generation/view";
 import { PUBLISH_COPY } from "@/modules/publish/constants";
@@ -100,11 +101,7 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
           <p className="text-xs text-zinc-500">{PUBLISH_COPY.prepareIntro}</p>
         </div>
 
-        {error ? (
-          <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ErrorState message={error} /> : null}
         {notice ? (
           <p role="status" className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
             {notice}

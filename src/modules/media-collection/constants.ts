@@ -54,6 +54,8 @@ export const COLLECTION_COPY = {
   sourceSection: "来源信息",
   imagesSection: "原始图片",
   deleteConfirmTitle: "删除这个资源夹？",
+  deleteConfirmAction: "确认删除",
+  deletingLabel: "删除中…",
   deleteConfirmBody:
     "删除后，它的创作任务、结果与发布记录会一并删除，资源夹内的原始图片文件也会被清理。此操作不可撤销。",
   assetStateSaved: "已保存",

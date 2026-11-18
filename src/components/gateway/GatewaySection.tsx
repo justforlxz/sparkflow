@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { Panel } from "@/components/ui/Panel";
+import { Pill } from "@/components/ui/Pill";
 import {
   CONNECTION_FAILURE_LABELS,
   findCapability,
@@ -115,11 +119,7 @@ export function GatewaySection({ initialGateways }: GatewaySectionProps) {
         </button>
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorState message={error} /> : null}
       {notice ? (
         <p role="status" className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
           {notice}
@@ -127,119 +127,114 @@ export function GatewaySection({ initialGateways }: GatewaySectionProps) {
       ) : null}
 
       {state === "ready" && gateways.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 px-4 py-6 text-sm text-zinc-500">
-          还没有网关。先新增一个网关并填入模型清单，两个 Agent 才能从中选择模型。
-        </p>
+        <EmptyState message="还没有网关。先新增一个网关并填入模型清单，两个 Agent 才能从中选择模型。" />
       ) : null}
 
       <ul className="space-y-3">
         {gateways.map((gateway) => (
-          <li
-            key={gateway.id}
-            data-testid="gateway-card"
-            data-gateway-name={gateway.name}
-            className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-zinc-900">{gateway.name}</h3>
-                  <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
-                    {findProtocol(gateway.protocol)?.label ?? gateway.protocol}
-                  </span>
+          <li key={gateway.id} data-testid="gateway-card" data-gateway-name={gateway.name}>
+            <Panel bodyClassName="space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-semibold text-zinc-900">{gateway.name}</h3>
+                    <Pill tone="neutral">
+                      {findProtocol(gateway.protocol)?.label ?? gateway.protocol}
+                    </Pill>
+                  </div>
+                  <code className="block break-all text-xs text-zinc-500">{gateway.baseUrl}</code>
                 </div>
-                <code className="block break-all text-xs text-zinc-500">{gateway.baseUrl}</code>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(gateway)}
+                    className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runTest(gateway)}
+                    disabled={testingId === gateway.id}
+                    className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 disabled:text-zinc-400"
+                  >
+                    {testingId === gateway.id ? "测试中…" : "测试连接"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(gateway.id)}
+                    className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600"
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditing(gateway)}
-                  className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void runTest(gateway)}
-                  disabled={testingId === gateway.id}
-                  className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 disabled:text-zinc-400"
-                >
-                  {testingId === gateway.id ? "测试中…" : "测试连接"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(gateway.id)}
-                  className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600"
-                >
-                  删除
-                </button>
+
+              <dl className="grid gap-1 text-sm text-zinc-600 sm:grid-cols-2">
+                <div className="flex items-baseline gap-2">
+                  <dt className="text-zinc-500">API Key</dt>
+                  <dd data-testid="gateway-api-key-mask">
+                    {gateway.apiKeyMask}
+                    <span className="ml-2 text-xs text-zinc-400">
+                      {gateway.hasApiKey ? "已保存" : "未设置"}
+                    </span>
+                  </dd>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <dt className="text-zinc-500">模型数量</dt>
+                  <dd>{gateway.models.length}</dd>
+                </div>
+              </dl>
+
+              <div className="space-y-1">
+                <p className="text-xs text-zinc-500">模型清单</p>
+                {gateway.models.length === 0 ? (
+                  <p className="text-xs text-zinc-400">暂无模型</p>
+                ) : (
+                  <ul className="flex flex-wrap gap-2">
+                    {gateway.models.map((model) => (
+                      <li
+                        key={model.id}
+                        className="flex items-center gap-1 rounded border border-zinc-200 px-2 py-1 text-xs text-zinc-700"
+                      >
+                        <code>{model.modelId}</code>
+                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-600">
+                          {findCapability(model.capability)?.label ?? model.capability}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-            </div>
 
-            <dl className="grid gap-1 text-sm text-zinc-600 sm:grid-cols-2">
-              <div className="flex items-baseline gap-2">
-                <dt className="text-zinc-500">API Key</dt>
-                <dd data-testid="gateway-api-key-mask">
-                  {gateway.apiKeyMask}
-                  <span className="ml-2 text-xs text-zinc-400">
-                    {gateway.hasApiKey ? "已保存" : "未设置"}
-                  </span>
-                </dd>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <dt className="text-zinc-500">模型数量</dt>
-                <dd>{gateway.models.length}</dd>
-              </div>
-            </dl>
+              <p className="text-xs text-zinc-500">{lastTestText(gateway)}</p>
 
-            <div className="space-y-1">
-              <p className="text-xs text-zinc-500">模型清单</p>
-              {gateway.models.length === 0 ? (
-                <p className="text-xs text-zinc-400">暂无模型</p>
-              ) : (
-                <ul className="flex flex-wrap gap-2">
-                  {gateway.models.map((model) => (
-                    <li
-                      key={model.id}
-                      className="flex items-center gap-1 rounded border border-zinc-200 px-2 py-1 text-xs text-zinc-700"
-                    >
-                      <code>{model.modelId}</code>
-                      <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-600">
-                        {findCapability(model.capability)?.label ?? model.capability}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+              {gateway.references.length > 0 ? (
+                <p className="text-xs text-amber-600">
+                  被 {gateway.references.map((reference) => reference.name).join("、")} 引用，不能删除
+                </p>
+              ) : null}
 
-            <p className="text-xs text-zinc-500">{lastTestText(gateway)}</p>
-
-            {gateway.references.length > 0 ? (
-              <p className="text-xs text-amber-600">
-                被 {gateway.references.map((reference) => reference.name).join("、")} 引用，不能删除
-              </p>
-            ) : null}
-
-            {confirmingDelete === gateway.id ? (
-              <div className="flex flex-wrap items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2">
-                <span className="text-sm text-red-700">确认删除网关 {gateway.name}？此操作不可恢复。</span>
-                <button
-                  type="button"
-                  onClick={() => void remove(gateway)}
-                  className="rounded bg-red-600 px-3 py-1.5 text-sm text-white"
-                >
-                  确认删除
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(null)}
-                  className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
-                >
-                  取消
-                </button>
-              </div>
-            ) : null}
+              {confirmingDelete === gateway.id ? (
+                <div className="flex flex-wrap items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2">
+                  <span className="text-sm text-red-700">确认删除网关 {gateway.name}？此操作不可恢复。</span>
+                  <button
+                    type="button"
+                    onClick={() => void remove(gateway)}
+                    className="rounded bg-red-600 px-3 py-1.5 text-sm text-white"
+                  >
+                    确认删除
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(null)}
+                    className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : null}
+            </Panel>
           </li>
         ))}
       </ul>

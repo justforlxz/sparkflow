@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { fetchJson } from "@/components/api";
+import { Panel } from "@/components/ui/Panel";
+import { Pill } from "@/components/ui/Pill";
 import type { AgentConfigView, AgentModelCandidate } from "@/modules/agent-config/view";
 import { findCapability } from "@/modules/gateway/constants";
 
@@ -133,187 +135,178 @@ export function AgentCard({ agent, gateways, candidates, onSaved }: AgentCardPro
   }
 
   return (
-    <article
-      aria-label={agent.label}
-      data-testid={`agent-card-${agent.type}`}
-      className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="space-y-1">
-          <h3 className="text-base font-semibold text-zinc-900">{agent.label}</h3>
-          <p className="max-w-xl text-sm text-zinc-600">{agent.description}</p>
-        </div>
-        <span
-          data-testid="agent-ready-badge"
-          className={
-            agent.ready
-              ? "rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700"
-              : "rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600"
-          }
-        >
-          {agent.ready ? "就绪" : "未就绪"}
-        </span>
-      </div>
-
-      <label className="flex items-center gap-2 text-sm text-zinc-800">
-        <input
-          type="checkbox"
-          checked={draft.enabled}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, enabled: event.target.checked }))
-          }
-        />
-        <span>启用</span>
-      </label>
-
-      <label className="block space-y-1">
-        <span className="text-sm font-medium text-zinc-800">名称</span>
-        <input
-          value={draft.name}
-          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
-        />
-      </label>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-zinc-800">网关</span>
-          <select
-            data-testid="agent-gateway"
-            value={draft.gatewayId}
-            onChange={(event) => changeGateway(event.target.value)}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
-          >
-            <option value="">未绑定网关</option>
-            {gateways.map((gateway) => (
-              <option key={gateway.id} value={gateway.id}>
-                {gateway.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-zinc-800">模型</span>
-          <select
-            data-testid="agent-model"
-            value={draft.modelId}
-            onChange={(event) => setDraft((current) => ({ ...current, modelId: event.target.value }))}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
-          >
-            <option value="">{agent.emptyModelLabel}</option>
-            {modelOptions.map((candidate) => (
-              <option key={`${candidate.gatewayId}:${candidate.modelId}`} value={candidate.modelId}>
-                {candidate.modelId}（{findCapability(candidate.capability)?.label ?? candidate.capability}）
-              </option>
-            ))}
-            {staleModel ? (
-              <option value={staleModel}>{staleModel}（当前绑定，已失效）</option>
-            ) : null}
-          </select>
-        </label>
-      </div>
-
-      <div className="space-y-1 text-sm">
-        <p data-testid="agent-binding-state" className="text-zinc-700">
-          {modelBindingText(agent)}
-        </p>
-        {agent.issues.length > 0 ? (
-          <ul className="space-y-0.5 text-xs text-amber-600">
-            {agent.issues.map((issue) => (
-              <li key={issue}>{issue}</li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-
-      <label className="block space-y-1">
-        <span className="text-sm font-medium text-zinc-800">角色说明</span>
-        <textarea
-          value={draft.role}
-          onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}
-          rows={2}
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
-        />
-      </label>
-
-      <label className="block space-y-1">
-        <span className="text-sm font-medium text-zinc-800">系统提示词</span>
-        <textarea
-          value={draft.systemPrompt}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, systemPrompt: event.target.value }))
-          }
-          rows={3}
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
-        />
-      </label>
-
-      <label className="block space-y-1">
-        <span className="text-sm font-medium text-zinc-800">输出要求</span>
-        <textarea
-          value={draft.outputRequirements}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, outputRequirements: event.target.value }))
-          }
-          rows={2}
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
-        />
-      </label>
-
-      {error ? (
-        <p role="alert" className="text-sm text-red-600">
-          {error}
-        </p>
-      ) : null}
-      {notice ? (
-        <p role="status" className="text-sm text-emerald-700">
-          {notice}
-        </p>
-      ) : null}
-
-      {confirmingReset ? (
-        <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-2">
-          <p className="text-sm text-amber-800">
-            恢复默认会重置名称、角色说明、系统提示词与输出要求，模型绑定保持不变。
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => void reset()}
-              disabled={resetting}
-              className="rounded bg-amber-600 px-3 py-1.5 text-sm text-white disabled:bg-amber-300"
-            >
-              确认恢复
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmingReset(false)}
-              className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
-            >
-              取消
-            </button>
+    <article aria-label={agent.label} data-testid={`agent-card-${agent.type}`}>
+      <Panel bodyClassName="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-zinc-900">{agent.label}</h3>
+            <p className="max-w-xl text-sm text-zinc-600">{agent.description}</p>
           </div>
+          <Pill data-testid="agent-ready-badge" tone={agent.ready ? "published" : "neutral"}>
+            {agent.ready ? "就绪" : "未就绪"}
+          </Pill>
         </div>
-      ) : null}
 
-      <div className="flex flex-wrap gap-2 border-t border-zinc-200 pt-3">
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={saving}
-          className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:bg-zinc-400"
-        >
-          保存
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirmingReset(true)}
-          className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700"
-        >
-          恢复默认
-        </button>
-      </div>
+        <label className="flex items-center gap-2 text-sm text-zinc-800">
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, enabled: event.target.checked }))
+            }
+          />
+          <span>启用</span>
+        </label>
+
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-zinc-800">名称</span>
+          <input
+            value={draft.name}
+            onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-zinc-800">网关</span>
+            <select
+              data-testid="agent-gateway"
+              value={draft.gatewayId}
+              onChange={(event) => changeGateway(event.target.value)}
+              className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+            >
+              <option value="">未绑定网关</option>
+              {gateways.map((gateway) => (
+                <option key={gateway.id} value={gateway.id}>
+                  {gateway.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-zinc-800">模型</span>
+            <select
+              data-testid="agent-model"
+              value={draft.modelId}
+              onChange={(event) => setDraft((current) => ({ ...current, modelId: event.target.value }))}
+              className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+            >
+              <option value="">{agent.emptyModelLabel}</option>
+              {modelOptions.map((candidate) => (
+                <option key={`${candidate.gatewayId}:${candidate.modelId}`} value={candidate.modelId}>
+                  {candidate.modelId}（{findCapability(candidate.capability)?.label ?? candidate.capability}）
+                </option>
+              ))}
+              {staleModel ? (
+                <option value={staleModel}>{staleModel}（当前绑定，已失效）</option>
+              ) : null}
+            </select>
+          </label>
+        </div>
+
+        <div className="space-y-1 text-sm">
+          <p data-testid="agent-binding-state" className="text-zinc-700">
+            {modelBindingText(agent)}
+          </p>
+          {agent.issues.length > 0 ? (
+            <ul className="space-y-0.5 text-xs text-amber-600">
+              {agent.issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-zinc-800">角色说明</span>
+          <textarea
+            value={draft.role}
+            onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}
+            rows={2}
+            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-zinc-800">系统提示词</span>
+          <textarea
+            value={draft.systemPrompt}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, systemPrompt: event.target.value }))
+            }
+            rows={3}
+            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label className="block space-y-1">
+          <span className="text-sm font-medium text-zinc-800">输出要求</span>
+          <textarea
+            value={draft.outputRequirements}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, outputRequirements: event.target.value }))
+            }
+            rows={2}
+            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        {error ? (
+          <p role="alert" className="text-sm text-red-600">
+            {error}
+          </p>
+        ) : null}
+        {notice ? (
+          <p role="status" className="text-sm text-emerald-700">
+            {notice}
+          </p>
+        ) : null}
+
+        {confirmingReset ? (
+          <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-2">
+            <p className="text-sm text-amber-800">
+              恢复默认会重置名称、角色说明、系统提示词与输出要求，模型绑定保持不变。
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void reset()}
+                disabled={resetting}
+                className="rounded bg-amber-600 px-3 py-1.5 text-sm text-white disabled:bg-amber-300"
+              >
+                确认恢复
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingReset(false)}
+                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2 border-t border-zinc-200 pt-3">
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving}
+            className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:bg-zinc-400"
+          >
+            保存
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmingReset(true)}
+            className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700"
+          >
+            恢复默认
+          </button>
+        </div>
+      </Panel>
     </article>
   );
 }

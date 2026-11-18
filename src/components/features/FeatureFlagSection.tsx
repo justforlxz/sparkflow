@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { fetchJson } from "@/components/api";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { Pill } from "@/components/ui/Pill";
 import type { ResolvedFeatureFlag } from "@/modules/feature-flags/resolve";
 
 export interface FeatureFlagSectionProps {
@@ -68,12 +70,9 @@ export function FeatureFlagSection({ initialFeatures }: FeatureFlagSectionProps)
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-zinc-500">{feature.active ? "生效中" : "未生效"}</span>
                 {!feature.implemented ? (
-                  <span
-                    data-testid="feature-unimplemented"
-                    className="rounded bg-zinc-100 px-2 py-0.5 text-zinc-600"
-                  >
+                  <Pill data-testid="feature-unimplemented" tone="neutral">
                     {UNIMPLEMENTED_GROUP}
-                  </span>
+                  </Pill>
                 ) : null}
                 <label className="flex items-center gap-1 text-sm text-zinc-700">
                   <input
@@ -101,11 +100,7 @@ export function FeatureFlagSection({ initialFeatures }: FeatureFlagSectionProps)
         </p>
       </div>
 
-      {error ? (
-        <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorState message={error} /> : null}
       {notice ? (
         <p role="status" className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
           {notice}

@@ -1,5 +1,6 @@
 "use client";
 
+import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { fetchJson } from "@/components/api";
@@ -155,11 +156,7 @@ export function StartCreationDialog({
               </label>
             </div>
 
-            {error ? (
-              <p role="alert" className="text-sm text-red-600">
-                {error}
-              </p>
-            ) : null}
+            {error ? <ErrorState message={error} /> : null}
 
             <div className="flex justify-end gap-3">
               <button

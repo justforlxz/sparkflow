@@ -489,6 +489,47 @@ export async function findResultAsset(
   });
 }
 
+/** 工作台「最近生成的内容」的一行：只取列表要用的字段与第一张生成图片。 */
+export interface RecentResultRow {
+  id: string;
+  collectionId: string;
+  title: string | null;
+  createdAt: Date;
+  firstAssetId: string | null;
+}
+
+const RECENT_RESULT_SELECT = {
+  id: true,
+  collectionId: true,
+  title: true,
+  createdAt: true,
+  assets: { select: { id: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+} as const;
+
+/** 最近生成的内容：按创建时间倒序取前 N 条，不加载全量（docs/prd/09 MUST 2）。 */
+export async function listRecentResults(limit: number): Promise<RecentResultRow[]> {
+  const rows = await getDb().generationResult.findMany({
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: RECENT_RESULT_SELECT,
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    collectionId: row.collectionId,
+    title: row.title,
+    createdAt: row.createdAt,
+    firstAssetId: row.assets[0]?.id ?? null,
+  }));
+}
+
+/**
+ * 「待发布」的结果数：有结果、还没有发布记录（docs/prd/09 MUST 1）。
+ * 这是本模块自己的行上的判定（`publishRecord` 是发布模块在本表上声明的关系）。
+ */
+export async function countResultsWithoutPublishRecord(): Promise<number> {
+  return getDb().generationResult.count({ where: { publishRecord: null } });
+}
+
 export const taskStore: TaskStore = {
   createTask,
   findTask,

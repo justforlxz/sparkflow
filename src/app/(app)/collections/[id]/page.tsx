@@ -2,6 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FeatureGate } from "@/components/FeatureGate";
 import { PublishRecordList } from "@/components/publish/publish-record-list";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Panel } from "@/components/ui/Panel";
+import { Pill } from "@/components/ui/Pill";
+import { COLLECTION_STATUS_TONE } from "@/components/ui/status-tone";
 import { isAppError } from "@/lib/errors";
 import { listCollectionResults } from "@/modules/generation/results";
 import { RESULT_COPY } from "@/modules/generation/constants";
@@ -88,9 +92,9 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold text-zinc-900">{collection.name}</h1>
           <p className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
-            <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+            <Pill tone={COLLECTION_STATUS_TONE[collection.status]}>
               {COLLECTION_STATUS_LABELS[collection.status]}
-            </span>
+            </Pill>
             <span>原图 {collection.assetCount} 张</span>
             <span>创作任务 {collection.taskCount} 个</span>
             <span>结果 {collection.resultCount} 个</span>
@@ -145,9 +149,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           <div className="space-y-3">
             <h2 className="text-base font-semibold text-zinc-900">{COLLECTION_COPY.imagesSection}</h2>
             {collection.assets.length === 0 ? (
-              <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600">
-                {COLLECTION_COPY.emptyAssets}
-              </p>
+              <EmptyState message={COLLECTION_COPY.emptyAssets} />
             ) : (
               <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {collection.assets.map((asset) => (
@@ -168,15 +170,14 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
             )}
           </div>
 
-          <dl className="h-fit rounded-lg border border-zinc-200 bg-white p-4 text-sm">
-            <h2 className="mb-2 text-base font-semibold text-zinc-900">
-              {COLLECTION_COPY.sourceSection}
-            </h2>
-            <SourceRow label="来源平台" value={collection.platform} />
-            <SourceRow label="来源链接" value={collection.sourceUrl} />
-            <SourceRow label="原始标题" value={collection.sourceTitle} />
-            <SourceRow label="原始文案" value={collection.sourceBody} />
-          </dl>
+          <Panel title={COLLECTION_COPY.sourceSection} className="h-fit">
+            <dl className="text-sm">
+              <SourceRow label="来源平台" value={collection.platform} />
+              <SourceRow label="来源链接" value={collection.sourceUrl} />
+              <SourceRow label="原始标题" value={collection.sourceTitle} />
+              <SourceRow label="原始文案" value={collection.sourceBody} />
+            </dl>
+          </Panel>
         </div>
       ) : tab === "published" ? (
         <div className="space-y-3">
@@ -194,14 +195,16 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           ) : null}
         </div>
       ) : results.length === 0 ? (
-        <div className="space-y-3 rounded border border-dashed border-zinc-300 bg-white px-6 py-10 text-center">
-          <p className="text-sm text-zinc-600">{RESULT_COPY.emptyList}</p>
-          <StartCreationDialog
-            collectionId={collection.id}
-            variant="secondary"
-            label={RESULT_COPY.emptyListAction}
-          />
-        </div>
+        <EmptyState
+          message={RESULT_COPY.emptyList}
+          action={
+            <StartCreationDialog
+              collectionId={collection.id}
+              variant="secondary"
+              label={RESULT_COPY.emptyListAction}
+            />
+          }
+        />
       ) : (
         <ResultsPanel
           results={results}

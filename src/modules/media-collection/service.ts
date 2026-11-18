@@ -262,6 +262,28 @@ export async function deleteCollection(id: string): Promise<void> {
   await removeCollectionFiles(id);
 }
 
+/** 资源夹总数：工作台统计与侧栏计数（docs/prd/09 MUST 1、MUST 2），一次聚合查询。 */
+export async function countCollections(): Promise<number> {
+  return repo.countCollections();
+}
+
+/**
+ * 「待创作」：还没有任何生成结果的资源夹数（docs/prd/09 MUST 1）。
+ * 判定落在本模块自己表的 `results` 反向关系上，不读生成结果表的内容。
+ */
+export async function countDraftCollections(): Promise<number> {
+  return repo.countCollectionsWithoutResults();
+}
+
+/** 工作台「最近的媒体资源夹」：最多 `limit` 条，字段与列表页一致（含封面与派生状态）。 */
+export async function listRecentCollections(limit: number): Promise<CollectionSummaryView[]> {
+  const rows = await repo.listRecentCollections(limit);
+  const decorated = await Promise.all(
+    rows.map(async (row) => ({ row, counts: await relatedCounts(row.id) })),
+  );
+  return decorated.map(({ row, counts }) => toSummary(row, counts));
+}
+
 /** 鉴权读取原图字节（AC-01-7）；`width` 有值时当场缩放成缩略图。 */
 export async function getAssetImage(
   collectionId: string,

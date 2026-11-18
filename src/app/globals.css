@@ -1,13 +1,43 @@
 @import "tailwindcss";
 
+/*
+ * 设计变量：颜色只在这里写死字面值，页面与组件一律用变量派生出的 class
+ * （docs/prd/09-dashboard.md MUST NOT、AC-10-9）。
+ *
+ * 状态标签的颜色语义固定（docs/prd/09 SHOULD）：待创作=蓝、生成中=强调色、待发布=橙、已发布=绿。
+ */
 :root {
   --background: #fafafa;
   --foreground: #18181b;
+
+  --status-draft: #1d4ed8;
+  --status-draft-soft: #dbeafe;
+  --status-generating: #6d28d9;
+  --status-generating-soft: #ede9fe;
+  --status-pending-publish: #c2410c;
+  --status-pending-publish-soft: #ffedd5;
+  --status-published: #15803d;
+  --status-published-soft: #dcfce7;
+
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
+  --color-status-draft: var(--status-draft);
+  --color-status-draft-soft: var(--status-draft-soft);
+  --color-status-generating: var(--status-generating);
+  --color-status-generating-soft: var(--status-generating-soft);
+  --color-status-pending-publish: var(--status-pending-publish);
+  --color-status-pending-publish-soft: var(--status-pending-publish-soft);
+  --color-status-published: var(--status-published);
+  --color-status-published-soft: var(--status-published-soft);
+
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
 }
 
 body {

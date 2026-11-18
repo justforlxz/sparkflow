@@ -1,15 +1,24 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { AppNav } from "@/components/shell/AppNav";
+import { SHELL_COPY } from "@/components/shell/navigation";
+import { ToastProvider } from "@/components/ui/Toast";
 import { PATHNAME_HEADER } from "@/lib/session-cookie";
 import { safeNextPath } from "@/modules/auth/redirect";
 import { getCurrentUser } from "@/modules/auth/service";
+import { getNavCounts } from "@/modules/dashboard/service";
 import { logoutAction } from "./actions";
 
 /**
- * 受保护页面共用的外壳：没有有效会话时退回登录页。
- * proxy 已把原路径写进 `PATHNAME_HEADER`，所以「cookie 过期/被撤销」与「根本没有 cookie」
- * 两条路径都带着同样的 `next`。
- * 新增业务页面放进这个 route group 即可自动受保护。
+ * 受保护页面共用的外壳（docs/prd/09-dashboard.md「应用外壳」）：
+ * 左侧固定侧栏（品牌、导航、当前用户区）+ 右侧内容区；没有有效会话时退回登录页。
+ *
+ * - `proxy` 已把原路径写进 `PATHNAME_HEADER`，所以「cookie 过期/被撤销」与「根本没有 cookie」
+ *   两条路径都带着同样的 `next`。
+ * - 导航与计数来自 `NAV_ITEMS` 与 `GET /api/stats` 的同一份数据（`getNavCounts`），
+ *   后续节点新增页面只改 `navigation.ts`，不改这个文件（docs/acceptance.md 第 6 节）。
+ * - 窄屏（< 720px）侧栏折叠成图标模式，导航仍可点击（MUST 3）。
+ * - 新增业务页面放进这个 route group 即可自动受保护。
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
@@ -23,22 +32,55 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     );
   }
 
+  const counts = await getNavCounts();
+
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
-          <span className="text-base font-semibold text-zinc-900">拾光 · AI 内容工坊</span>
-          <div className="flex items-center gap-4 text-sm text-zinc-500">
-            <span>{user.name}</span>
+    <ToastProvider>
+      <div className="min-h-screen bg-zinc-50">
+        <aside
+          aria-label="应用侧栏"
+          className="fixed inset-y-0 left-0 z-30 flex w-16 flex-col border-r border-zinc-200 bg-white min-[720px]:w-60"
+        >
+          <div className="flex items-center justify-center gap-2 px-3 py-4 min-[720px]:justify-start">
+            <span
+              aria-hidden
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-zinc-900 text-sm font-semibold text-white"
+            >
+              拾
+            </span>
+            <span className="hidden text-sm font-semibold text-zinc-900 min-[720px]:inline">
+              {SHELL_COPY.brandFull}
+            </span>
+            <span className="sr-only min-[720px]:hidden">{SHELL_COPY.brandShort}</span>
+          </div>
+
+          <AppNav counts={counts} />
+
+          <div className="mt-auto space-y-2 border-t border-zinc-200 px-3 py-4 text-sm">
+            <p className="hidden text-xs text-zinc-500 min-[720px]:block">
+              {SHELL_COPY.currentUserLabel}
+            </p>
+            <p className="truncate text-center font-medium text-zinc-900 min-[720px]:text-left">
+              {user.name}
+            </p>
             <form action={logoutAction}>
-              <button type="submit" className="hover:text-zinc-900">
-                退出登录
+              <button
+                type="submit"
+                className="w-full rounded border border-zinc-300 px-2 py-1.5 text-zinc-700 hover:bg-zinc-100"
+              >
+                <span className="hidden min-[720px]:inline">{SHELL_COPY.logout}</span>
+                <span className="min-[720px]:hidden">{SHELL_COPY.logoutShort}</span>
               </button>
             </form>
           </div>
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">{children}</main>
-    </div>
+        </aside>
+
+        <main className="ml-16 min-[720px]:ml-60">
+          <div className="mx-auto w-full max-w-5xl px-4 py-8 min-[720px]:px-6 min-[720px]:py-10">
+            {children}
+          </div>
+        </main>
+      </div>
+    </ToastProvider>
   );
 }

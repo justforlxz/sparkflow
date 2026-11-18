@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Panel } from "@/components/ui/Panel";
+import { Pill } from "@/components/ui/Pill";
+import { STAGE_STATUS_TONE, TASK_STATUS_TONE } from "@/components/ui/status-tone";
 import { isAppError } from "@/lib/errors";
-import { STAGE_NAMES, TASK_COPY } from "@/modules/generation/constants";
+import { STAGE_NAMES, TASK_COPY, type StageStatus } from "@/modules/generation/constants";
 import { getTask } from "@/modules/generation/service";
 import type { TaskDetailView } from "@/modules/generation/view";
 
@@ -49,9 +52,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold text-zinc-900">{task.collectionName}</h1>
           <p className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
-            <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
-              {task.statusLabel}
-            </span>
+            <Pill tone={TASK_STATUS_TONE[task.status]}>{task.statusLabel}</Pill>
             <span>
               {TASK_COPY.createdAtLabel} {formatTime(task.createdAt)}
             </span>
@@ -72,60 +73,58 @@ export default async function TaskDetailPage({ params }: PageProps) {
             {STAGE_NAMES.map((name) => {
               const stage = task.stages[name];
               return (
-                <li
-                  key={name}
-                  data-testid={`stage-${name}-card`}
-                  className="space-y-1 rounded-lg border border-zinc-200 bg-white p-4 text-sm"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium text-zinc-900">{stage.label}</span>
-                    <span
-                      data-testid={`stage-${name}-status`}
-                      className={stage.status === "failed" ? "text-red-600" : "text-zinc-700"}
-                    >
-                      {stage.statusLabel}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-500">
-                    {TASK_COPY.stageAttemptsLabel}{" "}
-                    <span data-testid={`stage-${name}-attempts`}>{stage.attempts}</span> 次 ·{" "}
-                    {TASK_COPY.stageFinishedLabel} {formatTime(stage.finishedAt)}
-                  </p>
-                  {stage.error ? (
-                    <p data-testid={`stage-${name}-error`} className="text-xs text-red-600">
-                      {TASK_COPY.stageErrorLabel}：{stage.error.message}
+                <li key={name} data-testid={`stage-${name}-card`}>
+                  <Panel bodyClassName="space-y-1 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium text-zinc-900">{stage.label}</span>
+                      <span data-testid={`stage-${name}-status`}>
+                        <Pill tone={STAGE_STATUS_TONE[stage.status as StageStatus]}>
+                          {stage.statusLabel}
+                        </Pill>
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-500">
+                      {TASK_COPY.stageAttemptsLabel}{" "}
+                      <span data-testid={`stage-${name}-attempts`}>{stage.attempts}</span> 次 ·{" "}
+                      {TASK_COPY.stageFinishedLabel} {formatTime(stage.finishedAt)}
                     </p>
-                  ) : null}
+                    {stage.error ? (
+                      <p data-testid={`stage-${name}-error`} className="text-xs text-red-600">
+                        {TASK_COPY.stageErrorLabel}：{stage.error.message}
+                      </p>
+                    ) : null}
+                  </Panel>
                 </li>
               );
             })}
           </ul>
         </div>
 
-        <dl className="h-fit rounded-lg border border-zinc-200 bg-white p-4 text-sm">
-          <h2 className="mb-2 text-base font-semibold text-zinc-900">{TASK_COPY.paramsLabel}</h2>
-          <ParameterRow label={TASK_COPY.visualStyleLabel} value={task.visualStyleLabel} />
-          <ParameterRow label={TASK_COPY.copyStyleLabel} value={task.copyStyleLabel} />
-          <ParameterRow label={TASK_COPY.imageCountLabel} value={`${task.imageCount} 张`} />
-          <ParameterRow
-            label={TASK_COPY.extraPromptLabel}
-            value={task.extraPrompt ?? "未填写"}
-          />
-        </dl>
+        <Panel title={TASK_COPY.paramsLabel} className="h-fit">
+          <dl className="text-sm">
+            <ParameterRow label={TASK_COPY.visualStyleLabel} value={task.visualStyleLabel} />
+            <ParameterRow label={TASK_COPY.copyStyleLabel} value={task.copyStyleLabel} />
+            <ParameterRow label={TASK_COPY.imageCountLabel} value={`${task.imageCount} 张`} />
+            <ParameterRow
+              label={TASK_COPY.extraPromptLabel}
+              value={task.extraPrompt ?? "未填写"}
+            />
+          </dl>
+        </Panel>
       </div>
 
       <div className="space-y-3">
         <h2 className="text-base font-semibold text-zinc-900">{TASK_COPY.agentSection}</h2>
         <div className="grid gap-4 lg:grid-cols-2">
           {(["image", "copy"] as const).map((type) => (
-            <div key={type} className="space-y-1 rounded-lg border border-zinc-200 bg-white p-4 text-sm">
+            <Panel key={type}>
               <p className="font-medium text-zinc-900">
                 {type === "image" ? "图片 Agent" : "文案 Agent"}
               </p>
               <p className="whitespace-pre-wrap break-words text-xs text-zinc-600">
                 {task.agents[type].systemPrompt}
               </p>
-            </div>
+            </Panel>
           ))}
         </div>
       </div>

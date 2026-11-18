@@ -9,6 +9,8 @@
 import { AppError } from "@/lib/errors";
 import { collectionExists } from "@/modules/media-collection/service";
 import { scaleImage } from "@/modules/media-collection/thumbnails";
+// 只依赖发布模块的同步函数（不经过它的 service），避免创作结果与发布两个模块互相 import。
+import { syncPublishedTitle } from "@/modules/publish/sync";
 import * as repo from "./repo";
 import type { UpdateResultInput } from "./schema";
 import { readGeneratedFile, removeResultFiles } from "./storage";
@@ -29,6 +31,16 @@ export async function listCollectionResults(collectionId: string): Promise<Resul
   return rows.map(({ result, stages }) => toResultView(result, stages));
 }
 
+/**
+ * 单个结果的视图（发布模块用）：发布准备要读当前标题 / 正文 / 标签与图片清单，
+ * 发布记录要带所属资源夹；这些字段只通过这里给出，不读本模块的表。
+ */
+export async function getResult(resultId: string): Promise<ResultView> {
+  const record = await repo.findResultWithStages(resultId);
+  if (!record) throw AppError.notFound("创作结果不存在");
+  return toResultView(record.result, record.stages);
+}
+
 /** 只把请求里真正给出的字段交给下游：`undefined` 表示「这一项不改」。 */
 function toPatch(input: UpdateResultInput): Partial<repo.ResultFieldsPatch> {
   return {
@@ -42,23 +54,28 @@ function toPatch(input: UpdateResultInput): Partial<repo.ResultFieldsPatch> {
 /**
  * 编辑结果（MUST 3）：原地更新，不改动任务快照与原始素材。
  *
- * docs/prd/07 MUST 5 还要求「已有发布记录时同步更新发布记录的标题快照」：发布表由 N9 引入
- * （`publish_record`），本节点落地时库里没有这张表，因此这里没有可同步的对象。
- * N9 接入时在 `repo.updateResultFields` 之后调用发布模块的服务函数即可，编辑入口不用改。
+ * docs/prd/07 MUST 5 还要求「已有发布记录时同步更新发布记录的标题快照」：改标题后调用发布模块的
+ * 同步函数，没有记录时它什么都不写（见 `publish/sync.ts`）。
  */
 export async function updateResult(
   resultId: string,
   input: UpdateResultInput,
 ): Promise<ResultView> {
-  const updated = await repo.updateResultFields(resultId, toPatch(input));
+  const patch = toPatch(input);
+  const updated = await repo.updateResultFields(resultId, patch);
   if (!updated) throw AppError.notFound("创作结果不存在");
+
+  // 标题改了要同步发布记录的标题快照；没有记录时同步函数不写任何东西。
+  if (patch.title !== undefined) await syncPublishedTitle(resultId, patch.title);
 
   const record = await repo.findResultWithStages(resultId);
   if (!record) throw AppError.notFound("创作结果不存在");
   return toResultView(record.result, record.stages);
 }
 
-/** 删除整组结果（MUST 4）：记录随外键级联删掉生成图片行，磁盘目录尽力清理。 */
+/**
+ * 删除整组结果（MUST 4）：记录随外键级联删掉生成图片行与发布记录，磁盘目录尽力清理。
+ */
 export async function deleteResult(resultId: string): Promise<void> {
   if (!(await repo.deleteResult(resultId))) throw AppError.notFound("创作结果不存在");
   await removeResultFiles(resultId);

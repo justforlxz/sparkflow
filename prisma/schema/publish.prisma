@@ -1,0 +1,26 @@
+// 发布记录（docs/prd/08-publish.md「数据与接口」、GLOSSARY「发布记录」）。
+//
+// 一条记录只表达「用户手动确认这条结果已经发布过了」，不代表系统对接了小红书：
+// 平台、发布日期、标题快照与采用的图片都由用户在这次操作里给出，系统不推断发布成功。
+//
+// `resultId` 唯一：同一结果重复标记只更新这一行（AC-08-5），不会产生第二条。
+// `titleSnapshot` 保留当时的标题，之后编辑结果也能看出发布时用的标题。
+// `collectionId` 是冗余列：资源夹内列表与按资源夹筛选都靠它，且删除资源夹时与结果一起级联
+// （docs/prd/01 MUST 5、docs/prd/00-overview.md 全局规则 7）。
+model PublishRecord {
+  id               String           @id @default(uuid())
+  resultId         String           @unique @map("result_id")
+  collectionId     String           @map("collection_id")
+  platform         String
+  publishedAt      DateTime         @map("published_at")
+  titleSnapshot    String           @map("title_snapshot")
+  selectedAssetIds String[]         @default([]) @map("selected_asset_ids")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  result           GenerationResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  collection       MediaCollection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  // 发布记录按发布时间倒序列出，并按资源夹筛选（docs/prd/08 SHOULD）。
+  @@index([collectionId, publishedAt])
+  @@map("publish_record")
+}

@@ -6,7 +6,11 @@ export interface FeatureGateProps {
   feature: FeatureFlagKey;
   /** 关闭时按钮上显示的文字；默认用注册表里的功能名称。 */
   label?: string;
-  children: React.ReactNode;
+  /**
+   * 开关打开时渲染的内容。可以省略：本版本有两个「界面保留、能力不做」的入口
+   * （分享到小红书），它们永远走关闭分支，只渲染不可操作的占位按钮。
+   */
+  children?: React.ReactNode;
 }
 
 /**

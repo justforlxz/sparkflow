@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { FeatureGate } from "@/components/FeatureGate";
+import { PublishRecordList } from "@/components/publish/publish-record-list";
 import { isAppError } from "@/lib/errors";
 import { listCollectionResults } from "@/modules/generation/results";
 import { RESULT_COPY } from "@/modules/generation/constants";
-import { COLLECTION_COPY, COLLECTION_STATUS_LABELS } from "@/modules/media-collection/constants";
+import { COLLECTION_COPY, COLLECTION_STATUS_LABELS, MAX_PAGE_SIZE } from "@/modules/media-collection/constants";
 import { getCollection, type CollectionDetailView } from "@/modules/media-collection/service";
+import { PUBLISH_COPY } from "@/modules/publish/constants";
+import { getPublishedResultIds, listPublishRecords } from "@/modules/publish/service";
 import { CollectionDialog } from "../collection-dialog";
 import { DeleteCollectionButton } from "./delete-collection-button";
 import { ResultsPanel } from "./results-panel";
@@ -21,13 +25,16 @@ interface PageProps {
 const TABS = {
   assets: COLLECTION_COPY.assetTab,
   results: RESULT_COPY.tabLabel,
+  published: PUBLISH_COPY.collectionTab,
 } as const;
 
 type TabKey = keyof typeof TABS;
 
 function resolveTab(value: string | string[] | undefined): TabKey {
   const first = Array.isArray(value) ? value[0] : value;
-  return first === "results" ? "results" : "assets";
+  if (first === "results") return "results";
+  if (first === "published") return "published";
+  return "assets";
 }
 
 async function loadCollection(id: string): Promise<CollectionDetailView> {
@@ -62,6 +69,14 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
   const collection = await loadCollection(id);
   const tab = resolveTab((await searchParams).tab);
   const results = tab === "results" ? await listCollectionResults(id) : [];
+  // 结果页签要展示每条结果的发布状态：只查 id，不在前端推断（docs/prd/07 MUST NOT）。
+  const publishedResultIds =
+    tab === "results" ? await getPublishedResultIds(results.map((result) => result.id)) : [];
+  // 「发布记录」页签与全局 /published 页是同一个 service 的同一份数据。
+  const publishedRecords =
+    tab === "published"
+      ? await listPublishRecords({ collectionId: id, page: 1, pageSize: MAX_PAGE_SIZE })
+      : null;
 
   return (
     <section className="space-y-6">
@@ -116,6 +131,13 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
         >
           {TABS.results}
         </Link>
+        <Link
+          href={`/collections/${collection.id}?tab=published`}
+          aria-current={tab === "published" ? "page" : undefined}
+          className={tabClass(tab === "published")}
+        >
+          {TABS.published}
+        </Link>
       </nav>
 
       {tab === "assets" ? (
@@ -156,6 +178,21 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
             <SourceRow label="原始文案" value={collection.sourceBody} />
           </dl>
         </div>
+      ) : tab === "published" ? (
+        <div className="space-y-3">
+          <PublishRecordList
+            records={publishedRecords?.items ?? []}
+            emptyText={PUBLISH_COPY.emptyCollection}
+          />
+          {publishedRecords && publishedRecords.total > publishedRecords.items.length ? (
+            <Link
+              href={`/published?collectionId=${collection.id}`}
+              className="text-sm text-zinc-600 underline hover:text-zinc-900"
+            >
+              {PUBLISH_COPY.pageTitle}
+            </Link>
+          ) : null}
+        </div>
       ) : results.length === 0 ? (
         <div className="space-y-3 rounded border border-dashed border-zinc-300 bg-white px-6 py-10 text-center">
           <p className="text-sm text-zinc-600">{RESULT_COPY.emptyList}</p>
@@ -166,7 +203,12 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           />
         </div>
       ) : (
-        <ResultsPanel results={results} />
+        <ResultsPanel
+          results={results}
+          publishedResultIds={publishedResultIds}
+          // 分享入口由服务端开关决定渲染成什么，客户端组件里不判断功能是否实现（docs/prd/10）。
+          shareEntry={<FeatureGate feature="share-to-xiaohongshu" />}
+        />
       )}
     </section>
   );

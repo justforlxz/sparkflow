@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
+import { countCollectionUsage } from "@/modules/generation/counts";
 import { DEFAULT_THUMBNAIL_WIDTH, type CollectionStatus } from "./constants";
 import { readAssetFile, removeCollectionFiles, writeAssetBytes } from "./files";
 import * as repo from "./repo";
@@ -62,16 +63,21 @@ export interface AssetBytes {
 }
 
 /**
- * 关联记录计数（AC-02-10 的判定点）。
+ * 关联记录计数（AC-02-10 的判定点、列表的派生状态）。
  *
- * 创作任务、创作结果、发布记录的表分别由 N5、N8、N9 引入；在那之前库里确实没有这些行，
- * 计数为 0 —— 这是当前真实状态，不是占位数据。那些节点接入后，这里改为调用
- * generation / publish 模块导出的 service，不直接查它们的表（AGENTS.md 硬性规则 2）。
+ * 任务与结果的数量来自创作任务模块的 service，不直接查它的表（AGENTS.md 硬性规则 2）。
+ * 「运行中任务」指派生状态为 running 的任务：有阶段排队或执行中都算，因为此时改图或删夹会
+ * 影响正在进行的任务。
+ * 发布记录由发布模块（N9）引入，接入前库里确实没有这些行，计数为 0 —— 这是当前真实状态。
  */
 async function relatedCounts(collectionId: string): Promise<CollectionCounts> {
-  // 接入前这里没有查询可发；保留形参是为了那些节点接进来时不用改调用点。
-  void collectionId;
-  return { runningTasks: 0, tasks: 0, results: 0, published: 0 };
+  const usage = await countCollectionUsage(collectionId);
+  return {
+    runningTasks: usage.activeTasks,
+    tasks: usage.tasks,
+    results: usage.results,
+    published: 0,
+  };
 }
 
 export function assetFileUrl(collectionId: string, assetId: string, width?: number): string {

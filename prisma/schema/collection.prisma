@@ -2,7 +2,8 @@
 //
 // 任务、结果、发布记录分属「创作任务」「任务与结果」「发布」三个模块，它们的表由各自节点引入。
 // 那些模块在自己的 schema 里用 `collectionId` 外键并声明 `onDelete: Cascade`，这样删除资源夹时
-// 数据库会一并删掉它们（docs/prd/00-overview.md 全局规则 7）。本文件不声明跨模块关系。
+// 数据库会一并删掉它们（docs/prd/00-overview.md 全局规则 7）。本文件只保留这些外键的反向字段，
+// 关系本身（字段、`onDelete`）在各自模块的 schema 里声明，这里不写它们的列。
 model MediaCollection {
   id          String   @id @default(uuid())
   name        String
@@ -13,6 +14,9 @@ model MediaCollection {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   assets      MediaAsset[]
+  // 以下两组反向关系由创作任务模块（prisma/schema/generation.prisma）声明，删除资源夹时级联。
+  tasks       GenerationTask[]
+  results     GenerationResult[]
 
   @@map("media_collection")
 }

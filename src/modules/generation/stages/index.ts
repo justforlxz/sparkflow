@@ -5,10 +5,11 @@
  *
  * - 生图阶段（N6，`src/modules/image-generation/`）：处理器在两种适配器下都是同一个，
  *   差别只在于它内部按 `GENERATION_ADAPTER` 选 `MagpieMcpImageGenerator` 或 `MockImageGenerator`；
- * - 文案阶段（N7，`src/modules/copy-generation/`）：还没接入，`real` 下没有处理器时阶段以
- *   `STAGE_HANDLER_MISSING` 失败 —— 这是当前真实状态，不用 mock 顶替。
+ * - 文案阶段（N7，`src/modules/copy-generation/`）：`real` 下注册真实处理器；
+ *   `mock` 下由 `mockCopyStage` 顶替，不调用任何上游（docs/acceptance.md 第 3 节）。
  */
 import { getEnv } from "@/lib/env";
+import { registerCopyGenerationStages } from "@/modules/copy-generation/service";
 import { createImageStage } from "@/modules/image-generation/stage";
 import { createStageRegistry, type StageRegistry } from "../registry";
 import { mockCopyStage } from "./mock";
@@ -21,6 +22,8 @@ export function defaultStageRegistry(): StageRegistry {
 
   if (getEnv().GENERATION_ADAPTER === "mock") {
     registry.register(mockCopyStage);
+  } else {
+    registerCopyGenerationStages(registry);
   }
 
   return registry;

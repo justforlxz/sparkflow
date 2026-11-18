@@ -102,7 +102,7 @@ describe("编辑时密钥留空保留原密钥（MUST 2、AC-02-3）", () => {
   it("apiKey 为空串时不传加密字段", async () => {
     vi.mocked(repo.findGateway).mockResolvedValue(record());
 
-    await service.updateGateway("gw-1", { name: "改名", apiKey: "" });
+    await service.updateGateway("gw-1", { name: "改名", apiKey: "" }, async () => []);
 
     const input = vi.mocked(repo.updateGatewayRecord).mock.calls[0][1];
     expect(input).toEqual({ name: "改名" });
@@ -122,7 +122,7 @@ describe("编辑时密钥留空保留原密钥（MUST 2、AC-02-3）", () => {
   it("重新填入密钥时写入新的密文", async () => {
     vi.mocked(repo.findGateway).mockResolvedValue(record());
 
-    await service.updateGateway("gw-1", { apiKey: NEW_KEY });
+    await service.updateGateway("gw-1", { apiKey: NEW_KEY }, async () => []);
 
     const input = vi.mocked(repo.updateGatewayRecord).mock.calls[0][1];
     expect(input.encryptedApiKey).toBeDefined();

@@ -295,9 +295,42 @@ test("AC-02-3 未重输密钥的编辑保存后，原密钥仍可用（连接测
   }
 });
 
-// 引用检查的实现属于 N4（Agent 配置表在下一个节点）：本节点只按契约留出服务函数，
-// 409 行为由 src/modules/gateway/service.test.ts 的单元测试覆盖；N4 完成后补这条 e2e。
-test.fixme("AC-02-4 删除被引用的网关返回 409 并指出引用方", async () => {});
+// 引用方是 Agent 配置（N4 交付的目标）：绑定到图片 Agent 后网关不能删。
+// 图片 Agent 的模型可以为空，所以绑定与解绑都能经接口完成，测试不留下残留。
+test("AC-02-4 删除被引用的网关返回 409 并指出引用方", async ({ request }) => {
+  await ensureAccount(request);
+  const gateway = await createGateway(request, { name: uniqueName("e2e-in-use") });
+
+  try {
+    await addModel(request, gateway.id, "gpt-image-1", "image");
+
+    const bound = await request.patch("/api/agents/image", {
+      data: { gatewayId: gateway.id, gatewayModelId: "gpt-image-1" },
+    });
+    expect(bound.status()).toBe(200);
+
+    const blocked = await request.delete(`/api/gateways/${gateway.id}`);
+    expect(blocked.status()).toBe(409);
+
+    const body = (await blocked.json()) as {
+      error: { message: string; details?: { code: string } };
+    };
+    expect(body.error.details?.code).toBe("GATEWAY_IN_USE");
+    expect(body.error.message).toContain("图片创作 Agent");
+
+    // 解除绑定后可以删除
+    const unbound = await request.patch("/api/agents/image", {
+      data: { gatewayId: null, gatewayModelId: null },
+    });
+    expect(unbound.status()).toBe(200);
+
+    const removed = await request.delete(`/api/gateways/${gateway.id}`);
+    expect(removed.status()).toBe(200);
+  } finally {
+    await request.patch("/api/agents/image", { data: { gatewayId: null, gatewayModelId: null } });
+    await request.delete(`/api/gateways/${gateway.id}`);
+  }
+});
 
 test("AC-02-5 text 能力的模型不出现在图片 Agent 候选里", async ({ request }) => {
   await ensureAccount(request);

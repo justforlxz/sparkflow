@@ -1,0 +1,21 @@
+// 两份固定 Agent 配置（docs/prd/03-agent-config.md MUST 1）。
+// `type` 只有 image / copy 两种，由迁移预置两条记录；用户只能改，不能新增或删除类型。
+//
+// `gatewayId` 允许为空：图片 Agent 可以只用网关侧默认模型，文案 Agent 在用户配置完成前也未绑定
+// （迁移预置时还没有网关）。是否可用由 `src/modules/agent-config/readiness.ts` 判定，不靠列约束。
+// `gatewayModelId` 存的是 `gateway_model.model_id`（发给上游的模型名），不是该表的行主键。
+model AgentConfig {
+  type               String   @id
+  enabled            Boolean  @default(true)
+  name               String
+  gatewayId          String?  @map("gateway_id")
+  gatewayModelId     String?  @map("gateway_model_id")
+  role               String
+  systemPrompt       String   @map("system_prompt")
+  outputRequirements String   @map("output_requirements")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  // 网关被删除时解绑，配置留存为「绑定已失效」，不静默回退到别的网关（docs/prd/03 SHOULD）。
+  gateway            Gateway? @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+
+  @@map("agent_config")
+}

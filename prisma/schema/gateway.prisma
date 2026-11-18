@@ -15,6 +15,8 @@ model Gateway {
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
   models          GatewayModel[]
+  // Agent 配置对网关的引用（docs/prd/03-agent-config.md），被引用时网关不能删除。
+  agentConfigs    AgentConfig[]
 
   @@map("gateway")
 }

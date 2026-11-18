@@ -1,10 +1,11 @@
 /**
  * 「这个网关被谁引用」的查询点（docs/prd/02-model-gateway.md MUST 3）。
  *
- * 引用方是 Agent 配置（`docs/prd/03-agent-config.md`），属于下一个节点（N4）的表。
- * 本节点按契约先把查询点留在这里：N4 实现时只改这一处，`service.deleteGateway` 不动。
- * 在没有引用方的阶段，删除网关不会被拦截。
+ * 引用方是 Agent 配置（`docs/prd/03-agent-config.md`）。查询实现在 agent-config 模块：
+ * 那是它自己的表，由它自己查；本文件只做转接，`service.deleteGateway` 因此不必知道引用方的结构。
  */
+import { findAgentReferencesForGateway } from "@/modules/agent-config/references";
+
 export interface GatewayReference {
   /** 引用来源的类别，例如 `agent`，用于界面分类展示。 */
   source: string;
@@ -14,4 +15,5 @@ export interface GatewayReference {
 
 export type GatewayReferenceLookup = (gatewayId: string) => Promise<GatewayReference[]>;
 
-export const findGatewayReferences: GatewayReferenceLookup = async () => [];
+export const findGatewayReferences: GatewayReferenceLookup = (gatewayId) =>
+  findAgentReferencesForGateway(gatewayId);

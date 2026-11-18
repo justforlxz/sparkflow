@@ -3,6 +3,10 @@
  * 状态是派生值（`derive.ts`），这里连同中文标签一起给出，界面不再自己判断。
  */
 import { AppError } from "@/lib/errors";
+// 视觉方向与文案风格的中文名只从各自模块的登记表取，界面与本文件都不再写一份枚举。
+import { findCopyStyle } from "@/modules/copy-generation/styles";
+import { visualStyleLabel } from "@/modules/image-generation/styles";
+import { DEFAULT_THUMBNAIL_WIDTH } from "@/modules/media-collection/constants";
 import {
   STAGE_LABELS,
   STAGE_STATUS_LABELS,
@@ -36,25 +40,37 @@ export interface ResultAssetView {
   fileName: string;
   mimeType: string;
   sortOrder: number;
+  /** 鉴权读取生成图片的地址，可直接渲染（与资源夹原图同一个约定）。 */
+  url: string;
+  /** 网格统一走缩略图参数（docs/prd/07 SHOULD）。 */
+  thumbnailUrl: string;
 }
 
 export interface ResultView {
   id: string;
+  /** 结果所属任务：重试失败阶段要用它（ADR 0005）。 */
+  taskId: string;
   title: string | null;
   body: string | null;
   tags: string[];
   visualStyle: string;
+  visualStyleLabel: string;
   createdAt: string;
   assets: ResultAssetView[];
+  /** 文案阶段失败：文案区域显示附加提示与重试入口，有内容时照常展示（AC-08-11）。 */
+  copyFailed: boolean;
 }
 
 export interface TaskSummaryView {
   id: string;
   collectionId: string;
+  collectionName: string;
   status: TaskStatus;
   statusLabel: string;
   visualStyle: string;
+  visualStyleLabel: string;
   copyStyle: string;
+  copyStyleLabel: string;
   imageCount: number;
   extraPrompt: string | null;
   createdAt: string;
@@ -67,6 +83,12 @@ export interface TaskDetailView extends TaskSummaryView {
   agents: TaskAgentSnapshots;
   resultId: string | null;
   result: ResultView | null;
+}
+
+/** 生成图片的鉴权读取地址（docs/architecture.md「文件」）。 */
+export function generatedAssetUrl(resultId: string, assetId: string, width?: number): string {
+  const base = `/api/files/generated/${resultId}/${assetId}`;
+  return width ? `${base}?w=${width}` : base;
 }
 
 function toStageView(stage: StageRecord): StageView {
@@ -94,15 +116,19 @@ function toStageMap(stages: readonly StageRecord[]): Record<StageName, StageView
   return Object.fromEntries(entries) as Record<StageName, StageView>;
 }
 
-function toSummary({ task, stages }: TaskWithStages): TaskSummaryView {
+function toSummary(record: TaskWithStages, collectionName: string): TaskSummaryView {
+  const { task, stages } = record;
   const status = deriveTaskStatus(stages);
   return {
     id: task.id,
     collectionId: task.collectionId,
+    collectionName,
     status,
     statusLabel: TASK_STATUS_LABELS[status],
     visualStyle: task.visualStyle,
+    visualStyleLabel: visualStyleLabel(task.visualStyle),
     copyStyle: task.copyStyle,
+    copyStyleLabel: findCopyStyle(task.copyStyle)?.label ?? task.copyStyle,
     imageCount: task.imageCount,
     extraPrompt: task.extraPrompt,
     createdAt: task.createdAt.toISOString(),
@@ -110,23 +136,36 @@ function toSummary({ task, stages }: TaskWithStages): TaskSummaryView {
   };
 }
 
-export function toTaskSummaryView(record: TaskWithStages): TaskSummaryView {
-  return toSummary(record);
+export function toTaskSummaryView(
+  record: TaskWithStages,
+  collectionName: string,
+): TaskSummaryView {
+  return toSummary(record, collectionName);
 }
 
-export function toResultView(result: ResultRecord): ResultView {
+/** 结果视图要带上任务的两条阶段：文案是否失败、能否重试都由它派生。 */
+export function toResultView(
+  result: ResultRecord,
+  stages: readonly StageRecord[],
+): ResultView {
+  const copyFailed = stages.some((stage) => stage.stage === "copy" && stage.status === "failed");
   return {
     id: result.id,
+    taskId: result.taskId,
     title: result.title,
     body: result.body,
     tags: result.tags,
     visualStyle: result.visualStyle,
+    visualStyleLabel: visualStyleLabel(result.visualStyle),
     createdAt: result.createdAt.toISOString(),
+    copyFailed,
     assets: result.assets.map((asset) => ({
       id: asset.id,
       fileName: asset.fileName,
       mimeType: asset.mimeType,
       sortOrder: asset.sortOrder,
+      url: generatedAssetUrl(result.id, asset.id),
+      thumbnailUrl: generatedAssetUrl(result.id, asset.id, DEFAULT_THUMBNAIL_WIDTH),
     })),
   };
 }
@@ -134,11 +173,12 @@ export function toResultView(result: ResultRecord): ResultView {
 export function toTaskDetailView(
   record: TaskWithStages,
   result: ResultRecord | null,
+  collectionName: string,
 ): TaskDetailView {
   return {
-    ...toSummary(record),
+    ...toSummary(record, collectionName),
     agents: record.task.agentSnapshot,
     resultId: result?.id ?? null,
-    result: result ? toResultView(result) : null,
+    result: result ? toResultView(result, record.stages) : null,
   };
 }

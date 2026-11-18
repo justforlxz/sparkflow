@@ -42,6 +42,21 @@ export interface NewAsset {
   size: number;
 }
 
+/**
+ * 批量取资源夹名称：创作任务列表要显示资源夹名，只能经本模块的 service 取
+ * （AGENTS.md 硬性规则 2：不直接查别的模块的表）。
+ */
+export async function findCollectionNames(
+  ids: readonly string[],
+): Promise<Record<string, string>> {
+  if (ids.length === 0) return {};
+  const rows = await getDb().mediaCollection.findMany({
+    where: { id: { in: [...ids] } },
+    select: { id: true, name: true },
+  });
+  return Object.fromEntries(rows.map((row) => [row.id, row.name]));
+}
+
 const ASSET_SELECT = {
   id: true,
   collectionId: true,

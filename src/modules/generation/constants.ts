@@ -82,3 +82,88 @@ export const MAX_ERROR_MESSAGE_LENGTH = 1000;
 
 /** 生成图片存储子目录（docs/architecture.md「文件」）。 */
 export const GENERATED_STORAGE_PREFIX = "generated-assets";
+
+/**
+ * 编辑结果的输入护栏（docs/prd/07 MUST 3）。标签数量与文案解析保持同一口径
+ * （docs/prd/06：最多 10 个）。
+ */
+export const MAX_RESULT_TITLE_LENGTH = 200;
+export const MAX_RESULT_BODY_LENGTH = 5000;
+export const MAX_RESULT_TAG_LENGTH = 30;
+
+/** 任务列表与任务详情页的文案（AGENTS.md 硬性规则 1：文案集中在这里）。 */
+export const TASK_COPY = {
+  listTitle: "创作任务",
+  listSubtitle: "每次创作的两个阶段各自的状态、失败原因与重试入口都在这里。",
+  emptyList: "还没有创作任务。创建一个资源夹，然后开始 AI 创作。",
+  listAction: "查看资源夹",
+  detailAction: "详情",
+  viewResultAction: "查看结果",
+  /** 结果为 `partial`（文案阶段失败）时结果入口的文案：图片确实生成了。 */
+  viewImagesAction: "查看生成图片",
+  backToList: "← 创作任务",
+  retryAction: "重试",
+  regenerateAction: "重新生成",
+  regenerateConfirmTitle: "重新生成？",
+  regenerateConfirmBody: "将重新执行生图与文案两个阶段并产生新结果，旧任务与旧结果会保留。",
+  confirmAction: "确认重新生成",
+  cancelAction: "取消",
+  createdAtLabel: "创建时间",
+  paramsLabel: "创作参数",
+  imageCountLabel: "目标张数",
+  visualStyleLabel: "视觉方向",
+  copyStyleLabel: "文案风格",
+  extraPromptLabel: "补充要求",
+  stageSection: "执行阶段",
+  stageAttemptsLabel: "执行次数",
+  stageErrorLabel: "失败原因",
+  stageFinishedLabel: "完成时间",
+  agentSection: "Agent 配置快照",
+  noResult: "该任务还没有生成结果。",
+  retryFailed: "重试失败",
+  regenerateFailed: "重新生成失败",
+  refreshFailed: "刷新任务状态失败",
+} as const;
+
+/** 结果页签与结果编辑的文案（docs/prd/07-results.md）。 */
+export const RESULT_COPY = {
+  tabLabel: "AI 创作结果",
+  emptyList: "这个资源夹还没有创作结果。",
+  emptyListAction: "开始 AI 创作",
+  copyFailedHint: "文案阶段失败，可重试或手动补写",
+  retryAction: "重试文案阶段",
+  editAction: "编辑",
+  deleteAction: "删除",
+  saveAction: "保存",
+  cancelAction: "取消",
+  editTitle: "编辑结果",
+  deleteConfirmTitle: "删除这个结果？",
+  deleteConfirmBody: "该结果的发布记录会一并删除，原始素材不受影响。",
+  confirmDelete: "确认删除",
+  titleLabel: "标题",
+  bodyLabel: "正文",
+  tagsLabel: "标签",
+  tagsHint: "用逗号或换行分隔",
+  visualStyleLabel: "视觉风格",
+  generatedAtLabel: "生成日期",
+  imageCountLabel: "图片",
+  openLarge: "查看大图",
+  saveFailed: "保存失败",
+  deleteFailed: "删除失败",
+  retryFailed: "重试失败",
+} as const;
+
+/** 开始创作弹窗的文案（参数与接口见 docs/prd/04「数据与接口」）。 */
+export const CREATION_COPY = {
+  action: "开始 AI 创作",
+  title: "开始 AI 创作",
+  intro: "两个 Agent 都已就绪时才能开始；生图与文案会各跑一个阶段。",
+  visualStyleLabel: "视觉方向",
+  copyStyleLabel: "文案风格",
+  imageCountLabel: "目标张数",
+  extraPromptLabel: "补充要求",
+  extraPromptPlaceholder: "想强调的角度、必须出现的元素等，可留空",
+  submitAction: "开始创作",
+  cancelAction: "取消",
+  submitFailed: "开始创作失败",
+} as const;

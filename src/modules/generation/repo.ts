@@ -414,6 +414,81 @@ export async function countCollectionUsage(collectionId: string): Promise<Collec
   return { tasks: tasks.length, activeTasks, results };
 }
 
+/* ---------- 结果页签的查询与写入（docs/prd/07-results.md） ---------- */
+
+/** 结果连任务的两条阶段一起取：文案是否失败、能否重试都由阶段状态派生（AC-08-11）。 */
+const RESULT_WITH_STAGES = {
+  ...RESULT_SELECT,
+  task: { select: { stages: { select: STAGE_FIELDS } } },
+} as const;
+
+interface RawResultWithStagesRow extends RawResultRow {
+  task: { stages: RawStageRow[] };
+}
+
+export interface ResultWithStages {
+  result: ResultRecord;
+  stages: StageRecord[];
+}
+
+function toResultWithStages(row: RawResultWithStagesRow): ResultWithStages {
+  return { result: toResultRecord(row), stages: row.task.stages.map(toStageRecord) };
+}
+
+/** 结果按资源夹隔离查询（docs/prd/07 MUST 6），按创建时间倒序（MUST 1）。 */
+export async function listResultsByCollection(collectionId: string): Promise<ResultWithStages[]> {
+  const rows = await getDb().generationResult.findMany({
+    where: { collectionId },
+    orderBy: { createdAt: "desc" },
+    select: RESULT_WITH_STAGES,
+  });
+  return (rows as RawResultWithStagesRow[]).map(toResultWithStages);
+}
+
+export async function findResultWithStages(resultId: string): Promise<ResultWithStages | null> {
+  const row = await getDb().generationResult.findUnique({
+    where: { id: resultId },
+    select: RESULT_WITH_STAGES,
+  });
+  return row ? toResultWithStages(row as RawResultWithStagesRow) : null;
+}
+
+/** 编辑只允许这四个字段：任务快照与原始素材不动（docs/prd/07 MUST NOT）。 */
+export interface ResultFieldsPatch {
+  title: string | null;
+  body: string | null;
+  tags: string[];
+  visualStyle: string;
+}
+
+export async function updateResultFields(
+  resultId: string,
+  patch: Partial<ResultFieldsPatch>,
+): Promise<boolean> {
+  const { count } = await getDb().generationResult.updateMany({
+    where: { id: resultId },
+    data: patch,
+  });
+  return count > 0;
+}
+
+/** 删除整组结果：生成图片行随外键级联删除，原图与其它结果不受影响（docs/prd/07 MUST 4）。 */
+export async function deleteResult(resultId: string): Promise<boolean> {
+  const { count } = await getDb().generationResult.deleteMany({ where: { id: resultId } });
+  return count > 0;
+}
+
+/** 鉴权读取生成图片：按结果与图片两个 id 定位，不跨结果串数据。 */
+export async function findResultAsset(
+  resultId: string,
+  assetId: string,
+): Promise<{ storageKey: string; mimeType: string } | null> {
+  return getDb().generatedAsset.findFirst({
+    where: { id: assetId, resultId },
+    select: { storageKey: true, mimeType: true },
+  });
+}
+
 export const taskStore: TaskStore = {
   createTask,
   findTask,

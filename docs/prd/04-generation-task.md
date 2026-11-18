@@ -20,7 +20,7 @@
 一个任务固定两个阶段：`image`（生图）、`copy`（文案）。
 
 阶段状态：`queued`、`running`、`succeeded`、`failed`。
-阶段字段：`attempts`（已执行次数）、`error`（`code`/`message`/`at`）、`started_at`、`finished_at`。
+阶段字段：`attempts`（已排入执行队列的次数：创建即为 1，每次重试加 1）、`error`（`code`/`message`/`at`）、`started_at`、`finished_at`。
 
 任务状态是**派生值**，不单独存储（或存储但与阶段状态必须一致）：
 
@@ -60,7 +60,7 @@ MUST：
 
 MUST：
 
-1. 创建任务只写库并立即返回（含任务 id 与预计调用次数），不阻塞请求。
+1. 创建任务只写库并立即返回（响应给出任务 id），不阻塞请求。
 2. 进程内 worker（ADR 0002）轮询 `queued` 阶段，一次执行一个任务。
 3. 服务启动时：`running` 阶段 → `failed`（`code = SERVER_RESTARTED`），`queued` 阶段保留待跑。
 4. 每个任务保存 `agent_snapshot`（见 03），运行时只读快照 + 按 `gateway_id` 取密钥。
@@ -81,7 +81,10 @@ MUST NOT：
 ## 数据与接口
 
 `generation_task`：id、collection_id、visual_style、copy_style、image_count、extra_prompt、
-agent_snapshot（jsonb）、result_id、created_at
+agent_snapshot（jsonb）、created_at
+
+`generation_task` 没有 `result_id` 列。「一个任务最多一个结果」由 `generation_result.task_id` 的
+唯一约束表达；任务详情响应里的 `resultId` 是从这条约束反查出来的派生输出，不落库。
 
 `generation_stage`：id、task_id、stage、status、attempts、error（jsonb）、started_at、finished_at
 

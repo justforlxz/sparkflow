@@ -4,8 +4,10 @@
  * 上游给的是临时 URL，必须在拿到图片时立刻下载落盘到本地，不能只保存 URL。
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { AppError } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 import { assertStorageSegment, resolveStoragePath } from "@/lib/storage";
 import { GENERATED_STORAGE_PREFIX } from "./constants";
 import type { ResultAssetWriter, StoredImage } from "./store";
@@ -63,3 +65,27 @@ export async function writeGeneratedImages(
 }
 
 export const resultAssetWriter: ResultAssetWriter = { write: writeGeneratedImages };
+
+/** 鉴权读取生成图片；文件缺失按 404 处理（与资源夹原图同一约定）。 */
+export async function readGeneratedFile(storageKey: string): Promise<Buffer> {
+  try {
+    return await readFile(resolveStoragePath(storageKey));
+  } catch {
+    throw AppError.notFound("图片文件不存在");
+  }
+}
+
+/**
+ * 删除结果时清理它的图片目录（`generated-assets/<resultId>/`）。
+ * 与删除资源夹同一条取舍：磁盘删除失败只记日志，不让请求失败。
+ */
+export async function removeResultFiles(resultId: string): Promise<void> {
+  try {
+    await rm(resolveStoragePath(`${GENERATED_STORAGE_PREFIX}/${resultId}`), {
+      recursive: true,
+      force: true,
+    });
+  } catch (error) {
+    logger.error("删除结果图片目录失败，已跳过", { resultId, error });
+  }
+}

@@ -137,6 +137,21 @@ export async function listCollections(query: ListCollectionsQuery): Promise<Coll
   };
 }
 
+/**
+ * 批量取资源夹名称（创作任务列表用）。查不到的 id 不出现在结果里：
+ * 资源夹被删时任务随外键级联删除，正常不会出现「任务在、资源夹没了」。
+ */
+export async function getCollectionNames(
+  ids: readonly string[],
+): Promise<Record<string, string>> {
+  return repo.findCollectionNames([...new Set(ids)]);
+}
+
+/** 只查存在性：创作任务与结果需要判断资源夹是否还在，但不需要它的图片与计数。 */
+export async function collectionExists(id: string): Promise<boolean> {
+  return repo.collectionExists(id);
+}
+
 export async function getCollection(id: string): Promise<CollectionDetailView> {
   const row = await repo.findCollection(id);
   if (!row) throw AppError.notFound("资源夹不存在");

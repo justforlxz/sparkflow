@@ -10,7 +10,7 @@ import { AppError } from "@/lib/errors";
 import { requireAgentSnapshots } from "@/modules/agent-config/service";
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import { listGatewayViews } from "@/modules/gateway/service";
-import { getCollection } from "@/modules/media-collection/service";
+import { getCollection, getCollectionNames } from "@/modules/media-collection/service";
 import { planStagesToRetry } from "./derive";
 import { taskStore } from "./repo";
 import { assertCollectionHasImages } from "./rules";
@@ -36,8 +36,17 @@ function toAgentSnapshots(snapshots: readonly AgentSnapshot[]): TaskAgentSnapsho
 async function buildDetail(taskId: string): Promise<TaskDetailView> {
   const record = await taskStore.findTask(taskId);
   if (!record) throw AppError.notFound("创作任务不存在");
-  const result = await taskStore.findResultByTask(taskId);
-  return toTaskDetailView(record, result);
+
+  const [result, names] = await Promise.all([
+    taskStore.findResultByTask(taskId),
+    getCollectionNames([record.task.collectionId]),
+  ]);
+  // 资源夹被删时任务随外键级联删除，取不到名称说明数据已损坏，不编造占位文案。
+  const collectionName = names[record.task.collectionId];
+  if (!collectionName) {
+    throw new AppError("INTERNAL", "创作任务所属的资源夹不存在，请检查数据写入路径");
+  }
+  return toTaskDetailView(record, result, collectionName);
 }
 
 /**
@@ -63,12 +72,21 @@ export async function createTask(
     agentSnapshot: agents,
   });
 
-  return toTaskDetailView(created, null);
+  return toTaskDetailView(created, null, collection.name);
 }
 
+/** 任务列表：带上资源夹名（列表要显示它），一次批量取，避免逐行查询。 */
 export async function listTasks(): Promise<TaskSummaryView[]> {
   const records = await taskStore.listTasks();
-  return records.map(toTaskSummaryView);
+  const names = await getCollectionNames(records.map((record) => record.task.collectionId));
+
+  return records.map((record) => {
+    const collectionName = names[record.task.collectionId];
+    if (!collectionName) {
+      throw new AppError("INTERNAL", "创作任务所属的资源夹不存在，请检查数据写入路径");
+    }
+    return toTaskSummaryView(record, collectionName);
+  });
 }
 
 export async function getTask(taskId: string): Promise<TaskDetailView> {

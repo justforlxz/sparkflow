@@ -164,6 +164,24 @@ export interface GatewayTestResponse {
   lastTestedAt: string;
 }
 
+/**
+ * 解密网关密钥（MUST 1、MUST 7）：明文只在本进程内用于发请求，不进日志与响应。
+ *
+ * 解密失败（密文被改、`AUTH_SECRET` 变更）统一抛 `UPSTREAM_FAILED`，
+ * 由连接测试翻译成「配置错误」结论、由阶段处理器翻译成阶段错误码，两处不再各写一份。
+ */
+function decryptGatewayKey(record: GatewayRecord): string {
+  try {
+    return decryptSecret(record.encryptedApiKey);
+  } catch (error) {
+    logger.warn("网关密钥无法解密，密钥可能受 AUTH_SECRET 变更影响", { gatewayId: record.id });
+    throw new AppError("UPSTREAM_FAILED", "网关密钥无法解密，请到设置页重新填写 API Key", {
+      cause: error,
+      details: { code: "GATEWAY_KEY_UNREADABLE" },
+    });
+  }
+}
+
 /** 连接测试：真实请求 + 落库最近一次结果（MUST 6、SHOULD）。 */
 export async function testGatewayConnection(gatewayId: string): Promise<GatewayTestResponse> {
   const record = await requireGateway(gatewayId);
@@ -171,9 +189,8 @@ export async function testGatewayConnection(gatewayId: string): Promise<GatewayT
 
   let apiKey: string;
   try {
-    apiKey = decryptSecret(record.encryptedApiKey);
-  } catch (error) {
-    logger.warn("网关密钥无法解密，连接测试无法进行", { error, gatewayId });
+    apiKey = decryptGatewayKey(record);
+  } catch {
     const at = new Date();
     await recordTestResult(record.id, "config", "密钥无法解密，请重新填写 API Key", at);
     return {
@@ -201,4 +218,30 @@ export async function listCandidateModels(
   capability: ModelCapability,
 ): Promise<GatewayModelCandidate[]> {
   return listModelsByCapability([capability]);
+}
+
+/** 阶段执行时拿到的网关调用参数；密钥只在本进程内用于发请求，不写日志、不回响应。 */
+export interface GatewayExecutionTarget {
+  id: string;
+  protocol: GatewayProtocol;
+  baseUrl: string;
+  apiKey: string;
+}
+
+/**
+ * 阶段处理器取网关的调用参数（docs/prd/04 MUST 4「运行时只读快照 + 按 gateway_id 取密钥」）。
+ *
+ * 与连接测试共用同一套解密路径：明文密钥不出本进程，也不进阶段错误或日志。
+ * 记录不存在时抛 `NOT_FOUND`，密钥无法解密时抛 `UPSTREAM_FAILED`，由调用方翻译成阶段错误码。
+ */
+export async function getGatewayExecutionTarget(gatewayId: string): Promise<GatewayExecutionTarget> {
+  const record = await requireGateway(gatewayId);
+
+
+  return {
+    id: record.id,
+    protocol: requireProtocol(record.protocol),
+    baseUrl: record.baseUrl,
+    apiKey: decryptGatewayKey(record),
+  };
 }

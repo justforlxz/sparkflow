@@ -3,6 +3,8 @@ process.env.AUTH_SECRET ||= "test-secret-that-is-long-enough-for-derivation";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
+import type { AgentConfigView } from "@/modules/agent-config/view";
 import type { StageName, StageStatus } from "./constants";
 import type { StageRecord, TaskAgentSnapshots, TaskWithStages } from "./types";
 
@@ -26,9 +28,20 @@ vi.mock("@/modules/media-collection/service", () => ({
   getCollectionNames: vi.fn(),
 }));
 
+vi.mock("@/modules/gateway/service", () => ({
+  listGatewayViews: vi.fn(),
+}));
+
+vi.mock("@/modules/agent-config/service", () => ({
+  listAgentViews: vi.fn(),
+  requireAgentSnapshots: vi.fn(),
+}));
+
 const { taskStore } = await import("./repo");
 const { getCollectionNames } = await import("@/modules/media-collection/service");
-const { retryTask } = await import("./service");
+const { listAgentViews } = await import("@/modules/agent-config/service");
+const { listGatewayViews } = await import("@/modules/gateway/service");
+const { getTask, retryTask } = await import("./service");
 
 const TASK_ID = "task-1";
 
@@ -50,7 +63,30 @@ function stageRecord(
   };
 }
 
-const AGENTS = {} as TaskAgentSnapshots;
+function agentSnapshot(type: StageName, modelId: string | null = "model-1"): AgentSnapshot {
+  return {
+    agentType: type,
+    enabled: true,
+    name: `${type} Agent`,
+    gatewayId: "gateway-1",
+    protocol: "openai-chat",
+    baseUrl: "https://gw.example.com/v1",
+    modelId,
+    role: "角色",
+    systemPrompt: "提示词",
+    outputRequirements: "输出要求",
+  };
+}
+
+const AGENTS: TaskAgentSnapshots = {
+  image: agentSnapshot("image"),
+  copy: agentSnapshot("copy"),
+};
+
+/** 当前 Agent 配置这里只用模型与网关两项，其余字段与重试说明无关。 */
+function agentView(type: StageName, modelId: string | null = "model-1"): AgentConfigView {
+  return { type, gatewayId: "gateway-1", gatewayModelId: modelId } as AgentConfigView;
+}
 
 function taskWith(stages: StageRecord[]): TaskWithStages {
   return {
@@ -75,6 +111,10 @@ beforeEach(() => {
   vi.mocked(taskStore.findResultByTask).mockResolvedValue(null);
   vi.mocked(getCollectionNames).mockReset();
   vi.mocked(getCollectionNames).mockResolvedValue({ "collection-1": "资源夹" });
+  vi.mocked(listGatewayViews).mockReset();
+  vi.mocked(listGatewayViews).mockResolvedValue([]);
+  vi.mocked(listAgentViews).mockReset();
+  vi.mocked(listAgentViews).mockResolvedValue([agentView("image"), agentView("copy")]);
 });
 
 describe("retryTask 的并发语义（AC-FIX-1、AC-FIX-2）", () => {
@@ -111,5 +151,44 @@ describe("retryTask 的并发语义（AC-FIX-1、AC-FIX-2）", () => {
     expect(vi.mocked(taskStore.resetStages)).toHaveBeenCalledWith(TASK_ID, ["copy"]);
     expect(detail.stages.copy).toMatchObject({ status: "queued", attempts: 2 });
     expect(detail.stages.image).toMatchObject({ status: "succeeded", attempts: 1 });
+  });
+});
+
+/** 重试说明的取值来自快照与当前 Agent 配置的比较（MKACG-904 SHOULD）。 */
+describe("任务视图带上的重试说明（MKACG-904）", () => {
+  it("失败阶段的快照与当前配置一致时用普通说明", async () => {
+    vi.mocked(taskStore.findTask).mockResolvedValue(
+      taskWith([stageRecord("image", "failed"), stageRecord("copy", "queued")]),
+    );
+
+    const detail = await getTask(TASK_ID);
+
+    expect(detail.retryHint).toMatchObject({ state: "snapshot" });
+    expect(detail.retryHint?.message).toContain("重新生成");
+  });
+
+  it("当前配置换过模型时换成警示说明", async () => {
+    vi.mocked(taskStore.findTask).mockResolvedValue(
+      taskWith([stageRecord("image", "failed"), stageRecord("copy", "queued")]),
+    );
+    vi.mocked(listAgentViews).mockResolvedValue([
+      agentView("image", "another-image-model"),
+      agentView("copy"),
+    ]);
+
+    const detail = await getTask(TASK_ID);
+
+    expect(detail.retryHint).toMatchObject({ state: "snapshot-changed" });
+    expect(detail.retryHint?.message).toContain("快照用的模型或网关与当前 Agent 配置不同");
+  });
+
+  it("没有失败阶段时详情不给重试说明", async () => {
+    vi.mocked(taskStore.findTask).mockResolvedValue(
+      taskWith([stageRecord("image", "succeeded"), stageRecord("copy", "succeeded")]),
+    );
+
+    const detail = await getTask(TASK_ID);
+
+    expect(detail.retryHint).toBeNull();
   });
 });

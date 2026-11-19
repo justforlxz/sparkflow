@@ -72,3 +72,43 @@ export function planStagesToRetry(stages: readonly StageState[]): StageName[] {
   if (failed.length === 0) throwRetryConflict(stages);
   return failed;
 }
+
+/** 一个 Agent 的绑定状态：判断任务快照有没有被改过只看模型与网关这两项。 */
+export interface AgentBindingState {
+  gatewayId: string | null;
+  modelId: string | null;
+}
+
+/**
+ * 失败阶段上的重试说明（MKACG-904）。
+ *
+ * 重试只重跑失败阶段（ADR 0005），配置取自任务创建时的快照（docs/prd/05 MUST 5），
+ * 所以改过 Agent 配置之后点重试仍会用旧配置。三档返回值：
+ *
+ * | 返回值 | 含义 | 界面 |
+ * | --- | --- | --- |
+ * | `null` | 没有失败阶段，也没有重试入口 | 不显示 |
+ * | `snapshot` | 失败阶段的快照与当前配置一致 | 普通说明 |
+ * | `snapshot-changed` | 失败阶段的快照与当前配置已不同 | 警示样式，点出差异 |
+ *
+ * 只比较失败阶段：重试不会碰已成功的阶段，那些阶段的配置改了也不影响这次重试。
+ */
+export type RetryHint = "snapshot" | "snapshot-changed";
+
+export function deriveRetryHint(
+  stages: readonly StageState[],
+  snapshot: Record<StageName, AgentBindingState>,
+  current: Record<StageName, AgentBindingState>,
+): RetryHint | null {
+  const failed = STAGE_NAMES.filter((name) =>
+    stages.some((stage) => stage.stage === name && stage.status === "failed"),
+  );
+  if (failed.length === 0) return null;
+
+  const changed = failed.some(
+    (name) =>
+      snapshot[name].modelId !== current[name].modelId ||
+      snapshot[name].gatewayId !== current[name].gatewayId,
+  );
+  return changed ? "snapshot-changed" : "snapshot";
+}

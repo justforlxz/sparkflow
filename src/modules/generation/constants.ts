@@ -104,6 +104,14 @@ export const TASK_COPY = {
   backToList: "← 创作任务",
   retryAction: "重试",
   regenerateAction: "重新生成",
+  /**
+   * 失败阶段旁的重试说明（MKACG-904）：重试按 ADR 0005 只重跑失败阶段，
+   * 配置仍取自任务创建时的快照（docs/prd/05 MUST 5），必须在用户点之前讲清楚。
+   */
+  retryUsesSnapshotHint: "重试沿用该任务创建时的 Agent 配置；配置已经改过的话，请用「重新生成」。",
+  /** 快照与当前 Agent 配置已经不同：样式换成警示，并点出差在哪里（MKACG-904 SHOULD）。 */
+  retrySnapshotChangedHint:
+    "该任务的快照用的模型或网关与当前 Agent 配置不同：重试仍会沿用创建时的配置，改好配置后请用「重新生成」。",
   regenerateConfirmTitle: "重新生成？",
   regenerateConfirmBody: "将重新执行生图与文案两个阶段并产生新结果，旧任务与旧结果会保留。",
   confirmAction: "确认重新生成",

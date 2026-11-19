@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "@/lib/errors";
-import { deriveTaskStatus, planStagesToRetry, type StageState } from "./derive";
+import {
+  deriveRetryHint,
+  deriveTaskStatus,
+  planStagesToRetry,
+  type AgentBindingState,
+  type StageState,
+} from "./derive";
 
 /** 判定表逐行锁定（docs/prd/04「阶段与状态」）。 */
 describe("任务状态派生（AC-04-2、AC-04-5）", () => {
@@ -97,5 +103,57 @@ describe("重试只作用于失败阶段（AC-04-6、AC-04-7、AC-04-8、AC-05-1
       { stage: "copy", status: "running" },
     ];
     expect(() => planStagesToRetry(stages)).toThrowError(AppError);
+  });
+});
+
+/**
+ * 失败阶段上的重试说明（MKACG-904）：重试取的是任务快照，快照与当前配置不同就换警示文案。
+ * 只比较失败阶段 —— 重试不碰已成功的阶段。
+ */
+describe("失败阶段上的重试说明（MKACG-904）", () => {
+  const binding = (modelId: string | null, gatewayId = "gateway-1"): AgentBindingState => ({
+    gatewayId,
+    modelId,
+  });
+  const snapshot = { image: binding("image-model"), copy: binding("copy-model") };
+  const imageFailed: StageState[] = [
+    { stage: "image", status: "failed" },
+    { stage: "copy", status: "queued" },
+  ];
+
+  it("没有失败阶段就没有重试入口，也不给说明", () => {
+    const stages: StageState[] = [
+      { stage: "image", status: "succeeded" },
+      { stage: "copy", status: "succeeded" },
+    ];
+    expect(deriveRetryHint(stages, snapshot, snapshot)).toBeNull();
+  });
+
+  it("失败阶段的快照与当前配置一致时给普通说明", () => {
+    expect(deriveRetryHint(imageFailed, snapshot, snapshot)).toBe("snapshot");
+  });
+
+  it("失败阶段换了模型时给警示", () => {
+    const current = { ...snapshot, image: binding("sensenova-u1.5-lite") };
+    expect(deriveRetryHint(imageFailed, snapshot, current)).toBe("snapshot-changed");
+  });
+
+  it("失败阶段换了网关时给警示", () => {
+    const current = { ...snapshot, image: binding("image-model", "gateway-2") };
+    expect(deriveRetryHint(imageFailed, snapshot, current)).toBe("snapshot-changed");
+  });
+
+  it("模型都留空视为一致，不当成改动", () => {
+    const empty = { image: binding(null), copy: binding(null) };
+    expect(deriveRetryHint(imageFailed, empty, empty)).toBe("snapshot");
+  });
+
+  it("只有已成功阶段的配置变了仍是普通说明（重试不碰它）", () => {
+    const stages: StageState[] = [
+      { stage: "image", status: "succeeded" },
+      { stage: "copy", status: "failed" },
+    ];
+    const current = { ...snapshot, image: binding("another-image-model") };
+    expect(deriveRetryHint(stages, snapshot, current)).toBe("snapshot");
   });
 });

@@ -98,6 +98,18 @@ export default async function TaskDetailPage({ params }: PageProps) {
               );
             })}
           </ul>
+          {task.retryHint ? (
+            <p
+              data-testid="retry-hint"
+              className={
+                task.retryHint.state === "snapshot-changed"
+                  ? "rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800"
+                  : "text-xs text-zinc-500"
+              }
+            >
+              {task.retryHint.message}
+            </p>
+          ) : null}
         </div>
 
         <Panel title={TASK_COPY.paramsLabel} className="h-fit">

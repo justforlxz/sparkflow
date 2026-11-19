@@ -197,6 +197,19 @@ export function TaskList({ initialTasks }: TaskListProps) {
                   </div>
                 ) : null}
 
+                {task.retryHint ? (
+                  <p
+                    data-testid="retry-hint"
+                    className={
+                      task.retryHint.state === "snapshot-changed"
+                        ? "rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800"
+                        : "text-xs text-zinc-500"
+                    }
+                  >
+                    {task.retryHint.message}
+                  </p>
+                ) : null}
+
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
                     href={`/collections/${task.collectionId}?tab=results`}

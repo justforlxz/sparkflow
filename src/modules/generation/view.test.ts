@@ -21,6 +21,12 @@ const SNAPSHOT: AgentSnapshot = {
   outputRequirements: "竖版",
 };
 
+/** 当前 Agent 配置的绑定：默认与快照一致，用来验证重试说明的普通样式。 */
+const CURRENT_AGENTS = {
+  image: { gatewayId: SNAPSHOT.gatewayId, modelId: SNAPSHOT.modelId },
+  copy: { gatewayId: SNAPSHOT.gatewayId, modelId: SNAPSHOT.modelId },
+};
+
 function stage(stage: "image" | "copy", status: StageRecord["status"]): StageRecord {
   return {
     id: `${stage}-1`,
@@ -74,6 +80,7 @@ describe("任务列表视图", () => {
     const view = toTaskSummaryView(
       taskWithStages([stage("image", "succeeded"), stage("copy", "failed")]),
       "我的资源夹",
+      CURRENT_AGENTS,
     );
 
     expect(view.collectionName).toBe("我的资源夹");
@@ -89,16 +96,49 @@ describe("任务列表视图", () => {
     const record = taskWithStages([stage("image", "queued"), stage("copy", "queued")]);
     record.task = { ...record.task, visualStyle: "unknown", copyStyle: "unknown" };
 
-    const view = toTaskSummaryView(record, "资源夹");
+    const view = toTaskSummaryView(record, "资源夹", CURRENT_AGENTS);
 
     expect(view.visualStyleLabel).toBe("unknown");
     expect(view.copyStyleLabel).toBe("unknown");
   });
 
   it("缺一条阶段记录时报内部错误，不当成空状态", () => {
-    expect(() => toTaskSummaryView(taskWithStages([stage("image", "succeeded")]), "资源夹")).toThrow(
-      /任务缺少 文案阶段记录/,
+    expect(() =>
+      toTaskSummaryView(taskWithStages([stage("image", "succeeded")]), "资源夹", CURRENT_AGENTS),
+    ).toThrow(/任务缺少 文案阶段记录/);
+  });
+
+  it("有失败阶段时给出重试说明，没有失败阶段时不给（MKACG-904）", () => {
+    const failed = toTaskSummaryView(
+      taskWithStages([stage("image", "succeeded"), stage("copy", "failed")]),
+      "资源夹",
+      CURRENT_AGENTS,
     );
+    expect(failed.retryHint?.state).toBe("snapshot");
+    expect(failed.retryHint?.message).toContain("沿用该任务创建时的 Agent 配置");
+    expect(failed.retryHint?.message).toContain("重新生成");
+
+    const succeeded = toTaskSummaryView(
+      taskWithStages([stage("image", "succeeded"), stage("copy", "succeeded")]),
+      "资源夹",
+      CURRENT_AGENTS,
+    );
+    expect(succeeded.retryHint).toBeNull();
+  });
+
+  it("失败阶段的快照与当前配置不同时换成警示文案（MKACG-904）", () => {
+    const view = toTaskSummaryView(
+      taskWithStages([stage("image", "failed"), stage("copy", "queued")]),
+      "资源夹",
+      {
+        ...CURRENT_AGENTS,
+        image: { gatewayId: SNAPSHOT.gatewayId, modelId: "sensenova-u1.5-lite" },
+      },
+    );
+
+    expect(view.retryHint?.state).toBe("snapshot-changed");
+    expect(view.retryHint?.message).toContain("快照用的模型或网关与当前 Agent 配置不同");
+    expect(view.retryHint?.message).toContain("重新生成");
   });
 });
 

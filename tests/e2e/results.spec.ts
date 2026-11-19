@@ -543,6 +543,51 @@ test("AC-07-8 失败阶段展示可读原因，不含密钥与堆栈", async ({ 
   expect(visible).not.toMatch(/\n\s+at\s/);
 });
 
+test("AC-904-1 AC-904-4 带失败阶段的任务在列表与详情都有重试说明，375 宽度不溢出", async ({
+  page,
+  request,
+}) => {
+  const collectionId = await createCollectionWithImage(request);
+  const failed = await createTask(request, collectionId, {
+    imageCount: 1,
+    extraPrompt: MOCK_SCRIPT_HINTS.failImage,
+  });
+  await waitForTerminal(request, failed.id, "failed");
+
+  // 对照：全部成功的任务没有「重试」入口，也不该出现这条说明。
+  const succeeded = await waitForTerminal(
+    request,
+    (await createTask(request, collectionId, { imageCount: 1 })).id,
+    "succeeded",
+  );
+
+  await loginInBrowser(page);
+  await page.goto("/tasks");
+
+  const failedRow = taskRow(page, failed.id);
+  const hint = failedRow.getByTestId("retry-hint");
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText("重试沿用该任务创建时的 Agent 配置");
+  await expect(hint).toContainText("请用「重新生成」");
+  // 说明写在卡片上，用户在点「重试」之前就能看到，不是只挂在按钮的悬停提示里。
+  await expect(failedRow.getByTestId("retry-button")).toBeVisible();
+
+  await expect(taskRow(page, succeeded.id).getByTestId("retry-hint")).toHaveCount(0);
+
+  // 窄屏下这条说明不得把页面撑出横向滚动条。
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/tasks");
+  const widths = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(widths.scrollWidth).toBe(widths.clientWidth);
+
+  // 详情页的同一位置也有这条说明。
+  await page.goto(`/tasks/${failed.id}`);
+  await expect(page.getByTestId("retry-hint")).toContainText("重新生成");
+});
+
 test("AC-07-9 离开任务页后不再有新请求（轮询已停止）", async ({ page, request }) => {
   test.setTimeout(120_000);
 

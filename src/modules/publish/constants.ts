@@ -40,6 +40,12 @@ export const PUBLISH_COPY = {
   selectAllAction: "全选",
   selectNoneAction: "全不选",
   selectImagesLabel: "要发布的图片",
+  /**
+   * 上游模型生成的图片可能自带水印或角标：结果页签与发布准备各展示一次（MKACG-901 MUST 1）。
+   * 只说「可能带」与「发布前请自行确认」，不声称已去除水印、也不把图片说成已校验合格（MUST 2）。
+   */
+  upstreamWatermarkNotice: "图片由上游模型生成，可能带上游模型自带的水印或角标，发布前请自行确认。",
+
   /** 弹窗里可编辑的三个文案字段。措辞与结果编辑弹窗一致（AC-FIX-4：只搬位置，不改措辞）。 */
   titleLabel: "标题",
   bodyLabel: "正文",

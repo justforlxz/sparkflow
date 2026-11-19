@@ -176,6 +176,14 @@ export function ResultsPanel({
                 ))}
               </ul>
 
+              {/* 生成图可能带上游模型自带的水印：让用户在交付前自己看见并确认（MKACG-901 MUST 1）。 */}
+              <p
+                data-testid="result-watermark-notice"
+                className="break-words rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              >
+                {PUBLISH_COPY.upstreamWatermarkNotice}
+              </p>
+
               <div className="space-y-2 text-sm">
                 {/* 失败提示只是附加说明：手动补写过的标题 / 正文 / 标签必须照常显示（docs/prd/07 MUST 1）。 */}
                 {result.copyFailed ? (

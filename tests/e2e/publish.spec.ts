@@ -1,5 +1,11 @@
 import { readFile } from "node:fs/promises";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import pg from "pg";
 import { parsePublishText } from "../../src/modules/publish/text";
 import { ACCOUNT, ensureAccount } from "./support/auth";
@@ -569,4 +575,85 @@ test("AC-FIX-2 越界页码不报错：0 与负数回到第 1 页，超大页码
   // 分页是原始 skip/take：跳过全部记录就是空列表，页面照常渲染空状态。
   await expect(page.locator(`[data-result-id="${result.id}"]`)).toHaveCount(0);
   await expect(page.getByText("还没有发布记录", { exact: false })).toBeVisible();
+});
+
+/** 水印提示必须同时说清三件事（AC-901-1）：图片来自上游模型、可能带模型自带的角标、发布前要自己确认。 */
+const WATERMARK_MEANINGS = [
+  "图片由上游模型生成",
+  "可能带上游模型自带的水印或角标",
+  "发布前请自行确认",
+];
+
+/** 提示不得声称水印已去掉，也不得把图片说成已校验合格（MKACG-901 MUST 2）。 */
+const WATERMARK_FORBIDDEN = ["已去除", "无水印", "已校验合格"];
+
+async function expectWatermarkNotice(notice: Locator): Promise<void> {
+  await expect(notice).toBeVisible();
+  for (const phrase of WATERMARK_MEANINGS) {
+    await expect(notice, `提示应当说明「${phrase}」`).toContainText(phrase);
+  }
+  for (const forbidden of WATERMARK_FORBIDDEN) {
+    await expect(notice, `提示不应出现「${forbidden}」`).not.toContainText(forbidden);
+  }
+}
+
+/** AC-901-2：375×812 下整页不应出现横向滚动。 */
+async function expectNoHorizontalOverflow(page: Page, scene: string): Promise<void> {
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(scrollWidth, `${scene} 在 375×812 下不应横向溢出`).toBe(clientWidth);
+}
+
+test("AC-901-1 结果页签与发布准备各显示一处上游模型水印提示", async ({ page, request }) => {
+  const { collectionId, result } = await createResult(request, 2);
+  await loginInBrowser(page);
+
+  await page.goto(`/collections/${collectionId}?tab=results`);
+  await expectWatermarkNotice(resultCard(page, result.id).getByTestId("result-watermark-notice"));
+
+  await resultCard(page, result.id).getByTestId("publish-prepare").click();
+  const dialog = publishDialog(page);
+  await expect(dialog).toBeVisible();
+  await expectWatermarkNotice(dialog.getByTestId("publish-watermark-notice"));
+});
+
+test("AC-901-2 375×812 下两处水印提示不产生横向溢出", async ({ page, request }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const { collectionId, result } = await createResult(request, 3);
+  await loginInBrowser(page);
+
+  await page.goto(`/collections/${collectionId}?tab=results`);
+  await expectWatermarkNotice(resultCard(page, result.id).getByTestId("result-watermark-notice"));
+  await expectNoHorizontalOverflow(page, "结果页签");
+
+  await resultCard(page, result.id).getByTestId("publish-prepare").click();
+  const dialog = publishDialog(page);
+  await expect(dialog).toBeVisible();
+  await expectWatermarkNotice(dialog.getByTestId("publish-watermark-notice"));
+  await expectNoHorizontalOverflow(page, "发布准备弹窗");
+});
+
+test("AC-901-3 提示与发布准备弹窗不发起任何 /api/ 请求", async ({ page, request }) => {
+  const { collectionId, result } = await createResult(request, 2);
+  await loginInBrowser(page);
+
+  await page.goto(`/collections/${collectionId}?tab=results`);
+  await expectWatermarkNotice(resultCard(page, result.id).getByTestId("result-watermark-notice"));
+  // 缩略图本身走 /api/files/generated/...：等这次加载结束再开始计数，
+  // 只统计「提示与弹窗」带来的请求（AC-901-3 断言的就是这部分为零）。
+  await page.waitForLoadState("networkidle");
+
+  const apiCalls: string[] = [];
+  page.on("request", (outgoing) => {
+    if (outgoing.url().includes("/api/")) apiCalls.push(outgoing.url());
+  });
+
+  await resultCard(page, result.id).getByTestId("publish-prepare").click();
+  const dialog = publishDialog(page);
+  await expect(dialog).toBeVisible();
+  await expectWatermarkNotice(dialog.getByTestId("publish-watermark-notice"));
+
+  expect(apiCalls, "提示与发布准备弹窗不应发起任何 /api/ 请求").toEqual([]);
 });

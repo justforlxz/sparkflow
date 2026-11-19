@@ -11,7 +11,7 @@ import { ACCOUNT, ensureAccount } from "./support/auth";
 
 /**
  * 媒体资源夹与原始文件的端到端验收（docs/prd/01-media-collection.md AC-01-1 ~ AC-01-7，
- * 以及 MKACG-860 补充的 AC-02-8、AC-02-9）。
+ * 以及 MKACG-860 补充的 AC-02-8、AC-02-9、MKACG-900 补充的 AC-900-1 ~ AC-900-4）。
  * 每个用例自带数据准备与清理：资源夹名带随机后缀，结束后按 id 删除，不依赖执行顺序。
  */
 
@@ -82,12 +82,13 @@ async function createCollection(
   request: APIRequestContext,
   name: string,
   files: Array<{ name: string; mimeType: string; buffer: Buffer }> = [png("a.png")],
+  sourceUrl: string = "https://example.com/note/1",
 ): Promise<CollectionDetail> {
   // Playwright 的 multipart 每个键只能带一个文件，因此按序号拆键；服务端接收所有文件字段。
   const multipart: Record<string, string | { name: string; mimeType: string; buffer: Buffer }> = {
     name,
     platform: "小红书",
-    sourceUrl: "https://example.com/note/1",
+    sourceUrl,
     sourceTitle: "原始标题",
     sourceBody: "原始文案",
   };
@@ -484,4 +485,85 @@ test("AC-FIX-8 保存后 sort_order 与界面顺序一致，重新打开详情�
   const reopened = page.getByRole("dialog", { name: "编辑" });
   expect(await shownFileNames(reopened)).toEqual(["b.png", "c.png"]);
   await reopened.getByRole("button", { name: "取消", exact: true }).click();
+});
+
+/** 真实数据里的来源链接：带长查询串的小红书地址，整串没有可断行的位置。 */
+const LONG_SOURCE_URL =
+  "https://www.xiaohongshu.com/explore/673c0f1a000000001b03a0de?xsec_token={{SECRET_olcmuwpz}}";
+
+/** 文件名长到必须截断，用来确认截断显示没有被改动。 */
+const LONG_FILE_NAME = "IMG_20241119_123456_a_long_file_name_that_has_to_be_truncated.png";
+
+/** 页面根元素的内容宽度与可视宽度；两者相等表示没有横向溢出。 */
+async function viewportWidths(page: Page): Promise<{ scrollWidth: number; clientWidth: number }> {
+  return page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+}
+
+test("AC-900-1 AC-900-2 AC-900-4 资源夹详情在 375×812 与 320×568 下无横向溢出，原图网格交互不变", async ({
+  page,
+  request,
+}) => {
+  await ensureAccount(request);
+  const created = await createCollection(
+    request,
+    uniqueName("AC-900"),
+    [png(LONG_FILE_NAME), png("b.png"), png("c.png"), png("d.png")],
+    LONG_SOURCE_URL,
+  );
+
+  await loginInBrowser(page);
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 320, height: 568 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`/collections/${created.id}`);
+
+    const { scrollWidth, clientWidth } = await viewportWidths(page);
+    expect(scrollWidth, `${viewport.width} 宽度下详情页不应横向溢出`).toBe(clientWidth);
+
+    // 原图网格仍是网格：4 张缩略图都在网格里且可见。
+    const thumbnails = page.locator("ul.grid img");
+    await expect(thumbnails).toHaveCount(4);
+    for (let index = 0; index < 4; index += 1) {
+      await expect(thumbnails.nth(index)).toBeVisible();
+    }
+
+    // 文件名仍是单行截断，没有被压成不显示或换行。
+    const fileName = page.locator("ul.grid span.block.truncate").first();
+    expect(await fileName.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+  }
+
+  // 缩略图仍可点开大图：新标签页指向 /api/files 且返回图片本身。
+  const [bigImage] = await Promise.all([
+    page.waitForEvent("popup"),
+    page.locator("ul.grid img").first().click(),
+  ]);
+  await expect(bigImage).toHaveURL(/\/api\/files\//);
+  const response = await bigImage.request.get(bigImage.url());
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toBe("image/png");
+});
+
+test("AC-900-3 375×812 与 320×568 下工作台、资源夹列表、任务列表仍无横向溢出", async ({
+  page,
+  request,
+}) => {
+  await ensureAccount(request);
+  await loginInBrowser(page);
+
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 320, height: 568 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const route of ["/", "/collections", "/tasks"]) {
+      await page.goto(route);
+      const { scrollWidth, clientWidth } = await viewportWidths(page);
+      expect(scrollWidth, `${route} 在 ${viewport.width} 宽度下不应横向溢出`).toBe(clientWidth);
+    }
+  }
 });

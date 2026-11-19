@@ -43,6 +43,24 @@ export function deriveTaskStatus(stages: readonly StageState[]): TaskStatus {
 }
 
 /**
+ * 重试被拒绝时的统一信封：全部成功、还在跑、已排队（含并发重试被另一条抢先）都归到这里，
+ * `details` 带当前阶段状态说明原因。顺序与并发两条路径共用这一处，形状不会各写一份。
+ */
+export function throwRetryConflict(stages: readonly StageState[]): never {
+  const status = deriveTaskStatus(stages);
+  throw new AppError("CONFLICT", `任务没有失败的阶段，不能重试（当前状态：${TASK_STATUS_LABELS[status]}）`, {
+    details: {
+      code: TASK_ERROR_CODES.noFailedStage,
+      taskStatus: status,
+      stages: STAGE_NAMES.map((name) => ({
+        stage: name,
+        status: stages.find((stage) => stage.stage === name)?.status ?? "queued",
+      })),
+    },
+  });
+}
+
+/**
  * 重试只作用于失败阶段（ADR 0005、AC-04-8）：
  * 没有失败阶段就抛 `CONFLICT`（全部成功、还在跑、还没开始跑都属于这种情况），
  * 并把当前阶段状态放进 `details` 说明原因。返回的阶段按执行顺序排列。
@@ -51,18 +69,6 @@ export function planStagesToRetry(stages: readonly StageState[]): StageName[] {
   const failed = STAGE_NAMES.filter((name) =>
     stages.some((stage) => stage.stage === name && stage.status === "failed"),
   );
-  if (failed.length === 0) {
-    const status = deriveTaskStatus(stages);
-    throw new AppError("CONFLICT", `任务没有失败的阶段，不能重试（当前状态：${TASK_STATUS_LABELS[status]}）`, {
-      details: {
-        code: TASK_ERROR_CODES.noFailedStage,
-        taskStatus: status,
-        stages: STAGE_NAMES.map((name) => ({
-          stage: name,
-          status: stages.find((stage) => stage.stage === name)?.status ?? "queued",
-        })),
-      },
-    });
-  }
+  if (failed.length === 0) throwRetryConflict(stages);
   return failed;
 }

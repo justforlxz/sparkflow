@@ -382,11 +382,17 @@ export async function updateResultCopy(resultId: string, copy: CopyContent): Pro
   });
 }
 
-/** 重试：只把失败阶段置回 queued 并让 attempts 加一，已成功阶段完全不动（ADR 0005）。 */
-export async function resetStages(taskId: string, stages: readonly StageName[]): Promise<void> {
-  if (stages.length === 0) return;
-  await getDb().generationStage.updateMany({
-    where: { taskId, stage: { in: [...stages] } },
+/**
+ * 重试：只把失败阶段置回 queued 并让 attempts 加一，已成功阶段完全不动（ADR 0005）。
+ *
+ * `status: "failed"` 是条件更新（与 `claimNextStage` 同一条做法）：同时到达的两条重试里
+ * 只有一条能把同一个 `failed` 阶段改成 `queued`，另一条返回 0，`attempts` 因此只加一次。
+ * 返回受影响行数，0 表示这些阶段已经被别的请求重新排队。
+ */
+export async function resetStages(taskId: string, stages: readonly StageName[]): Promise<number> {
+  if (stages.length === 0) return 0;
+  const { count } = await getDb().generationStage.updateMany({
+    where: { taskId, stage: { in: [...stages] }, status: "failed" },
     data: {
       status: "queued",
       attempts: { increment: 1 },
@@ -396,6 +402,7 @@ export async function resetStages(taskId: string, stages: readonly StageName[]):
       finishedAt: null,
     },
   });
+  return count;
 }
 
 /** 资源夹侧要的任务/结果计数（docs/prd/01 的派生状态与「有运行中任务」判定）。 */

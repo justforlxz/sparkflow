@@ -91,7 +91,11 @@ export function startTaskWorker(options: WorkerOptions = {}): () => void {
       await runner.recover();
     } catch (error) {
       logger.error("worker 启动清理失败，稍后重试", { error });
-      if (!stopped) bootTimer = setTimeout(() => void boot(), intervalMs);
+      if (!stopped) {
+        bootTimer = setTimeout(() => void boot(), intervalMs);
+        // 与轮询定时器同一条取舍：清理重试的等待也不该单独让进程活着。
+        bootTimer.unref();
+      }
       return;
     }
 

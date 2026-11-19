@@ -10,6 +10,7 @@ import type { CollectionAssetView } from "@/modules/media-collection/service";
  * 新建 / 编辑弹窗。图片网格有三种状态（docs/prd/01-media-collection.md「范围」）：
  * 已保存（服务端已有）、待添加（本地选了文件还没上传）、待移除（打上删除标记但还没提交）。
  * 取消直接丢弃这些本地状态，不产生任何请求；保存时才把三种状态一次性落到服务端。
+ * 编辑保存只发一次 `POST /api/collections/[id]/save`，服务端一个事务，失败不会留下部分改动。
  */
 
 let pendingKeySeed = 0;
@@ -138,30 +139,25 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
     const collectionId = collection?.id;
     if (!collectionId) throw new Error("缺少资源夹标识");
 
-    const updated = await readEnvelope(
-      await fetch(`/api/collections/${collectionId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(values),
-      }),
+    // 清单顺序就是保存后的图片顺序：先已保存的（保留或移除），再本次新加的。
+    const assets: Array<
+      { kind: "keep"; assetId: string } | { kind: "remove"; assetId: string } | { kind: "add"; tempKey: string }
+    > = savedAssets.map((asset) =>
+      pendingRemove.includes(asset.id)
+        ? { kind: "remove", assetId: asset.id }
+        : { kind: "keep", assetId: asset.id },
     );
-    if (!updated.ok) throw new Error(updated.message ?? "保存失败");
+    for (const item of pendingFiles) assets.push({ kind: "add", tempKey: item.key });
 
-    for (const assetId of pendingRemove) {
-      const removed = await readEnvelope(
-        await fetch(`/api/collections/${collectionId}/assets/${assetId}`, { method: "DELETE" }),
-      );
-      if (!removed.ok) throw new Error(removed.message ?? "移除图片失败");
-    }
+    const form = new FormData();
+    form.append("fields", JSON.stringify(values));
+    form.append("assets", JSON.stringify(assets));
+    for (const item of pendingFiles) form.append(`file:${item.key}`, item.file, item.file.name);
 
-    if (pendingFiles.length > 0) {
-      const form = new FormData();
-      for (const item of pendingFiles) form.append("images", item.file, item.file.name);
-      const added = await readEnvelope(
-        await fetch(`/api/collections/${collectionId}/assets`, { method: "POST", body: form }),
-      );
-      if (!added.ok) throw new Error(added.message ?? "上传图片失败");
-    }
+    const result = await readEnvelope(
+      await fetch(`/api/collections/${collectionId}/save`, { method: "POST", body: form }),
+    );
+    if (!result.ok) throw new Error(result.message ?? "保存失败");
   }
 
   async function handleSave() {

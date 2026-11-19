@@ -7,13 +7,23 @@
 import { randomUUID } from "node:crypto";
 import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 import { countCollectionUsage } from "@/modules/generation/counts";
 import { countCollectionPublishRecords } from "@/modules/publish/counts";
 import { DEFAULT_THUMBNAIL_WIDTH, type CollectionStatus } from "./constants";
-import { readAssetFile, removeCollectionFiles, writeAssetBytes } from "./files";
+import { readAssetFile, removeAssetFile, removeCollectionFiles, writeAssetBytes } from "./files";
 import * as repo from "./repo";
-import { assertCanRemoveImage, assertCollectionMutable, assertHasImage } from "./rules";
-import type { CollectionFieldsInput, ListCollectionsQuery } from "./schema";
+import {
+  assertCanRemoveImage,
+  assertCollectionMutable,
+  assertHasImage,
+  COLLECTION_ERROR_MESSAGES,
+} from "./rules";
+import type {
+  CollectionEditAssetInput,
+  CollectionFieldsInput,
+  ListCollectionsQuery,
+} from "./schema";
 import { buildAssetStorageKey } from "./storage-key";
 import { deriveCollectionStatus, type CollectionCounts } from "./status";
 import { scaleImage } from "./thumbnails";
@@ -250,6 +260,112 @@ export async function removeCollectionAsset(
   assertCanRemoveImage((await repo.countAssets(id)) - 1);
 
   if (!(await repo.deleteAsset(id, assetId))) throw AppError.notFound("图片不存在");
+  return getCollection(id);
+}
+
+export interface CollectionEditPayload {
+  /** 整体替换的来源信息。 */
+  fields: CollectionFieldsInput;
+  /** 有序图片清单：顺序即保存后的 `sort_order`。 */
+  assets: readonly CollectionEditAssetInput[];
+  /** `kind: "add"` 的文件，按 `tempKey` 取（multipart 的 `file:<tempKey>` part）。 */
+  files: ReadonlyMap<string, IncomingFile>;
+}
+
+/**
+ * 编辑保存的唯一入口：来源信息与图片变更一次提交，服务端一个事务。
+ *
+ * 执行顺序（MKACG-870 定稿方案）：
+ * 1. 校验集合：保留 + 新增至少 1 张；2. 校验图片归属与是否给出处理方式；
+ * 3. 有运行中任务时拒绝；4. 逐个校验上传文件；5. 全部通过后才写盘；
+ * 6. 事务内改字段、删关联、插新增、更新保留项顺序；7. 成功后返回最终列表。
+ * 任何一步失败都不动数据库；写盘之后失败会补偿删除本次新写的文件，返回 500。
+ * 被移除的原图文件保留在磁盘（MUST 4）。
+ */
+export async function saveCollectionEdit(
+  id: string,
+  payload: CollectionEditPayload,
+): Promise<CollectionDetailView> {
+  const remaining = payload.assets.filter((item) => item.kind !== "remove").length;
+  assertCanRemoveImage(remaining);
+
+  if (!(await repo.collectionExists(id))) throw AppError.notFound("资源夹不存在");
+
+  const existingIds = new Set((await repo.listAssets(id)).map((asset) => asset.id));
+  const keep: Array<{ assetId: string; sortOrder: number }> = [];
+  const remove: string[] = [];
+  const adds: Array<{ tempKey: string; sortOrder: number }> = [];
+  const handled = new Set<string>();
+
+  payload.assets.forEach((item, index) => {
+    if (item.kind === "add") {
+      adds.push({ tempKey: item.tempKey, sortOrder: index });
+      return;
+    }
+
+    if (!existingIds.has(item.assetId)) {
+      throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.foreignAsset);
+    }
+    if (handled.has(item.assetId)) {
+      throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.duplicateAsset);
+    }
+    handled.add(item.assetId);
+
+    if (item.kind === "keep") keep.push({ assetId: item.assetId, sortOrder: index });
+    else remove.push(item.assetId);
+  });
+
+  // 清单就是保存后的完整列表：每张现有图片都必须出现一次，否则顺序无从确定。
+  if (handled.size !== existingIds.size) {
+    throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.unhandledAsset);
+  }
+
+  assertCollectionMutable((await relatedCounts(id)).runningTasks);
+
+  // 新增项按清单顺序取文件：缺一个就整体拒绝，避免只存一部分。
+  const incoming = adds.map((add) => {
+    const file = payload.files.get(add.tempKey);
+    if (!file) throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.missingUpload);
+    return file;
+  });
+  const images = prepareImages(incoming, getEnv().MAX_UPLOAD_BYTES);
+
+  const preparedAdds = adds.map((add, index) => {
+    const image = images[index];
+    return {
+      sortOrder: add.sortOrder,
+      storageKey: buildAssetStorageKey(id, image.mimeType),
+      fileName: image.fileName,
+      mimeType: image.mimeType,
+      size: image.bytes.length,
+      bytes: image.bytes,
+    };
+  });
+
+  const written: string[] = [];
+  try {
+    for (const asset of preparedAdds) {
+      await writeAssetBytes(asset.storageKey, asset.bytes);
+      written.push(asset.storageKey);
+    }
+
+    await repo.saveCollectionEdit(id, payload.fields, {
+      keep,
+      remove,
+      adds: preparedAdds.map((asset) => ({
+        storageKey: asset.storageKey,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+        size: asset.size,
+        sortOrder: asset.sortOrder,
+      })),
+    });
+  } catch (error) {
+    for (const storageKey of written) await removeAssetFile(storageKey);
+    logger.error("资源夹整组保存失败，已回滚本次新写的文件", { collectionId: id, error });
+    throw new AppError("INTERNAL", COLLECTION_ERROR_MESSAGES.saveFailed, { cause: error });
+  }
+
   return getCollection(id);
 }
 

@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { afterEach, expect, test } from "vitest";
 import { getDb } from "@/lib/db";
 import { storageRoot } from "@/lib/storage";
@@ -8,8 +8,10 @@ import {
   deleteCollection,
   getCollection,
   removeCollectionAsset,
+  saveCollectionEdit,
   updateCollectionFields,
 } from "@/modules/media-collection/service";
+import * as repo from "@/modules/media-collection/repo";
 
 /** 1×1 的 PNG 字节：内容判断只看魔数，集成测试不关心像素。 */
 const PNG_BYTES = Buffer.from(
@@ -153,4 +155,181 @@ test("最后一张图片不能被解除关联（MUST 1）", async () => {
     code: "VALIDATION_FAILED",
   });
   expect(await getDb().mediaAsset.count({ where: { collectionId: created.id } })).toBe(1);
+});
+
+/* ---------- 编辑整组保存（MKACG-870）：一次提交、一个事务、失败不留部分改动 ---------- */
+
+const EDIT_FIELDS = {
+  name: "集成-整组保存",
+  platform: "小红书",
+  sourceUrl: "https://example.com/note/1",
+  sourceTitle: "原始标题",
+  sourceBody: "原始文案",
+};
+
+/** 资源夹目录下的文件名清单：用来断言「磁盘没有新增文件」与「被移除的原图仍留在磁盘」。 */
+async function storedFiles(collectionId: string): Promise<string[]> {
+  try {
+    return (await readdir(assetPath(`media-assets/${collectionId}`))).sort();
+  } catch {
+    return [];
+  }
+}
+
+test("AC-FIX-1 两张原图全标待移除 + 添加 1 张新图：保存成功，只剩新图，旧文件仍在磁盘（MUST 4）", async () => {
+  const created = await createCollection(EDIT_FIELDS, [pngFile("a.png"), pngFile("b.png")]);
+  createdIds.push(created.id);
+
+  const storedBefore = await getDb().mediaAsset.findMany({
+    where: { collectionId: created.id },
+    select: { storageKey: true },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  const saved = await saveCollectionEdit(created.id, {
+    fields: EDIT_FIELDS,
+    assets: [
+      { kind: "remove", assetId: created.assets[0].id },
+      { kind: "remove", assetId: created.assets[1].id },
+      { kind: "add", tempKey: "pending-1" },
+    ],
+    files: new Map([["pending-1", pngFile("c.png")]]),
+  });
+
+  expect(saved.assets.map((asset) => asset.fileName)).toEqual(["c.png"]);
+  expect(saved.assets.map((asset) => asset.fileName)).not.toContain("a.png");
+
+  // 旧记录删了，旧文件还在（MUST 4）。
+  expect(await getDb().mediaAsset.count({ where: { collectionId: created.id } })).toBe(1);
+  for (const row of storedBefore) {
+    expect(await fileExists(row.storageKey)).toBe(true);
+  }
+});
+
+test("AC-FIX-2 新图不合法时保存失败，图片、顺序与来源字段与保存前完全一致，磁盘无新增文件", async () => {
+  const created = await createCollection(EDIT_FIELDS, [pngFile("a.png"), pngFile("b.png")]);
+  createdIds.push(created.id);
+
+  const filesBefore = await storedFiles(created.id);
+
+  await expect(
+    saveCollectionEdit(created.id, {
+      fields: { ...EDIT_FIELDS, name: "不该被写入的名称" },
+      assets: [
+        { kind: "remove", assetId: created.assets[0].id },
+        { kind: "remove", assetId: created.assets[1].id },
+        { kind: "add", tempKey: "pending-1" },
+      ],
+      files: new Map([["pending-1", { fileName: "note.txt", bytes: Buffer.from("纯文本内容") }]]),
+    }),
+  ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+
+  const after = await getCollection(created.id);
+  expect(after.name).toBe(EDIT_FIELDS.name);
+  expect(after.assets.map((asset) => asset.id)).toEqual(created.assets.map((asset) => asset.id));
+  expect(after.assets.map((asset) => asset.fileName)).toEqual(["a.png", "b.png"]);
+  expect(after.assets.map((asset) => asset.sortOrder)).toEqual([0, 1]);
+  expect(await storedFiles(created.id)).toEqual(filesBefore);
+});
+
+test("AC-FIX-5 结果集为 0 张时返回 VALIDATION_FAILED，库与磁盘均无变化", async () => {
+  const created = await createCollection(EDIT_FIELDS, [pngFile("a.png")]);
+  createdIds.push(created.id);
+  const filesBefore = await storedFiles(created.id);
+
+  await expect(
+    saveCollectionEdit(created.id, {
+      fields: { ...EDIT_FIELDS, name: "不该被写入的名称" },
+      assets: [{ kind: "remove", assetId: created.assets[0].id }],
+      files: new Map(),
+    }),
+  ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+
+  const after = await getCollection(created.id);
+  expect(after.name).toBe(EDIT_FIELDS.name);
+  expect(after.assets.map((asset) => asset.id)).toEqual([created.assets[0].id]);
+  expect(await storedFiles(created.id)).toEqual(filesBefore);
+});
+
+test("AC-FIX-6 资源夹有运行中任务时保存返回 CONFLICT 并说明原因", async () => {
+  const created = await createCollection(EDIT_FIELDS, [pngFile("a.png")]);
+  createdIds.push(created.id);
+
+  // 两条阶段都排队中 → 派生的任务状态是 running（docs/prd/04「阶段与状态」）。
+  await getDb().generationTask.create({
+    data: {
+      collectionId: created.id,
+      visualStyle: "留白干净",
+      copyStyle: "口语化",
+      imageCount: 1,
+      agentSnapshot: {},
+      stages: { create: [{ stage: "image" }, { stage: "copy" }] },
+    },
+  });
+
+  const filesBefore = await storedFiles(created.id);
+
+  await expect(
+    saveCollectionEdit(created.id, {
+      fields: EDIT_FIELDS,
+      assets: [
+        { kind: "keep", assetId: created.assets[0].id },
+        { kind: "add", tempKey: "pending-1" },
+      ],
+      files: new Map([["pending-1", pngFile("c.png")]]),
+    }),
+  ).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringContaining("运行中的任务") });
+
+  expect(await storedFiles(created.id)).toEqual(filesBefore);
+  expect(await getDb().mediaAsset.count({ where: { collectionId: created.id } })).toBe(1);
+});
+
+test("AC-FIX-7 图片插入失败时整个事务回滚：来源字段与图片都没变", async () => {
+  const created = await createCollection(EDIT_FIELDS, [pngFile("a.png"), pngFile("b.png")]);
+  createdIds.push(created.id);
+
+  // 构造插入失败：size 是 int4，超出范围时写库报错；此前的字段更新与删除都已在这个事务里执行。
+  await expect(
+    repo.saveCollectionEdit(created.id, { ...EDIT_FIELDS, name: "不该被写入的名称" }, {
+      keep: [{ assetId: created.assets[1].id, sortOrder: 0 }],
+      remove: [created.assets[0].id],
+      adds: [
+        {
+          storageKey: `media-assets/${created.id}/00000000-0000-4000-8000-000000000000.png`,
+          fileName: "broken.png",
+          mimeType: "image/png",
+          size: 2 ** 40,
+          sortOrder: 1,
+        },
+      ],
+    }),
+  ).rejects.toThrow();
+
+  const after = await getCollection(created.id);
+  expect(after.name).toBe(EDIT_FIELDS.name);
+  expect(after.assets.map((asset) => asset.id)).toEqual(created.assets.map((asset) => asset.id));
+  expect(after.assets.map((asset) => asset.sortOrder)).toEqual([0, 1]);
+});
+
+test("AC-FIX-8 保存后的 sort_order 与清单顺序一致，重新读取顺序不变", async () => {
+  const created = await createCollection(EDIT_FIELDS, [pngFile("a.png"), pngFile("b.png")]);
+  createdIds.push(created.id);
+
+  // 清单：移除 a、保留 b、新增 c → 最终顺序 b、c。
+  const saved = await saveCollectionEdit(created.id, {
+    fields: EDIT_FIELDS,
+    assets: [
+      { kind: "remove", assetId: created.assets[0].id },
+      { kind: "keep", assetId: created.assets[1].id },
+      { kind: "add", tempKey: "pending-1" },
+    ],
+    files: new Map([["pending-1", pngFile("c.png")]]),
+  });
+
+  expect(saved.assets.map((asset) => asset.fileName)).toEqual(["b.png", "c.png"]);
+  expect(saved.assets.map((asset) => asset.sortOrder)).toEqual([1, 2]);
+
+  const reread = await getCollection(created.id);
+  expect(reread.assets.map((asset) => asset.id)).toEqual(saved.assets.map((asset) => asset.id));
+  expect(reread.assets.map((asset) => asset.fileName)).toEqual(["b.png", "c.png"]);
 });

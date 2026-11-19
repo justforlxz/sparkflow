@@ -62,10 +62,18 @@
 | POST | `/api/collections` | 创建（字段 + 至少一张图片，multipart 或先上传后关联） |
 | GET | `/api/collections/[id]` | 详情（含资产列表、任务数、结果数、状态） |
 | PATCH | `/api/collections/[id]` | 编辑来源信息 |
+| POST | `/api/collections/[id]/save` | 编辑保存：来源信息与图片变更一次提交（multipart） |
 | DELETE | `/api/collections/[id]` | 删除，级联清理 |
 | POST | `/api/collections/[id]/assets` | 追加图片（multipart，可多张） |
 | DELETE | `/api/collections/[id]/assets/[assetId]` | 解除关联 |
 | GET | `/api/files/[collectionId]/[assetId]` | 鉴权读取原图字节 |
+
+编辑保存只有一个入口：`POST /api/collections/[id]/save`。表单里 `fields` 是整体替换的来源信息 JSON，
+`assets` 是有序图片清单（`keep` / `remove` / `add`，顺序即新的 `sort_order`），每个 `add` 对应一个
+`file:<tempKey>` 文件 part。服务端先完成全部校验再写盘，随后在一个事务里改字段、删关联、插新增、
+更新顺序；事务失败会补偿删除本次新写的文件，库与磁盘都回到保存前的状态。
+`PATCH /api/collections/[id]`、`POST · DELETE /api/collections/[id]/assets` 保留给其它入口与独立验收，
+编辑弹窗不再调用它们。
 
 资源夹状态（列表筛选用的派生值，不落库）：
 `draft`（无结果且无任务）／`generating`（有运行中任务）／`has_results`（有结果未发布）／`published`（已发布）。

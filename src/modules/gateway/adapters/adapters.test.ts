@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyStatus } from "./http";
+import { classifyResponse } from "./http";
 import {
   buildInitializeRequest,
   buildToolsListRequest,
@@ -40,15 +40,55 @@ function headersOf(init: RequestInit): Record<string, string> {
   return (init.headers ?? {}) as Record<string, string>;
 }
 
-describe("HTTP 状态码分类（MUST 6）", () => {
-  it("2xx 成功，401/403 鉴权失败，其余 4xx 配置错误，5xx 归入网络类", () => {
-    expect(classifyStatus(200)).toBeNull();
-    expect(classifyStatus(401)).toBe("auth");
-    expect(classifyStatus(403)).toBe("auth");
-    expect(classifyStatus(400)).toBe("config");
-    expect(classifyStatus(404)).toBe("config");
-    expect(classifyStatus(500)).toBe("network");
-    expect(classifyStatus(503)).toBe("network");
+describe("状态码与响应体的失败分类（MUST 6、AC-903-3）", () => {
+  it("2xx 成功、401/403 鉴权失败、5xx 归入网络类", () => {
+    expect(classifyResponse(200, "")).toBeNull();
+    expect(classifyResponse(401, '{"error":"unauthorized"}')).toBe("auth");
+    expect(classifyResponse(403, '{"error":"forbidden"}')).toBe("auth");
+    expect(classifyResponse(500, "")).toBe("network");
+    expect(classifyResponse(503, "")).toBe("network");
+  });
+
+  it("404 且响应体在说模型时归入模型类（含真实 magpie 的措辞）", () => {
+    expect(
+      classifyResponse(404, '{"error":{"message":"The model `group/x` does not exist"}}'),
+    ).toBe("model");
+    expect(
+      classifyResponse(
+        404,
+        '{"error":{"code":null,"message":"magpie knows no model \\"group/mkacg903-unavailable\\" Name a model as provider/model (as /v1/models lists it)","type":"not_found_error"}}',
+      ),
+    ).toBe("model");
+    expect(classifyResponse(404, '{"error":{"code":"model_not_found"}}')).toBe("model");
+    expect(classifyResponse(404, '{"error":"invalid model_id: group/x"}')).toBe("model");
+  });
+
+  it("404 但正文只是在列端点（出现 models 字样）时仍是地址或参数类（回归：Base URL 多写一段）", () => {
+    // 真实 magpie 对错误路径的 404 正文，唯一命中是 /v1beta/models/* 里的 models。
+    const endpointList =
+      '{"error":{"code":null,"message":"magpie serves /v1/chat/completions, /v1/responses, /v1/messages, /v1/systemone, /v1/images/generations, /v1/images/edits, /v1/videos, /v1/embeddings, /v1/rerank, /v1/decisions, /v1/audio/transcriptions, /v1/audio/translations, /v1/audio/speech, /v1/realtime (WebSocket) and /v1beta/models/*","param":null,"type":"not_found_error"}}';
+
+    expect(classifyResponse(404, endpointList)).toBe("config");
+  });
+
+  it("404 没提模型时仍是地址或参数类", () => {
+    expect(classifyResponse(404, "<html><body>Not Found</body></html>")).toBe("config");
+    expect(classifyResponse(404, "")).toBe("config");
+  });
+
+  it("400 且响应体提到模型时归入模型类", () => {
+    expect(
+      classifyResponse(400, '{"error":{"message":"unsupported model: group/x"}}'),
+    ).toBe("model");
+  });
+
+  it("400 没提模型时仍是地址或参数类", () => {
+    expect(classifyResponse(400, '{"error":"missing parameter messages"}')).toBe("config");
+  });
+
+  it("401/403 即使响应体提到模型也归入鉴权类（MUST NOT：不把鉴权错误归错类）", () => {
+    expect(classifyResponse(401, '{"error":"model not found"}')).toBe("auth");
+    expect(classifyResponse(403, '{"error":"model access denied"}')).toBe("auth");
   });
 });
 
@@ -78,6 +118,47 @@ describe("OpenAI Chat 请求拼装", () => {
     await expect(openAiChatAdapter.probe(TARGET, { fetchImpl })).rejects.toMatchObject({
       kind: "auth",
     });
+  });
+
+  it("模型不存在时抛模型类，文案指向模型 ID，且不回显响应体与英文原文（AC-903-1、AC-903-2）", async () => {
+    const upstream =
+      '{"error":{"message":"The model `group/mkacg903-missing` does not exist","code":"model_not_found"}}';
+    const { fetchImpl } = fakeFetch([{ status: 404, body: upstream }]);
+
+    const error = (await openAiChatAdapter.probe(TARGET, { fetchImpl }).catch((cause) => cause)) as
+      | ConnectionTestError
+      | undefined;
+
+    expect(error).toBeInstanceOf(ConnectionTestError);
+    expect(error?.kind).toBe("model");
+    expect(error?.message).toContain("网关返回 404");
+    expect(error?.message).toContain("模型");
+    expect(error?.message).not.toContain("请求地址或参数");
+    expect(error?.message).not.toContain("does not exist");
+    expect(error?.message).not.toContain("mkacg903-missing");
+  });
+
+  it("404 但响应体没提模型时仍报地址或参数类", async () => {
+    const { fetchImpl } = fakeFetch([{ status: 404, body: "<html>Not Found</html>" }]);
+
+    await expect(openAiChatAdapter.probe(TARGET, { fetchImpl })).rejects.toMatchObject({
+      kind: "config",
+    });
+  });
+
+  it("Base URL 多写一段路径时仍报地址或参数类（回归：不回显端点清单）（AC-903-4）", async () => {
+    const endpointList =
+      '{"error":{"code":null,"message":"magpie serves /v1/chat/completions, /v1/responses, /v1/messages and /v1beta/models/*","type":"not_found_error"}}';
+    const { fetchImpl } = fakeFetch([{ status: 404, body: endpointList }]);
+
+    const error = (await openAiChatAdapter.probe(TARGET, { fetchImpl }).catch((cause) => cause)) as
+      | ConnectionTestError
+      | undefined;
+
+    expect(error?.kind).toBe("config");
+    expect(error?.message).toContain("请求地址或参数不被接受");
+    expect(error?.message).not.toContain("模型");
+    expect(error?.message).not.toContain("/v1beta/models");
   });
 });
 

@@ -38,7 +38,7 @@ export interface ProtocolAdapter {
 }
 
 /**
- * 连接测试失败：带类别（网络错误 / 鉴权失败 / 配置错误），由服务层翻译成结论与文案。
+ * 连接测试失败：带类别（网络错误 / 鉴权失败 / 模型不被接受 / 配置错误），由服务层翻译成结论与文案。
  * 消息里不写请求头、不写密钥、不回显上游响应体（MUST 7）。
  */
 export class ConnectionTestError extends Error {
@@ -56,6 +56,10 @@ export class ConnectionTestError extends Error {
 
   static auth(message: string): ConnectionTestError {
     return new ConnectionTestError("auth", message);
+  }
+
+  static model(message: string): ConnectionTestError {
+    return new ConnectionTestError("model", message);
   }
 
   static config(message: string): ConnectionTestError {

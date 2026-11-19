@@ -76,4 +76,15 @@ describe("网关对外形状", () => {
     );
     expect(ok.lastTest).toMatchObject({ ok: true, outcome: "ok", failureLabel: null });
   });
+
+  it("模型类失败在列表里显示为「模型不可用」，与「配置错误」区分（AC-903-1）", () => {
+    const view = toGatewayView(
+      record({
+        lastTestStatus: "model",
+        lastTestMessage: "网关返回 404：模型不被网关接受，请检查模型 ID 是否存在于该网关",
+      }),
+    );
+
+    expect(view.lastTest).toMatchObject({ ok: false, outcome: "model", failureLabel: "模型不可用" });
+  });
 });

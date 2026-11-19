@@ -55,7 +55,7 @@ function SourceRow({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="flex gap-3 border-b border-zinc-100 py-2 last:border-b-0">
       <dt className="w-24 shrink-0 text-zinc-500">{label}</dt>
-      <dd className="whitespace-pre-wrap break-words text-zinc-900">
+      <dd className="min-w-0 whitespace-pre-wrap break-words text-zinc-900">
         {value ?? COLLECTION_COPY.notFoundSource}
       </dd>
     </div>
@@ -145,8 +145,8 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
       </nav>
 
       {tab === "assets" ? (
-        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-          <div className="space-y-3">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <div className="min-w-0 space-y-3">
             <h2 className="text-base font-semibold text-zinc-900">{COLLECTION_COPY.imagesSection}</h2>
             {collection.assets.length === 0 ? (
               <EmptyState message={COLLECTION_COPY.emptyAssets} />
@@ -174,7 +174,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
             <FeatureGate feature="image-to-image" />
           </div>
 
-          <Panel title={COLLECTION_COPY.sourceSection} className="h-fit">
+          <Panel title={COLLECTION_COPY.sourceSection} className="h-fit min-w-0">
             <dl className="text-sm">
               <SourceRow label="来源平台" value={collection.platform} />
               <SourceRow label="来源链接" value={collection.sourceUrl} />

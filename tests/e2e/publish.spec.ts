@@ -526,3 +526,47 @@ test("AC-08-8 删除结果后其发布记录消失", async ({ page, request }) =
   await page.goto("/published");
   await expect(page.locator(`[data-result-id="${result.id}"]`)).toHaveCount(0);
 });
+
+/** 造一条已发布的记录：参数兜底用例需要一个「第 1 页应该看得到」的对象。 */
+async function publishOne(page: Page, request: APIRequestContext): Promise<ResultView> {
+  const { collectionId, result } = await createResult(request);
+  await loginInBrowser(page);
+  const dialog = await openPublishDialog(page, collectionId, result.id);
+  await dialog.getByTestId("publish-mark").click();
+  await expect(page.getByTestId("publish-status").first()).toHaveText("已发布");
+  return result;
+}
+
+test("AC-FIX-1 全局页手改非法查询参数时按第 1 页、无筛选展示", async ({ page, request }) => {
+  const result = await publishOne(page, request);
+
+  // 页码不是数字：退回第 1 页，已发布的记录照常列出。
+  const badPage = await page.goto("/published?page=abc");
+  expect(badPage?.status()).toBe(200);
+  await expect(page.locator(`[data-result-id="${result.id}"]`)).toHaveCount(1);
+
+  // 资源夹 id 不是 UUID：忽略这个筛选条件，记录仍然列出（既不报错也不查空）。
+  const badFilter = await page.goto("/published?collectionId=not-a-uuid");
+  expect(badFilter?.status()).toBe(200);
+  await expect(page.locator(`[data-result-id="${result.id}"]`)).toHaveCount(1);
+});
+
+test("AC-FIX-2 越界页码不报错：0 与负数回到第 1 页，超大页码按既有分页规则给空列表", async ({
+  page,
+  request,
+}) => {
+  const result = await publishOne(page, request);
+
+  for (const pageNumber of ["0", "-1"]) {
+    const response = await page.goto(`/published?page=${pageNumber}`);
+    expect(response?.status()).toBe(200);
+    await expect(page.locator(`[data-result-id="${result.id}"]`)).toHaveCount(1);
+  }
+
+  const beyond = await page.goto("/published?page=99999");
+  expect(beyond?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "发布记录", level: 1 })).toBeVisible();
+  // 分页是原始 skip/take：跳过全部记录就是空列表，页面照常渲染空状态。
+  await expect(page.locator(`[data-result-id="${result.id}"]`)).toHaveCount(0);
+  await expect(page.getByText("还没有发布记录", { exact: false })).toBeVisible();
+});

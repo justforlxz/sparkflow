@@ -40,7 +40,9 @@ export type MarkPublishedInput = z.infer<typeof markPublishedSchema>;
 
 /** 发布记录列表（全局页与资源夹页签共用同一组分页参数）。 */
 export const listPublishRecordsQuerySchema = z.object({
-  collectionId: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  // 资源夹主键是 `@default(uuid())`：格式不对的 id 一定查不到资源夹，当作参数不合法处理，
+  // 由调用方决定是报错（接口）还是忽略筛选（页面）。
+  collectionId: z.preprocess(emptyToUndefined, z.uuid().optional()),
   page: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).default(1)),
   pageSize: z.preprocess(
     emptyToUndefined,

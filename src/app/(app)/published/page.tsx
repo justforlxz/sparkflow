@@ -23,10 +23,13 @@ function firstValue(value: string | string[] | undefined): string | undefined {
  */
 export default async function PublishedPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const query = listPublishRecordsQuerySchema.parse({
+  const parsed = listPublishRecordsQuerySchema.safeParse({
     collectionId: firstValue(params.collectionId),
     page: firstValue(params.page),
   });
+  // 手改 URL 传进非法参数时退回默认查询（第 1 页、不筛选），不把整页打成错误页
+  // （AC-FIX-1、AC-FIX-2）。其它页面也是这个写法。
+  const query = parsed.success ? parsed.data : listPublishRecordsQuerySchema.parse({});
 
   const [records, collections] = await Promise.all([
     listPublishRecords(query),

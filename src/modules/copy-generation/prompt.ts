@@ -10,6 +10,7 @@
  * 返回 `{ system, user }` 两条消息：内容约束与输出结构放 system，素材与本次要求放 user。
  * 模板变量集中在 `CopyPromptInput`，单测直接断言每一部分。
  */
+import { findVisualStyle } from "@/modules/image-generation/styles";
 import { describeCopyStyle } from "./styles";
 
 export interface CopyPromptInput {
@@ -25,7 +26,7 @@ export interface CopyPromptInput {
   };
   images: {
     count: number;
-    /** 视觉方向的 key（由图片创作模块登记）；这里只告知识别代号，不重复定义视觉方向描述。 */
+    /** 视觉方向的 key（由图片创作模块登记）；描述也从那份登记表取，这里不另写一份。 */
     visualStyle: string;
   };
   copyStyle: string;
@@ -58,6 +59,15 @@ function orPlaceholder(value: string | null, placeholder: string): string {
   return trimmed ? trimmed : placeholder;
 }
 
+/**
+ * 视觉方向进提示词的样子：名称加描述，描述取自图片模块的登记表（docs/architecture.md 第 5 节）。
+ * 认不出的 key 按原文交给模型，不编造描述 —— 与文案风格的既有做法一致。
+ */
+function describeVisualStyle(value: string): string {
+  const style = findVisualStyle(value);
+  return style ? `${style.label}——${style.description}` : value;
+}
+
 export function buildCopyPrompt(input: CopyPromptInput): CopyPrompt {
   const { agent, collection, images, copyStyle, extraPrompt } = input;
 
@@ -79,7 +89,7 @@ export function buildCopyPrompt(input: CopyPromptInput): CopyPrompt {
     "",
     "【本次生成的图片】",
     `- 张数：${images.count}`,
-    `- 视觉方向代号：${images.visualStyle}`,
+    `- 视觉方向：${describeVisualStyle(images.visualStyle)}`,
     "- 说明：这批图片按上述视觉方向生成，文案语气与画面调性保持一致。",
     "",
     "【这次的要求】",

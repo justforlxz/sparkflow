@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCopyPrompt, type CopyPromptInput } from "./prompt";
+import { VISUAL_STYLES, findVisualStyle } from "@/modules/image-generation/styles";
 
 const INPUT: CopyPromptInput = {
   agent: {
@@ -36,12 +37,45 @@ describe("提示词拼装（docs/prd/06「输入拼装」）", () => {
     expect(user).toContain("不得当作待改写文本");
   });
 
-  it("第三部分：图片描述只有张数与视觉方向，不含图片字节", () => {
+  it("第三部分：图片描述给出张数与视觉方向描述，不含图片字节", () => {
     const { user } = buildCopyPrompt(INPUT);
 
     expect(user).toContain("张数：4");
-    expect(user).toContain("视觉方向代号：fresh");
+    expect(user).toContain("视觉方向：");
     expect(user).not.toContain("data:image");
+  });
+
+  it("AC-FIX-1 视觉方向带上图片模块登记表里的描述全文，不再只给代号", () => {
+    const { user } = buildCopyPrompt(INPUT);
+
+    expect(user).toContain(findVisualStyle("fresh")!.description);
+    expect(user).not.toContain("视觉方向代号：fresh");
+  });
+
+  it("AC-FIX-2 三个视觉方向各自取到自己的描述，不串用", () => {
+    for (const style of VISUAL_STYLES) {
+      const { user } = buildCopyPrompt({
+        ...INPUT,
+        images: { ...INPUT.images, visualStyle: style.value },
+      });
+
+      expect(user, style.value).toContain(style.description);
+
+      for (const other of VISUAL_STYLES.filter((entry) => entry.value !== style.value)) {
+        expect(user, `${style.value} 不应包含 ${other.value} 的描述`).not.toContain(
+          other.description,
+        );
+      }
+    }
+  });
+
+  it("AC-FIX-3 未知的视觉方向 key 按原文呈现，不抛错、不编造描述", () => {
+    const { user } = buildCopyPrompt({ ...INPUT, images: { ...INPUT.images, visualStyle: "sunset" } });
+
+    expect(user).toContain("视觉方向：sunset");
+    for (const style of VISUAL_STYLES) {
+      expect(user).not.toContain(style.description);
+    }
   });
 
   it("第四部分：文案风格换成描述，补充要求原样带上", () => {

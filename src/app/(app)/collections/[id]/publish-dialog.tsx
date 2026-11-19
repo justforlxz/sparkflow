@@ -131,6 +131,14 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
             </div>
           </div>
 
+          {/* 与结果页签同一处提示：发布前让用户自己确认水印（MKACG-901 MUST 1）。 */}
+          <p
+            data-testid="publish-watermark-notice"
+            className="break-words rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            {PUBLISH_COPY.upstreamWatermarkNotice}
+          </p>
+
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {result.assets.map((asset) => (
               <li key={asset.id}>

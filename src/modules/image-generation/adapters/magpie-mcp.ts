@@ -315,16 +315,25 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
       throw new StageError(code, `下载生成的图片失败：网关返回 ${response.status}`);
     }
 
+    // 上游 2xx 不代表拿到了图片：错误页（HTML）同样是 200（MKACG-872）。
+    // 只收 content-type 为 image/* 的响应，其余按失败分类表记 UPSTREAM_FORMAT，
+    // 不能让非图片字节被当成 .png 落盘、把阶段标成成功。校验放在读响应体之前，
+    // 错误页的字节不必取回。
+    const contentType =
+      response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!contentType.startsWith("image/")) {
+      throw new StageError(
+        IMAGE_ERROR_CODES.format,
+        `下载生成的图片失败：上游返回的不是图片（content-type: ${contentType || "未提供"}）`,
+      );
+    }
+
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length === 0) {
       throw new StageError(IMAGE_ERROR_CODES.format, "下载生成的图片失败：网关返回了空文件");
     }
 
-    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
-    return {
-      bytes,
-      mimeType: contentType.startsWith("image/") ? contentType : "image/png",
-    };
+    return { bytes, mimeType: contentType };
   }
 
   /** MCP 握手：每个阶段一次。没有会话 id 也继续（magpie 的单次调用不要求会话）。 */

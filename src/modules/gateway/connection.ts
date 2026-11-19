@@ -1,5 +1,5 @@
 /**
- * 连接测试的执行与结论翻译（docs/prd/02 MUST 6：真实请求，区分网络错误 / 鉴权失败 / 配置错误）。
+ * 连接测试的执行与结论翻译（docs/prd/02 MUST 6：真实请求，区分网络错误 / 鉴权失败 / 模型不被接受 / 配置错误）。
  * 纯逻辑，可用假 fetch 单测；数据库读写在 service.ts。
  */
 import { findAdapter } from "./adapters";

@@ -20,7 +20,7 @@ export interface GatewayModelView {
 export interface ConnectionTestView {
   outcome: ConnectionTestOutcome;
   ok: boolean;
-  /** 失败类别的说法（网络错误 / 鉴权失败 / 配置错误），成功时为 null。 */
+  /** 失败类别的说法（网络错误 / 鉴权失败 / 模型不可用 / 配置错误），成功时为 null。 */
   failureLabel: string | null;
   message: string;
   testedAt: string | null;

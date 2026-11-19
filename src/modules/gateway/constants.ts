@@ -72,8 +72,11 @@ export function findCapability(value: string): CapabilityDefinition | undefined 
   return MODEL_CAPABILITIES.find((entry) => entry.value === value);
 }
 
-/** 连接测试的失败类别：网络错误 / 鉴权失败 / 配置错误（MUST 6）。 */
-export const CONNECTION_FAILURE_KINDS = ["network", "auth", "config"] as const;
+/**
+ * 连接测试的失败类别（MUST 6）：网络错误 / 鉴权失败 / 模型不被网关接受 / 配置错误。
+ * 「模型不被接受」单独一类，因为它要改的是模型 ID，而配置错误要改的是 Base URL 或参数。
+ */
+export const CONNECTION_FAILURE_KINDS = ["network", "auth", "model", "config"] as const;
 
 export type ConnectionFailureKind = (typeof CONNECTION_FAILURE_KINDS)[number];
 
@@ -89,5 +92,6 @@ export type ConnectionTestOutcome = (typeof CONNECTION_TEST_OUTCOMES)[number];
 export const CONNECTION_FAILURE_LABELS: Record<ConnectionFailureKind, string> = {
   network: "网络错误",
   auth: "鉴权失败",
+  model: "模型不可用",
   config: "配置错误",
 };

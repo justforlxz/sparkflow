@@ -10,12 +10,14 @@
  *
  * 本版本不传 `reference_images`（MUST NOT），也不认识视频工具。
  */
+import { logger } from "@/lib/logger";
 import {
   MCP_PATH,
   MCP_PROTOCOL_VERSION,
   parseJsonRpc,
 } from "@/modules/gateway/adapters/magpie-mcp";
 import { StageError, type GeneratedImage } from "@/modules/generation/types";
+import { describeImageRejection } from "../failure";
 import { IMAGE_ERROR_CODES, type GenerateImageInput, type ImageGenerator } from "./types";
 
 const CLIENT_NAME = "sparkflow";
@@ -248,11 +250,11 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
     signal?: AbortSignal,
   ): Promise<GeneratedImage[] | null> {
     if (result.isError === true) {
+      // 上游原文只进日志（MUST 2）：界面摘要由 `describeImageRejection` 说成中文，
+      // 不回显 JSON、英文正文与域名（MKACG-902 MUST 1）。
       const reason = joinTextContent(result);
-      throw new StageError(
-        IMAGE_ERROR_CODES.rejected,
-        reason.length > 0 ? `上游拒绝了这次出图请求：${reason}` : "上游拒绝了这次出图请求",
-      );
+      logger.warn("magpie 图片 MCP 拒绝了出图请求", { reason });
+      throw new StageError(IMAGE_ERROR_CODES.rejected, describeImageRejection(reason));
     }
 
     const inline = parseInlineImages(result);
@@ -412,8 +414,13 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
     }
     if (!response.ok) {
       const code = response.status >= 500 ? IMAGE_ERROR_CODES.timeout : IMAGE_ERROR_CODES.rejected;
-      const reason = response.status >= 500 ? "网关暂时不可用" : "网关拒绝了请求";
-      throw new StageError(code, `${reason}（HTTP ${response.status}）`);
+      // 4xx 的正文里常有上游原因（例如模型不存在）：只按脱敏规则进日志，
+      // 界面与接口里只留中文说明（MKACG-902 MUST 1、MUST 2）。
+      const reason = await response.text().catch(() => "");
+      logger.warn("magpie 图片 MCP 拒绝了请求", { status: response.status, reason });
+      const message =
+        response.status >= 500 ? "网关暂时不可用，请稍后重试" : describeImageRejection(reason);
+      throw new StageError(code, `${message}（HTTP ${response.status}）`);
     }
 
     const bodyText = await response.text().catch(() => "");
@@ -422,11 +429,13 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
       throw new StageError(IMAGE_ERROR_CODES.format, "网关没有返回合法的 JSON-RPC 响应");
     }
     if (envelope.error) {
-      const message = envelope.error.message?.trim() || "没有说明";
-      throw new StageError(
-        IMAGE_ERROR_CODES.rejected,
-        `上游拒绝了请求（${envelope.error.code ?? "未知错误码"}）：${message}`,
-      );
+      // JSON-RPC 的 error 说明是上游英文原文：只进日志，界面上只留中文说明。
+      const reason = envelope.error.message?.trim() ?? "";
+      logger.warn("magpie 图片 MCP 返回 JSON-RPC 错误", {
+        code: envelope.error.code ?? null,
+        reason,
+      });
+      throw new StageError(IMAGE_ERROR_CODES.rejected, describeImageRejection(reason));
     }
     if (envelope.result === undefined) {
       throw new StageError(IMAGE_ERROR_CODES.format, "网关的 JSON-RPC 响应里没有 result");

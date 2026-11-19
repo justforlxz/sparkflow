@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MagpieMcpImageGenerator } from "./magpie-mcp";
 
 /**
@@ -56,6 +56,19 @@ function scriptedFetch(steps: Step[]) {
 
   return { fetchImpl, calls };
 }
+
+/** 抓取服务端日志（logger 的 warn 与 info 都写 console.log）：断言上游原文只进日志。 */
+function captureLog() {
+  const lines: string[] = [];
+  vi.spyOn(console, "log").mockImplementation((line?: unknown) => {
+    lines.push(String(line));
+  });
+  return { text: () => lines.join("\n") };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function toolCall(call: RecordedCall): { name: string; arguments: Record<string, unknown> } {
   const params = (call.body?.params ?? {}) as { name?: string; arguments?: Record<string, unknown> };
@@ -316,20 +329,29 @@ describe("magpie 图片 MCP 响应解析", () => {
     });
   });
 
-  it("上游 isError 的工具结果归为 UPSTREAM_REJECTED 并带上原因", async () => {
+  it("上游 isError 的工具结果：界面只说中文说明，原文只进日志（AC-902-1、AC-902-3）", async () => {
+    const log = captureLog();
+    const upstream =
+      "no image: api.siliconflow.cn: 400 Bad Request: " +
+      '{"code":20012,"message":"Model does not exist. Please check it carefully.","data":null}';
     const { fetchImpl } = scriptedFetch([
       () => rpcResult({}),
-      () =>
-        rpcResult({
-          content: [{ type: "text", text: "no image: the model doesn't take size" }],
-          isError: true,
-        }),
+      () => rpcResult({ content: [{ type: "text", text: upstream }], isError: true }),
     ]);
 
-    await expect(buildGenerator(fetchImpl).generate(INPUT)).rejects.toMatchObject({
-      code: "UPSTREAM_REJECTED",
-      message: expect.stringContaining("the model doesn't take size") as unknown as string,
-    });
+    const error = await buildGenerator(fetchImpl)
+      .generate(INPUT)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
+    const message = (error as Error).message;
+    expect(message).toContain("模型");
+    expect(message).toContain("设置页");
+    for (const fragment of ["null", "{", "}", "api.", "Model does not exist", "siliconflow"]) {
+      expect(message).not.toContain(fragment);
+    }
+    // 上游原文留在服务端日志里，据此能判断是模型不被接受（MUST 2、AC-902-3）
+    expect(log.text()).toContain("Model does not exist");
   });
 
   it("既没有图片也没有任务 id 时归为 UPSTREAM_FORMAT", async () => {
@@ -392,16 +414,64 @@ describe("magpie 图片 MCP 失败分类", () => {
     });
   });
 
-  it("JSON-RPC 的 error 字段归为 UPSTREAM_REJECTED，带上游码与说明", async () => {
+  it("JSON-RPC 的 error 字段：界面只说中文，上游码与说明只进日志", async () => {
+    const log = captureLog();
     const { fetchImpl } = scriptedFetch([
       () => rpcResult({}),
       () => jsonResponse({ jsonrpc: "2.0", id: 2, error: { code: -32602, message: "no tool generate_image" } }),
     ]);
 
-    await expect(buildGenerator(fetchImpl).generate(INPUT)).rejects.toMatchObject({
-      code: "UPSTREAM_REJECTED",
-      message: expect.stringContaining("no tool generate_image") as unknown as string,
-    });
+    const error = await buildGenerator(fetchImpl)
+      .generate(INPUT)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
+    const message = (error as Error).message;
+    expect(message).toContain("视觉方向");
+    expect(message).not.toContain("no tool generate_image");
+    expect(message).not.toContain("-32602");
+    expect(log.text()).toContain("no tool generate_image");
+    expect(log.text()).toContain("-32602");
+  });
+
+  it("上游拒绝的原因没说模型时，说明指向请求参数而不是模型", async () => {
+    const { fetchImpl } = scriptedFetch([
+      () => rpcResult({}),
+      () =>
+        rpcResult({
+          content: [{ type: "text", text: "no image: invalid n, should be in [1, 1]" }],
+          isError: true,
+        }),
+    ]);
+
+    const error = await buildGenerator(fetchImpl)
+      .generate(INPUT)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
+    expect((error as Error).message).toContain("视觉方向");
+    expect((error as Error).message).not.toContain("invalid n");
+  });
+
+  it("4xx 的响应正文只说「模型不被接受」，原文只进日志（AC-902-1）", async () => {
+    const log = captureLog();
+    const upstream = '{"error":{"message":"The model `group/mkacg902-missing` does not exist"}}';
+    const { fetchImpl } = scriptedFetch([
+      () => rpcResult({}),
+      () => new Response(upstream, { status: 400, headers: { "content-type": "application/json" } }),
+    ]);
+
+    const error = await buildGenerator(fetchImpl)
+      .generate(INPUT)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
+    const message = (error as Error).message;
+    expect(message).toContain("模型");
+    expect(message).toContain("HTTP 400");
+    expect(message).not.toContain("does not exist");
+    expect(message).not.toContain("mkacg902-missing");
+    expect(log.text()).toContain("mkacg902-missing");
   });
 
   it("返回非 JSON-RPC 时归为 UPSTREAM_FORMAT", async () => {

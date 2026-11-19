@@ -47,11 +47,72 @@ const UPSTREAM_ERROR_CODES = new Set([
   "P1017",
 ]);
 
+/** 驱动层（pg / Node 网络）的套接字错误码：连不上、被对端掐断、超时。 */
+const DRIVER_SOCKET_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EPIPE",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+]);
+
+/** PostgreSQL 服务端停机/暂不可用的 SQLSTATE：57P01 管理员停机、57P02 崩溃停机、57P03 暂不接受连接。 */
+const SQLSTATE_SHUTDOWN_CODES = new Set(["57P01", "57P02", "57P03"]);
+
+/** `@prisma/adapter-pg` 把驱动错误归一成的连接类 kind。 */
+const DRIVER_CONNECTION_KINDS = new Set([
+  "DatabaseNotReachable",
+  "ConnectionClosed",
+  "SocketTimeout",
+  "TlsConnectionError",
+]);
+
+/**
+ * 连接被静默掐断时 pg 只给一句消息、没有错误码（实测 `Error("Connection terminated unexpectedly")`），
+ * 只能按消息前缀判断。这些字符串来自 pg / pg-pool 与 Prisma 客户端的固定文案。
+ */
+const CONNECTION_LOST_MESSAGE =
+  /^(Connection terminated|Client has encountered a connection error and is not queryable|Client was closed and is not queryable|Can't reach database server)/;
+
+/** 把异常当成普通记录看待；字段是否存在、类型对不对，读的时候再收窄。 */
+type ErrorShape = Record<string, unknown>;
+
+function asObject(value: unknown): ErrorShape | null {
+  return typeof value === "object" && value !== null ? (value as ErrorShape) : null;
+}
+
+/** Prisma 错误码、套接字错误码、SQLSTATE class 08（连接异常）与停机码都算连接不可用。 */
+function isConnectionCode(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return (
+    UPSTREAM_ERROR_CODES.has(value) ||
+    DRIVER_SOCKET_ERROR_CODES.has(value) ||
+    SQLSTATE_SHUTDOWN_CODES.has(value) ||
+    /^08[0-9A-Z]{3}$/.test(value)
+  );
+}
+
+/** 驱动适配器把原始驱动错误包在 `meta.driverAdapterError.cause` 里（实测 P2010 + 57P01）。 */
+function isDriverAdapterConnectionError(error: ErrorShape): boolean {
+  const driverAdapterError = asObject(asObject(error.meta)?.driverAdapterError);
+  const cause = asObject(driverAdapterError?.cause);
+  if (!cause) return false;
+  if (isConnectionCode(cause.originalCode) || isConnectionCode(cause.code)) return true;
+  return typeof cause.kind === "string" && DRIVER_CONNECTION_KINDS.has(cause.kind);
+}
+
 function isUpstreamConnectionError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const candidate = error as { errorCode?: unknown; code?: unknown };
-  const code = typeof candidate.errorCode === "string" ? candidate.errorCode : candidate.code;
-  return typeof code === "string" && UPSTREAM_ERROR_CODES.has(code);
+  const shape = asObject(error);
+  if (!shape) return false;
+
+  const code = typeof shape.errorCode === "string" ? shape.errorCode : shape.code;
+  if (isConnectionCode(code)) return true;
+
+  if (isDriverAdapterConnectionError(shape)) return true;
+
+  return typeof shape.message === "string" && CONNECTION_LOST_MESSAGE.test(shape.message);
 }
 
 export function errorToResponse(error: unknown): Response {

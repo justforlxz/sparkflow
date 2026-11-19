@@ -11,7 +11,7 @@ import { requireAgentSnapshots } from "@/modules/agent-config/service";
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import { listGatewayViews } from "@/modules/gateway/service";
 import { getCollection, getCollectionNames } from "@/modules/media-collection/service";
-import { planStagesToRetry } from "./derive";
+import { planStagesToRetry, throwRetryConflict } from "./derive";
 import { taskStore } from "./repo";
 import { assertCollectionHasImages } from "./rules";
 import type { CreateTaskInput } from "./schema";
@@ -97,13 +97,21 @@ export async function getTask(taskId: string): Promise<TaskDetailView> {
  * 重试（ADR 0005、AC-04-6 ~ AC-04-8、AC-05-12）：
  * 只把失败阶段置回排队并让 `attempts` 加一；已成功阶段的产出与次数都不动。
  * 没有失败阶段（全部成功、还在跑、已排队）一律 `CONFLICT`，不会重复入队。
+ *
+ * 同时到达的两条重试只有一个能真正入队：置回排队是条件更新（`status` 必须还是 failed），
+ * 另一条拿到 0 行，按重读到的当前状态返回同一封信，`attempts` 因此只加一次。
  */
 export async function retryTask(taskId: string): Promise<TaskDetailView> {
   const record = await taskStore.findTask(taskId);
   if (!record) throw AppError.notFound("创作任务不存在");
 
   const stages = planStagesToRetry(record.stages);
-  await taskStore.resetStages(taskId, stages);
+  const reset = await taskStore.resetStages(taskId, stages);
+  if (reset === 0) {
+    const current = await taskStore.findTask(taskId);
+    if (!current) throw AppError.notFound("创作任务不存在");
+    throwRetryConflict(current.stages);
+  }
 
   return buildDetail(taskId);
 }

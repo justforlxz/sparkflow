@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStageRegistry } from "./registry";
 import type { ResultAssetWriter, TaskStore } from "./store";
 import type { CollectionContext } from "./types";
@@ -26,6 +26,7 @@ let stopWorker: (() => void) | undefined;
 afterEach(() => {
   stopWorker?.();
   stopWorker = undefined;
+  vi.restoreAllMocks();
 });
 
 function sleep(ms: number): Promise<void> {
@@ -102,5 +103,70 @@ describe("worker 启动顺序", () => {
     expect(claimsBeforeRecover.every((claimedBeforeRecover) => claimedBeforeRecover === false)).toBe(
       true,
     );
+  });
+});
+
+interface FakeTimer {
+  run: () => void;
+  unref: ReturnType<typeof vi.fn>;
+}
+
+function fakeTimerFactory(created: FakeTimer[]) {
+  return ((callback: () => void) => {
+    const timer: FakeTimer = { run: callback, unref: vi.fn() };
+    created.push(timer);
+    return timer;
+  }) as unknown as typeof globalThis.setTimeout;
+}
+
+/** 让 boot() 里的 await 链跑完：只用微任务，不依赖真实时间。 */
+async function flushMicrotasks(times = 20): Promise<void> {
+  for (let index = 0; index < times; index += 1) await Promise.resolve();
+}
+
+/**
+ * AC-FIX-4：worker 的两处定时器（启动清理重试的 `setTimeout`、轮询的 `setInterval`）
+ * 都要 `unref()`，否则它们的等待会单独让 web 进程活着，服务无法正常退出。
+ */
+describe("worker 定时器（AC-FIX-4）", () => {
+  it("启动清理重试与轮询的定时器都调用 unref，不阻止进程退出", async () => {
+    const timeouts: FakeTimer[] = [];
+    const intervals: FakeTimer[] = [];
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(fakeTimerFactory(timeouts));
+    vi.spyOn(globalThis, "setInterval").mockImplementation(
+      fakeTimerFactory(intervals) as unknown as typeof globalThis.setInterval,
+    );
+
+    let recoverAttempts = 0;
+    const store = {
+      failRunningStages: async () => {
+        recoverAttempts += 1;
+        if (recoverAttempts === 1) throw new Error("数据库暂时不可达");
+        return 0;
+      },
+      claimNextStage: async () => null,
+    } as unknown as TaskStore;
+
+    stopWorker = startTaskWorker({
+      store,
+      files,
+      registry,
+      loadCollection: async () => COLLECTION,
+      pollIntervalMs: 10,
+    });
+
+    // 第一次清理失败：排下一次清理，这个等待不该拖住进程。
+    await flushMicrotasks();
+    expect(recoverAttempts).toBe(1);
+    expect(timeouts).toHaveLength(1);
+    expect(timeouts[0].unref).toHaveBeenCalledTimes(1);
+    expect(intervals).toHaveLength(0);
+
+    // 第二次清理成功：进入轮询，轮询间隔同样不该拖住进程。
+    timeouts[0].run();
+    await flushMicrotasks();
+    expect(recoverAttempts).toBe(2);
+    expect(intervals).toHaveLength(1);
+    expect(intervals[0].unref).toHaveBeenCalledTimes(1);
   });
 });

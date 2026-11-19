@@ -66,8 +66,11 @@ export interface TaskStore {
   findResultByTask(taskId: string): Promise<ResultRecord | null>;
   /** 文案阶段成功后补齐文案，复用生图阶段建好的结果行（docs/prd/04 MUST 4）。 */
   updateResultCopy(resultId: string, copy: CopyContent): Promise<void>;
-  /** 重试：把指定阶段置回 queued 且 attempts 加一，不动已成功的阶段（ADR 0005）。 */
-  resetStages(taskId: string, stages: readonly StageName[]): Promise<void>;
+  /**
+   * 重试：把指定阶段从 failed 置回 queued 且 attempts 加一，不动已成功的阶段（ADR 0005）。
+   * 返回受影响行数；0 表示这些阶段已经被别的请求重新排队（并发重试只能有一条成功）。
+   */
+  resetStages(taskId: string, stages: readonly StageName[]): Promise<number>;
   countCollectionUsage(collectionId: string): Promise<CollectionUsage>;
 }
 

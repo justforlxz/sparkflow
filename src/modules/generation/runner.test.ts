@@ -205,16 +205,20 @@ class MemoryStore implements TaskStore {
     result.tags = [...copy.tags];
   }
 
-  async resetStages(taskId: string, stages: readonly StageName[]): Promise<void> {
+  async resetStages(taskId: string, stages: readonly StageName[]): Promise<number> {
+    let count = 0;
     for (const stage of this.stagesOf(taskId)) {
-      if (!stages.includes(stage.stage)) continue;
+      // 与 repo 的条件更新一致：只有还是 failed 的阶段能被置回排队。
+      if (!stages.includes(stage.stage) || stage.status !== "failed") continue;
       stage.status = "queued";
       stage.attempts += 1;
       stage.error = null;
       stage.meta = null;
       stage.startedAt = null;
       stage.finishedAt = null;
+      count += 1;
     }
+    return count;
   }
 
   async countCollectionUsage(collectionId: string): Promise<CollectionUsage> {

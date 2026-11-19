@@ -418,6 +418,46 @@ test("AC-05-12 连续两次重试：第二次因阶段已在跑返回 CONFLICT�
   expect(finished.stages.copy.attempts).toBe(2);
 });
 
+/**
+ * AC-FIX-1、AC-FIX-2（MKACG-871）：同时到达的两条重试只有一个能真正入队。
+ *
+ * 置回排队是条件更新（阶段必须还是 failed），所以无论两条请求是否真的交错，
+ * 结果都必须是「一个 200、一个 409」；`attempts` 只加一次。
+ * 5 次重复是为了让交错路径在真实进程里反复跑到。
+ */
+test("AC-FIX-1 AC-FIX-2 并发重试：恰好一个 200、一个 409，attempts 只加 1（连续 5 次）", async ({
+  request,
+}) => {
+  const collectionId = await createCollectionWithImage(request);
+
+  for (let round = 1; round <= 5; round += 1) {
+    const created = await createTask(request, collectionId, {
+      imageCount: 1,
+      extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
+    });
+    const partial = await waitForTerminal(request, created.id, "partial");
+    expect(partial.stages.copy).toMatchObject({ status: "failed", attempts: 1 });
+
+    const responses = await Promise.all([
+      request.post(`/api/tasks/${created.id}/retry`),
+      request.post(`/api/tasks/${created.id}/retry`),
+    ]);
+    const accepted = responses.filter((response) => response.status() === 200);
+    const rejected = responses.filter((response) => response.status() === 409);
+    expect(accepted, `第 ${round} 次：只允许一条重试成功`).toHaveLength(1);
+    expect(rejected, `第 ${round} 次：另一条必须被拒绝`).toHaveLength(1);
+
+    const body = (await rejected[0].json()) as ErrorBody;
+    expect(body.error.code).toBe("CONFLICT");
+    expect(body.error.details?.code).toBe("NO_FAILED_STAGE");
+
+    const finished = await waitForTerminal(request, created.id, "succeeded");
+    // 只加一次：文案阶段从 1 变成 2，不是 3；生图阶段完全不动。
+    expect(finished.stages.copy.attempts, `第 ${round} 次：文案阶段只加一次`).toBe(2);
+    expect(finished.stages.image.attempts).toBe(1);
+  }
+});
+
 test("AC-03-8 任务创建后修改 Agent 提示词，任务详情里的快照不变", async ({ request }) => {
   const collectionId = await createCollectionWithImage(request);
   const created = await createTask(request, collectionId, { imageCount: 1 });

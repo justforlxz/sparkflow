@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { collectionFieldsSchema, listCollectionsQuerySchema, thumbnailWidthSchema } from "./schema";
+import {
+  collectionEditAssetsSchema,
+  collectionFieldsSchema,
+  listCollectionsQuerySchema,
+  thumbnailWidthSchema,
+} from "./schema";
 
 describe("资源夹字段（multipart 与 JSON 共用）", () => {
   it("只给名称时其余来源字段归一成 null", () => {
@@ -81,5 +86,44 @@ describe("缩略图宽度参数", () => {
 
   it("超过上限的宽度被拒绝", () => {
     expect(thumbnailWidthSchema.safeParse("4000").success).toBe(false);
+  });
+});
+
+describe("整组保存的图片清单（POST /api/collections/[id]/save）", () => {
+  it("保留、移除、新增三种项按原顺序解析", () => {
+    const parsed = collectionEditAssetsSchema.parse([
+      { kind: "keep", assetId: "a" },
+      { kind: "remove", assetId: "b" },
+      { kind: "add", tempKey: "pending-1" },
+    ]);
+    expect(parsed).toEqual([
+      { kind: "keep", assetId: "a" },
+      { kind: "remove", assetId: "b" },
+      { kind: "add", tempKey: "pending-1" },
+    ]);
+  });
+
+  it("空清单也算合法输入，交给服务端按「至少 1 张」判据拒绝", () => {
+    expect(collectionEditAssetsSchema.parse([])).toEqual([]);
+  });
+
+  it("未登记的 kind 被拒绝", () => {
+    expect(collectionEditAssetsSchema.safeParse([{ kind: "replace", assetId: "a" }]).success).toBe(
+      false,
+    );
+  });
+
+  it("keep / remove 缺少图片标识被拒绝", () => {
+    expect(collectionEditAssetsSchema.safeParse([{ kind: "keep", assetId: "" }]).success).toBe(false);
+    expect(collectionEditAssetsSchema.safeParse([{ kind: "remove" }]).success).toBe(false);
+  });
+
+  it("add 缺少上传文件标识被拒绝", () => {
+    expect(collectionEditAssetsSchema.safeParse([{ kind: "add", tempKey: "" }]).success).toBe(false);
+    expect(collectionEditAssetsSchema.safeParse([{ kind: "add" }]).success).toBe(false);
+  });
+
+  it("不是数组的输入被拒绝", () => {
+    expect(collectionEditAssetsSchema.safeParse({ kind: "keep", assetId: "a" }).success).toBe(false);
   });
 });

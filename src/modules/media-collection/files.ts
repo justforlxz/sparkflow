@@ -36,3 +36,15 @@ export async function removeCollectionFiles(collectionId: string): Promise<void>
     logger.error("删除资源夹图片目录失败，已跳过", { collectionId, error });
   }
 }
+
+/**
+ * 整组保存失败时回滚本次新写的文件（补偿写入，只针对这一次请求自己写的文件）。
+ * 与 MUST 5 同口径：删不掉只记日志，不让回滚本身再抛错。
+ */
+export async function removeAssetFile(storageKey: string): Promise<void> {
+  try {
+    await rm(resolveStoragePath(storageKey), { force: true });
+  } catch (error) {
+    logger.error("回滚新写入的图片文件失败，已跳过", { storageKey, error });
+  }
+}

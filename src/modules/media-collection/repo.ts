@@ -235,3 +235,53 @@ export async function deleteAsset(collectionId: string, assetId: string): Promis
   const { count } = await getDb().mediaAsset.deleteMany({ where: { id: assetId, collectionId } });
   return count > 0;
 }
+
+export interface CollectionEditPlan {
+  /** 保留的图片与它们在新顺序里的位置（数组下标即 `sort_order`）。 */
+  keep: Array<{ assetId: string; sortOrder: number }>;
+  /** 解除关联的图片 id。 */
+  remove: string[];
+  /** 新增的图片，`sortOrder` 同样是新顺序里的位置。 */
+  adds: Array<NewAsset & { sortOrder: number }>;
+}
+
+/**
+ * 编辑保存的落库：来源字段与图片变更在同一个事务里提交，要么全成，要么全不变。
+ * 调用方负责先把新文件写盘；本函数只动数据库，失败时由调用方补偿删除本次新写的文件。
+ */
+export async function saveCollectionEdit(
+  collectionId: string,
+  fields: CollectionFields,
+  plan: CollectionEditPlan,
+): Promise<void> {
+  await getDb().$transaction(async (tx) => {
+    await tx.mediaCollection.update({ where: { id: collectionId }, data: fields });
+
+    if (plan.remove.length > 0) {
+      await tx.mediaAsset.deleteMany({
+        where: { collectionId, id: { in: plan.remove } },
+      });
+    }
+
+    if (plan.adds.length > 0) {
+      await tx.mediaAsset.createMany({
+        data: plan.adds.map(({ storageKey, fileName, mimeType, size, sortOrder }) => ({
+          collectionId,
+          storageKey,
+          fileName,
+          mimeType,
+          size,
+          sortOrder,
+        })),
+      });
+    }
+
+    // 保留项的排序逐条更新：Prisma 没有「一次更新多个不同值」的批量写法。
+    for (const item of plan.keep) {
+      await tx.mediaAsset.updateMany({
+        where: { id: item.assetId, collectionId },
+        data: { sortOrder: item.sortOrder },
+      });
+    }
+  });
+}

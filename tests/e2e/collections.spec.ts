@@ -4,6 +4,7 @@ import {
   request as playwrightRequest,
   test,
   type APIRequestContext,
+  type Locator,
   type Page,
 } from "@playwright/test";
 import { ACCOUNT, ensureAccount } from "./support/auth";
@@ -366,4 +367,121 @@ test("AC-01-7 图片字节通过 /api/files 返回，content-type 正确；未�
   } finally {
     await anonymous.dispose();
   }
+});
+
+/* ---------- 编辑整组保存（MKACG-870）：一次请求、整组成功或整组不变 ---------- */
+
+/** 页面上已保存原图的顺序（详情页与编辑弹窗的图片都带 alt=文件名）。 */
+async function shownFileNames(scope: Page | Locator): Promise<Array<string | null>> {
+  return scope.locator("img[alt]").evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute("alt")),
+  );
+}
+
+test("AC-FIX-1 2 张原图全标待移除 + 添加 1 张新图：保存成功，详情只剩新图", async ({
+  page,
+  request,
+}) => {
+  await ensureAccount(request);
+  const created = await createCollection(request, uniqueName("AC-FIX-1"), [
+    png("a.png"),
+    png("b.png"),
+  ]);
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${created.id}`);
+  await page.getByRole("button", { name: "编辑" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "编辑" });
+  await dialog.getByRole("button", { name: "移除", exact: true }).first().click();
+  await dialog.getByRole("button", { name: "移除", exact: true }).first().click();
+  await expect(dialog.getByText("待移除", { exact: true })).toHaveCount(2);
+
+  await dialog.getByLabel("添加图片").setInputFiles([png("c.png")]);
+  await expect(dialog.getByText("待添加", { exact: true })).toHaveCount(1);
+
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect(dialog).toBeHidden();
+
+  await expect(page.getByText("原图 1 张")).toBeVisible();
+  await expect(page.getByAltText("c.png")).toBeVisible();
+  await expect(page.getByAltText("a.png")).toHaveCount(0);
+  await expect(page.getByAltText("b.png")).toHaveCount(0);
+
+  const detail = await getDetail(request, created.id);
+  expect(detail.assets.map((asset) => asset.fileName)).toEqual(["c.png"]);
+});
+
+test("AC-FIX-2 新图非法时保存失败，原图数量/顺序与来源字段与保存前完全一致", async ({
+  page,
+  request,
+}) => {
+  await ensureAccount(request);
+  const created = await createCollection(request, uniqueName("AC-FIX-2"), [
+    png("a.png"),
+    png("b.png"),
+  ]);
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${created.id}`);
+  await page.getByRole("button", { name: "编辑" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "编辑" });
+  await dialog.getByLabel("原始标题").fill("不该被保存的标题");
+  await dialog.getByRole("button", { name: "移除", exact: true }).first().click();
+  await dialog.getByRole("button", { name: "移除", exact: true }).first().click();
+  await dialog
+    .getByLabel("添加图片")
+    .setInputFiles({ name: "note.txt", mimeType: "text/plain", buffer: Buffer.from("纯文本内容") });
+  await dialog.getByRole("button", { name: "保存" }).click();
+
+  const alert = dialog.getByRole("alert").filter({ hasText: "note.txt" });
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText("只接受 JPEG、PNG、WebP");
+
+  // 取消后重新加载：图片与来源字段都和保存前一样（磁盘无新增文件由集成测试断言）。
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await page.reload();
+  expect(await shownFileNames(page)).toEqual(["a.png", "b.png"]);
+  await expect(page.getByText("原图 2 张")).toBeVisible();
+
+  const detail = await getDetail(request, created.id);
+  expect(detail.sourceTitle).toBe("原始标题");
+  expect(detail.assets.map((asset) => asset.id)).toEqual(created.assets.map((asset) => asset.id));
+  expect(detail.assets.map((asset) => asset.sortOrder)).toEqual([0, 1]);
+});
+
+test("AC-FIX-8 保存后 sort_order 与界面顺序一致，重新打开详情顺序不变", async ({
+  page,
+  request,
+}) => {
+  await ensureAccount(request);
+  const created = await createCollection(request, uniqueName("AC-FIX-8"), [
+    png("a.png"),
+    png("b.png"),
+  ]);
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${created.id}`);
+  await page.getByRole("button", { name: "编辑" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "编辑" });
+  // 移除第一张（a.png），再追加 c.png → 期望顺序 b、c。
+  await dialog.getByRole("button", { name: "移除", exact: true }).first().click();
+  await dialog.getByLabel("添加图片").setInputFiles([png("c.png")]);
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.reload();
+  expect(await shownFileNames(page)).toEqual(["b.png", "c.png"]);
+
+  const detail = await getDetail(request, created.id);
+  expect(detail.assets.map((asset) => asset.fileName)).toEqual(["b.png", "c.png"]);
+  expect(detail.assets.map((asset) => asset.sortOrder)).toEqual([1, 2]);
+
+  // 重新打开编辑弹窗：已保存图片的展示顺序与保存后一致。
+  await page.getByRole("button", { name: "编辑" }).click();
+  const reopened = page.getByRole("dialog", { name: "编辑" });
+  expect(await shownFileNames(reopened)).toEqual(["b.png", "c.png"]);
+  await reopened.getByRole("button", { name: "取消", exact: true }).click();
 });

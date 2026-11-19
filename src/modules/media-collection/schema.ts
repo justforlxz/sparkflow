@@ -68,3 +68,18 @@ export const thumbnailWidthSchema = z.preprocess(
   emptyToUndefined,
   z.coerce.number().int().min(1).max(MAX_THUMBNAIL_WIDTH).optional(),
 );
+
+/**
+ * 整组保存（`POST /api/collections/[id]/save`）的图片清单。
+ * 数组顺序就是保存后每张图片的 `sort_order`：`keep` 保留已有图片、`remove` 解除关联、
+ * `add` 指向本次随表单一起上传的文件（multipart 的 `file:<tempKey>` part）。
+ */
+export const collectionEditAssetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("keep"), assetId: z.string().min(1, "缺少图片标识") }),
+  z.object({ kind: z.literal("remove"), assetId: z.string().min(1, "缺少图片标识") }),
+  z.object({ kind: z.literal("add"), tempKey: z.string().min(1, "缺少上传文件标识") }),
+]);
+
+export const collectionEditAssetsSchema = z.array(collectionEditAssetSchema);
+
+export type CollectionEditAssetInput = z.infer<typeof collectionEditAssetSchema>;

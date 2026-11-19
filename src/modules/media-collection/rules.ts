@@ -12,6 +12,11 @@ export const COLLECTION_ERROR_MESSAGES = {
   unsupportedType: (fileName: string) =>
     `「${fileName}」不是受支持的图片：只接受 JPEG、PNG、WebP，判定以文件内容为准`,
   tooLarge: (fileName: string, limit: string) => `「${fileName}」超过单张 ${limit} 的上限`,
+  missingUpload: "有新增图片缺少文件内容，请重新选择图片",
+  foreignAsset: "请求里有不属于这个资源夹的图片，请刷新页面后重试",
+  duplicateAsset: "同一张图片在请求里出现了多次，请刷新页面后重试",
+  unhandledAsset: "有图片没有给出保留或移除的处理方式，请刷新页面后重试",
+  saveFailed: "保存失败，资源夹没有发生改动，请重试",
 } as const;
 
 /** 把字节数写成人能读的上限，供错误提示说明「具体上限」（AC-02-9）。 */

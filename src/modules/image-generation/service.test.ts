@@ -241,6 +241,131 @@ describe("失败如实记录", () => {
     expect((error as Error).message).toContain("已取回 0/2 张");
   });
 
+  it("AC-902-1、AC-902-2 生图失败摘要为中文可操作文案，不含上游原始回包", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const upstream =
+      "no image: api.siliconflow.cn: 400 Bad Request: " +
+      '{"code":20012,"message":"Model does not exist. Please check it carefully.","data":null}';
+    // 真实适配器 + 脚本化 fetch：走与线上同一条路径（initialize 与工具调用都回 isError）。
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { content: [{ type: "text", text: upstream }], isError: true },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as unknown as typeof fetch;
+
+    const error = await generateImages(buildContext({ imageCount: 4 }), {
+      generator: createImageGenerator({
+        adapter: "real",
+        baseUrl: "https://magpie.example.com",
+        apiKey: API_KEY,
+        fetchImpl,
+      }),
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
+    const message = (error as Error).message;
+    // 第几批、已取回几张、阶段未产出结果：这些如实记录的信息保留（MUST 4）
+    expect(message).toContain("第 2 批（1 张）失败");
+    expect(message).toContain("已取回 0/4 张，阶段未产出结果");
+    // 说明指向可改的配置项，且不含上游原始回包（MUST 1）
+    expect(message).toContain("模型");
+    expect(message).toContain("设置页");
+    for (const fragment of ["null", "{", "}", "api.", "Model does not exist", "siliconflow"]) {
+      expect(message).not.toContain(fragment);
+    }
+    // 同一条失败的上游原因留在服务端日志里（MUST 2、AC-902-3）
+    const logged = JSON.stringify(log.mock.calls);
+    expect(logged).toContain("Model does not exist");
+    expect(logged).toContain("UPSTREAM_REJECTED");
+  });
+
+  it("AC-902-4 四类失败的摘要拼装都是中文说明，且不含上游原文", async () => {
+    const jsonResult = (result: unknown) =>
+      new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    const cases: {
+      name: string;
+      code: string;
+      respond: () => Response;
+      mustContain: string;
+      forbidden: string[];
+    }[] = [
+      {
+        name: "鉴权失败",
+        code: "UPSTREAM_AUTH",
+        respond: () => new Response("unauthorized: bad key", { status: 401 }),
+        mustContain: "API Key",
+        forbidden: ["unauthorized"],
+      },
+      {
+        name: "上游不可用",
+        code: "UPSTREAM_TIMEOUT",
+        respond: () => new Response("upstream boom", { status: 503 }),
+        mustContain: "稍后重试",
+        forbidden: ["boom"],
+      },
+      {
+        name: "结构不符",
+        code: "UPSTREAM_FORMAT",
+        respond: () => new Response("<html>oops</html>", { status: 200 }),
+        mustContain: "JSON-RPC",
+        forbidden: ["<html>", "oops"],
+      },
+      {
+        name: "上游拒绝但没说模型",
+        code: "UPSTREAM_REJECTED",
+        respond: () =>
+          jsonResult({ content: [{ type: "text", text: "no image: invalid size" }], isError: true }),
+        mustContain: "视觉方向",
+        forbidden: ["invalid size"],
+      },
+    ];
+
+    for (const item of cases) {
+      const fetchImpl = (async () => item.respond()) as unknown as typeof fetch;
+      const error = await generateImages(buildContext({ imageCount: 1 }), {
+        generator: createImageGenerator({
+          adapter: "real",
+          baseUrl: "https://magpie.example.com",
+          apiKey: API_KEY,
+          fetchImpl,
+        }),
+      }).catch((caught: unknown) => caught);
+
+      const message = (error as Error).message;
+      expect(error, item.name).toMatchObject({ code: item.code });
+      expect(message, item.name).toContain("第 1 批（1 张）失败");
+      expect(message, item.name).toContain(item.mustContain);
+      for (const fragment of item.forbidden) {
+        expect(message, item.name).not.toContain(fragment);
+      }
+    }
+  });
+
+  it("适配器之外的内部异常：摘要换成中文兜底，英文原文只进日志", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const generator = new RecordingGenerator(() => {
+      throw new TypeError("Cannot read properties of undefined (reading 'url')");
+    });
+
+    const error = await generateImages(buildContext({ imageCount: 1 }), { generator }).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toMatchObject({ code: "STAGE_FAILED" });
+    const message = (error as Error).message;
+    expect(message).toContain("请重试该阶段");
+    expect(message).not.toContain("Cannot read");
+    expect(JSON.stringify(log.mock.calls)).toContain("Cannot read");
+  });
+
   it("适配器抛的不是阶段错误时归为 STAGE_FAILED，批次摘要仍然保留", async () => {
     const generator = new RecordingGenerator(() => {
       throw new TypeError("适配器自己炸了");

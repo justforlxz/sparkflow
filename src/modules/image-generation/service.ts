@@ -29,6 +29,7 @@ import {
   type GenerateImageInput,
   type ImageGenerator,
 } from "./adapters/types";
+import { describeStageFailure } from "./failure";
 import { buildImagePrompt } from "./prompt";
 import { DEFAULT_IMAGE_SIZE, findVisualStyle } from "./styles";
 
@@ -136,11 +137,6 @@ function errorCodeOf(error: unknown): string {
   return error instanceof StageError ? error.code : STAGE_ERROR_CODES.stageFailed;
 }
 
-function reasonOf(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) return error.message;
-  return "上游返回了未知错误";
-}
-
 /**
  * 按批次出图（MUST 2、MUST 7）：
  *
@@ -221,6 +217,13 @@ export async function generateImages(
       const ms = now() - batchStartedAt;
       const errorCode = errorCodeOf(error);
       batches.push({ n, received: 0, ms, ok: false, errorCode });
+      // 这一批的原始原因只写日志（MUST 2）：适配器已记上游原文，这里补上非 StageError 的内部异常，
+      // 界面上则只用 `describeStageFailure` 给出的中文说明。
+      logger.warn("生图批次失败", {
+        batch: batches.length,
+        code: errorCode,
+        reason: error instanceof Error ? error.message : String(error),
+      });
 
       // 真实网关的图片模型多数一次只出 1 张，有的还直接拒绝 n > 1（400 invalid n）：
       // 这是上游的出图粒度不同，不是业务失败，把这一批降到 1 张再要一次。
@@ -228,7 +231,7 @@ export async function generateImages(
 
       throw new StageError(
         errorCode,
-        `第 ${batches.length} 批（${n} 张）失败：${reasonOf(error)}。` +
+        `第 ${batches.length} 批（${n} 张）失败：${describeStageFailure(error)}。` +
           `已取回 ${images.length}/${requested} 张，阶段未产出结果`,
         { meta: { ...buildMeta() }, cause: error },
       );

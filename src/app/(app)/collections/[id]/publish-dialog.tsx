@@ -12,7 +12,7 @@ import type { PublishRecordView } from "@/modules/publish/view";
  * 发布准备弹窗（docs/prd/08「发布准备」）。
  *
  * 1. 图片默认全选，可单张取消；下载按当前勾选，1 张直下、多张 ZIP。
- * 2. 标题 / 正文 / 标签在这里编辑，标记已发布时一起写回结果并留下标题快照。
+ * 2. 三个文案字段在这里编辑，标记已发布时一起写回结果并留下快照。
  * 3. 「复制文案」写入固定格式文本，剪贴板被拒时给出可读提示。
  * 4. 「分享到小红书」由页面用 `<FeatureGate>` 渲染后作为 `shareEntry` 传进来：
  *    功能关闭时它是不可操作的占位按钮，点击只提示文案，不发请求（AC-08-7、AC-10-5）。
@@ -186,9 +186,9 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
 
         <section className="space-y-3 text-sm">
           <label className="block space-y-1">
-            <span className="block font-medium text-zinc-900">标题</span>
+            <span className="block font-medium text-zinc-900">{PUBLISH_COPY.titleLabel}</span>
             <input
-              aria-label="标题"
+              aria-label={PUBLISH_COPY.titleLabel}
               data-testid="publish-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
@@ -196,9 +196,9 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
             />
           </label>
           <label className="block space-y-1">
-            <span className="block font-medium text-zinc-900">正文</span>
+            <span className="block font-medium text-zinc-900">{PUBLISH_COPY.bodyLabel}</span>
             <textarea
-              aria-label="正文"
+              aria-label={PUBLISH_COPY.bodyLabel}
               data-testid="publish-body"
               rows={6}
               value={body}
@@ -207,15 +207,15 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
             />
           </label>
           <label className="block space-y-1">
-            <span className="block font-medium text-zinc-900">标签</span>
+            <span className="block font-medium text-zinc-900">{PUBLISH_COPY.tagsLabel}</span>
             <input
-              aria-label="标签"
+              aria-label={PUBLISH_COPY.tagsLabel}
               data-testid="publish-tags"
               value={tags}
               onChange={(event) => setTags(event.target.value)}
               className="w-full rounded border border-zinc-300 px-3 py-2"
             />
-            <span className="block text-xs text-zinc-500">用逗号或换行分隔</span>
+            <span className="block text-xs text-zinc-500">{PUBLISH_COPY.tagsHint}</span>
           </label>
           <div className="flex flex-wrap gap-2">
             <button

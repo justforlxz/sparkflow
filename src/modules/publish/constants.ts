@@ -40,6 +40,11 @@ export const PUBLISH_COPY = {
   selectAllAction: "全选",
   selectNoneAction: "全不选",
   selectImagesLabel: "要发布的图片",
+  /** 弹窗里可编辑的三个文案字段。措辞与结果编辑弹窗一致（AC-FIX-4：只搬位置，不改措辞）。 */
+  titleLabel: "标题",
+  bodyLabel: "正文",
+  tagsLabel: "标签",
+  tagsHint: "用逗号或换行分隔",
   downloadAction: "下载所选图片",
   downloadZipHint: "选多张时打包成 ZIP，文件名按勾选顺序编号。",
   copyAction: "复制文案",

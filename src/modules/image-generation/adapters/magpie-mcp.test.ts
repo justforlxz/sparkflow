@@ -236,6 +236,54 @@ describe("magpie 图片 MCP 响应解析", () => {
     expect(calls[2]?.headers.authorization).toBe(`Bearer ${API_KEY}`);
   });
 
+  it("MKACG-872 图片 URL 回 200 但不是图片时归为 UPSTREAM_FORMAT，不把非图片字节当成图", async () => {
+    const { fetchImpl } = scriptedFetch([
+      () => rpcResult({}),
+      () => imageResult([], [{ url: "https://magpie.example.com/files/not-an-image.png" }]),
+      () =>
+        new Response("<html>not an image</html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+    ]);
+
+    await expect(buildGenerator(fetchImpl).generate(INPUT)).rejects.toMatchObject({
+      code: "UPSTREAM_FORMAT",
+      message: expect.stringContaining("不是图片") as unknown as string,
+    });
+  });
+
+  it("MKACG-872 图片 URL 回 200 且没有 content-type 时同样归为 UPSTREAM_FORMAT", async () => {
+    const { fetchImpl } = scriptedFetch([
+      () => rpcResult({}),
+      () => imageResult([], [{ url: "https://magpie.example.com/files/no-header.png" }]),
+      () => new Response("<html>not an image</html>", { status: 200 }),
+    ]);
+
+    await expect(buildGenerator(fetchImpl).generate(INPUT)).rejects.toMatchObject({
+      code: "UPSTREAM_FORMAT",
+    });
+  });
+
+  it("MKACG-872 图片 URL 回 image/png 时行为不变：落盘字节与上游一致、类型取自响应头", async () => {
+    const pngBytes = Buffer.from(PNG_ONE_PIXEL, "base64");
+    const { fetchImpl } = scriptedFetch([
+      () => rpcResult({}),
+      () => imageResult([], [{ url: "https://magpie.example.com/files/ok.png" }]),
+      () =>
+        new Response(new Uint8Array(pngBytes), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
+    ]);
+
+    const images = await buildGenerator(fetchImpl).generate(INPUT);
+
+    expect(images).toHaveLength(1);
+    expect(images[0]?.mimeType).toBe("image/png");
+    expect(images[0]?.bytes.equals(pngBytes)).toBe(true);
+  });
+
   it("MUST NOT 下载失败时抛错，不把阶段当成功；状态码按失败分类翻译", async () => {
     // 5xx：网关暂时不可用 → 超时类
     const serverError = scriptedFetch([

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
 import { getDb } from "@/lib/db";
 import type { GatewayProtocol } from "@/modules/gateway/constants";
 import { findGatewayByProtocol } from "@/modules/gateway/repo";
-import { createGateway, createVisionClient } from "@/modules/gateway/service";
+import { createGateway, createVisionClient, VISION_PROTOCOL } from "@/modules/gateway/service";
 
 /**
  * 视觉提取的网关选择（docs/prd/02 `magpie-vision`、06「视觉提取」；AC-06-8 的真实链路）：
@@ -19,6 +19,48 @@ const createdIds: string[] = [];
 afterEach(async () => {
   await getDb().gateway.deleteMany({ where: { name: { startsWith: NAME_PREFIX } } });
   createdIds.length = 0;
+});
+
+/** 暂存用的协议值：不在 `constants.ts` 的登记表里，跑测试期间不会被当成任何可用的接口形状。 */
+const PARKED_PROTOCOL = "magpie-vision（集成测试暂存）";
+
+/**
+ * 本文件的两条判据（「没有同类网关时返回 `null`」与「多条时取最近更新的一条」）都要求
+ * 库里这个协议下只有本用例造的数据。库可能是共享的：真实使用验收留下的 `magpie-vision`
+ * 网关会让它们误报（MKACG-915 的功能检测在共享库上就是这么挂的），CI 是空库所以看不出来。
+ *
+ * 做法：开跑前把库里已有的同协议网关暂时改成另一个协议值，跑完按原值改回。只动 `protocol`
+ * 一列，`updatedAt` 显式写回原值，所以不会改掉「最近更新」的排序；不删行，所以不会级联删掉
+ * 这些网关的模型，也不会把 `agent_config` 的绑定改成空。执行前后 `gateway` 表除本用例造的
+ * 行外完全一致。
+ */
+const parked: { id: string; updatedAt: Date }[] = [];
+
+beforeAll(async () => {
+  const db = getDb();
+  parked.push(
+    ...(await db.gateway.findMany({
+      where: { protocol: VISION_PROTOCOL },
+      select: { id: true, updatedAt: true },
+    })),
+  );
+  for (const gateway of parked) {
+    await db.gateway.update({
+      where: { id: gateway.id },
+      data: { protocol: PARKED_PROTOCOL, updatedAt: gateway.updatedAt },
+    });
+  }
+});
+
+afterAll(async () => {
+  const db = getDb();
+  for (const gateway of parked) {
+    await db.gateway.update({
+      where: { id: gateway.id },
+      data: { protocol: VISION_PROTOCOL, updatedAt: gateway.updatedAt },
+    });
+  }
+  parked.length = 0;
 });
 
 async function addGateway(input: {

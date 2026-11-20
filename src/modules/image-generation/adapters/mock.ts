@@ -36,7 +36,7 @@ export class MockImageGenerator implements ImageGenerator {
       {
         bytes: PNG_ONE_PIXEL,
         mimeType: "image/png",
-        fileName: `mock-${this.calls}.png`,
+        // 不自带给展示名：文件名由 storage 按 `sort_order` 生成，e2e 看到的才是真实命名。
         width: 1,
         height: 1,
       },

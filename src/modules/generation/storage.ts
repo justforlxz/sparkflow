@@ -51,12 +51,15 @@ export async function writeGeneratedImages(
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, image.bytes);
 
+    // 一图对一图：编号用原图序号，第 2 张失败时保留 1 与 3（AC-05-5）。
+    // 展示文件名与 `sort_order` 取同一个值：编号在失败跳号时不会错位（AC-FN-1）。
+    const sortOrder = image.sortOrder ?? index;
+
     stored.push({
       storageKey,
-      fileName: image.fileName?.trim() || `${index + 1}.${path.extname(storageKey).slice(1)}`,
+      fileName: image.fileName?.trim() || `${sortOrder}.${path.extname(storageKey).slice(1)}`,
       mimeType: image.mimeType,
-      // 一图对一图：编号用原图序号，第 2 张失败时保留 1 与 3（AC-05-5）。
-      sortOrder: image.sortOrder ?? index,
+      sortOrder,
       width: image.width ?? null,
       height: image.height ?? null,
       sourceAssetId: image.sourceAssetId ?? null,

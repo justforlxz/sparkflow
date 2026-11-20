@@ -34,7 +34,7 @@ interface ResultView {
   title: string | null;
   body: string | null;
   tags: string[];
-  assets: { id: string; fileName: string }[];
+  assets: { id: string; fileName: string; sortOrder: number }[];
 }
 
 interface TaskView {
@@ -413,6 +413,43 @@ test("AC-07-5 全部成功的任务不显示重试按钮", async ({ page, reques
   const row = taskRow(page, created.id);
   await expect(row).toBeVisible();
   await expect(row.getByTestId("retry-button")).toHaveCount(0);
+});
+
+test("AC-FN-4 部分原图失败时，结果页与下载看到的文件名与 sort_order 相同", async ({
+  page,
+  request,
+}) => {
+  const collectionId = await createCollectionWithImage(request, 3);
+  const created = await createTask(request, collectionId, {
+    // 让第 2 张原图失败：成品应当是第 1 张与第 3 张（sort_order 1 与 3）。
+    extraPrompt: `${MOCK_SCRIPT_HINTS.failImageAt}-2`,
+  });
+  const partial = await waitForTerminal(request, created.id, "partial");
+  const resultId = partial.resultId!;
+
+  const assets = partial.result!.assets;
+  expect(assets.map((asset) => asset.sortOrder)).toEqual([1, 3]);
+  expect(assets.map((asset) => asset.fileName)).toEqual(["1.png", "3.png"]);
+
+  // 下载得到的文件名与库里的一行一致（单张下载直接返回图片，名字在 content-disposition 里）。
+  for (const asset of assets) {
+    const response = await request.get(`/api/results/${resultId}/download?assets=${asset.id}`);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-disposition"]).toContain(
+      `filename*=UTF-8''${encodeURIComponent(asset.fileName)}`,
+    );
+  }
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${collectionId}?tab=results`);
+
+  // 结果页签上图片的 alt 用的就是同一个文件名。
+  const card = resultCard(page, resultId);
+  await expect(card).toBeVisible();
+  const alts = await card
+    .getByRole("img")
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("alt")));
+  expect(alts).toEqual(assets.map((asset) => asset.fileName));
 });
 
 test("AC-07-6 编辑结果标题后刷新页面标题保持新值，原始素材文字不变", async ({

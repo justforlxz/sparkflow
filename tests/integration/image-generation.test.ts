@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
+import path from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { getDb } from "@/lib/db";
 import { storageRoot } from "@/lib/storage";
@@ -212,6 +213,84 @@ test("AC-05-5 三张原图里第 2 张失败：保留 2 张成品、sort_order �
   });
   // 进入终态后进度清空。
   expect(row?.progress).toBeNull();
+});
+
+test("AC-FN-1、AC-FN-3 三张原图里第 2 张失败：文件名与 sort_order 同为 1 与 3，后缀取自 mimeType", async () => {
+  await prepareReadyAgents();
+  const collectionId = await createCollectionWithImages("集成-文件名跳号", 3);
+
+  const created = await createTask(collectionId, {
+    visualStyle: "fresh",
+    copyStyle: "story",
+    extraPrompt: null,
+  });
+
+  let call = 0;
+  const generator: ImageGenerator = {
+    generate: async () => {
+      call += 1;
+      if (call === 2) throw new Error("上游第二次调用失败");
+      // 回包统一是 webp：验证文件后缀仍取自 mimeType（AC-FN-3）。
+      return [{ bytes: PNG_BYTES, mimeType: "image/webp" }];
+    },
+  };
+
+  const runner = buildRunner(generator);
+  expect(await runner.runOnce()).toMatchObject({ ran: true, stage: "image", status: "succeeded" });
+  expect(await runner.runOnce()).toMatchObject({ ran: true, stage: "copy", status: "succeeded" });
+
+  const detail = await getTask(created.id);
+  expect(detail.status).toBe("partial");
+
+  const assets = await getDb().generatedAsset.findMany({
+    where: { resultId: detail.resultId! },
+    select: { fileName: true, mimeType: true, sortOrder: true, storageKey: true },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  // 文件名集合与 sort_order 集合逐条相同：{1, 3}（AC-FN-1）。
+  expect(assets.map((asset) => asset.sortOrder)).toEqual([1, 3]);
+  expect(assets.map((asset) => asset.fileName)).toEqual(["1.webp", "3.webp"]);
+
+  // 每一行都有一份盘上的文件，后缀与 mime_type 对应（AC-FN-3）。
+  for (const asset of assets) {
+    expect(asset.mimeType).toBe("image/webp");
+    expect(path.extname(asset.storageKey)).toBe(".webp");
+    expect((await stat(`${storageRoot()}/${asset.storageKey}`)).size).toBeGreaterThan(0);
+  }
+  // 第 2 张没有留下任何文件：目录里只有两个成品。
+  expect(await readdir(`${storageRoot()}/generated-assets/${detail.resultId!}`)).toHaveLength(2);
+});
+
+test("AC-FN-2 三张原图全部成功：文件名与 sort_order 同为 1、2、3", async () => {
+  await prepareReadyAgents();
+  const collectionId = await createCollectionWithImages("集成-文件名连续", 3);
+
+  const created = await createTask(collectionId, {
+    visualStyle: "fresh",
+    copyStyle: "story",
+    extraPrompt: null,
+  });
+
+  const generator: ImageGenerator = {
+    generate: async () => [{ bytes: PNG_BYTES, mimeType: "image/png" }],
+  };
+
+  const runner = buildRunner(generator);
+  expect(await runner.runOnce()).toMatchObject({ ran: true, stage: "image", status: "succeeded" });
+  expect(await runner.runOnce()).toMatchObject({ ran: true, stage: "copy", status: "succeeded" });
+
+  const detail = await getTask(created.id);
+  expect(detail.status).toBe("succeeded");
+
+  const assets = await getDb().generatedAsset.findMany({
+    where: { resultId: detail.resultId! },
+    select: { fileName: true, sortOrder: true, storageKey: true },
+    orderBy: { sortOrder: "asc" },
+  });
+  expect(assets.map((asset) => asset.sortOrder)).toEqual([1, 2, 3]);
+  expect(assets.map((asset) => asset.fileName)).toEqual(["1.png", "2.png", "3.png"]);
+  expect(await readdir(`${storageRoot()}/generated-assets/${detail.resultId!}`)).toHaveLength(3);
 });
 
 test("功能关闭时创建任务被拦下，不产生任务记录（docs/prd/10 MUST 2、AC-10-4）", async () => {

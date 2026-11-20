@@ -14,12 +14,14 @@ import {
 import { isAppError } from "@/lib/errors";
 import { listCollectionResults } from "@/modules/generation/results";
 import { CREATION_COPY, RESULT_COPY } from "@/modules/generation/constants";
+import { listCollectionTasks } from "@/modules/generation/service";
 import { COLLECTION_COPY, COLLECTION_STATUS_LABELS, MAX_PAGE_SIZE } from "@/modules/media-collection/constants";
 import { getCollection, type CollectionDetailView } from "@/modules/media-collection/service";
 import { PUBLISH_COPY } from "@/modules/publish/constants";
 import { getPublishedResultIds, listPublishRecords } from "@/modules/publish/service";
 import { CollectionDialog } from "../collection-dialog";
 import { DeleteCollectionButton } from "./delete-collection-button";
+import { CreationPanel } from "./creation-panel";
 import { ResultsPanel } from "./results-panel";
 import { StartCreationDialog } from "./start-creation-dialog";
 
@@ -77,10 +79,13 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
   const { id } = await params;
   const collection = await loadCollection(id);
   const tab = resolveTab((await searchParams).tab);
-  const results = tab === "results" ? await listCollectionResults(id) : [];
-  // 结果页签要展示每条结果的发布状态：只查 id，不在前端推断（docs/prd/07 MUST NOT）。
-  const publishedResultIds =
-    tab === "results" ? await getPublishedResultIds(results.map((result) => result.id)) : [];
+  /* 结果与任务两个页签之外也要用：创作区在原始素材页签下就地显示进度与结果（MKACG-916）。
+   * 发布状态只查 id、由服务端给出，前端不推断（docs/prd/07 MUST NOT）。 */
+  const [results, tasks] = await Promise.all([
+    listCollectionResults(id),
+    listCollectionTasks(id),
+  ]);
+  const publishedResultIds = await getPublishedResultIds(results.map((result) => result.id));
   // 「发布记录」页签与全局 /published 页是同一个 service 的同一份数据。
   const publishedRecords =
     tab === "published"
@@ -235,6 +240,20 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           shareEntry={<FeatureGate feature="share-to-xiaohongshu" />}
         />
       )}
+
+      {/* 创作区放在「原始素材」之后、独立分块（MKACG-916）：进行中的任务与结果都在这里，
+          不需要跳到 /tasks，也不用先进「AI 创作结果」页签。锚点 `#creation` 供 /tasks 的
+          「查看结果」直接跳过来（AC-C-5）。 */}
+      {tab === "assets" ? (
+        <CreationPanel
+          collectionId={collection.id}
+          initialTasks={tasks}
+          results={results}
+          publishedResultIds={publishedResultIds}
+          sourceAssetIds={collection.assets.map((asset) => asset.id)}
+          shareEntry={<FeatureGate feature="share-to-xiaohongshu" />}
+        />
+      ) : null}
     </section>
   );
 }

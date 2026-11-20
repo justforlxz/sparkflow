@@ -591,15 +591,26 @@ test("AC-FIX-2 越界页码不报错：0 与负数回到第 1 页，超大页码
   await expect(page.getByText("还没有发布记录", { exact: false })).toBeVisible();
 });
 
-/** 水印提示必须同时说清三件事（AC-901-1）：图片来自上游模型、可能带模型自带的角标、发布前要自己确认。 */
+/**
+ * 水印提示必须同时说清三件事（AC-901-1、docs/prd/05「水印提示文案（定稿）」）：
+ * 图片是哪个模型生成的、水印可能来自该模型、不接受时该怎么办。
+ */
 const WATERMARK_MEANINGS = [
-  "图片由上游模型生成",
-  "可能带上游模型自带的水印或角标",
-  "发布前请自行确认",
+  "图片由你在设置里选择的图片模型生成",
+  "可能自带该模型的水印或角标",
+  "发布前请确认能否接受",
+  "可在设置里换一个不加水印的模型重新生成",
 ];
 
-/** 提示不得声称水印已去掉，也不得把图片说成已校验合格（MKACG-901 MUST 2）。 */
-const WATERMARK_FORBIDDEN = ["已去除", "无水印", "已校验合格"];
+/** 提示不得声称水印已去掉、不得把水印说成来自别的模型，也不得把图片说成已校验合格（MUST 2）。 */
+const WATERMARK_FORBIDDEN = [
+  "已去除",
+  "保证无水印",
+  "上游模型",
+  "系统已校验",
+  "图片合格",
+  "忽略此提示",
+];
 
 async function expectWatermarkNotice(notice: Locator): Promise<void> {
   await expect(notice).toBeVisible();
@@ -620,7 +631,7 @@ async function expectNoHorizontalOverflow(page: Page, scene: string): Promise<vo
   expect(scrollWidth, `${scene} 在 375×812 下不应横向溢出`).toBe(clientWidth);
 }
 
-test("AC-901-1 结果页签与发布准备各显示一处上游模型水印提示", async ({ page, request }) => {
+test("AC-901-1 结果页签与发布准备各显示一处水印提示", async ({ page, request }) => {
   const { collectionId, result } = await createResult(request, 2);
   await loginInBrowser(page);
 

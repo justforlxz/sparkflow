@@ -486,7 +486,10 @@ test("第 4 步 发起创作（3 张原图 → 3 张成品），两个阶段进�
   // 张数不再可选：弹窗只显示「预计成品张数 = 原图张数」（ADR 0008）。
   await expect(dialog.getByTestId("expected-image-count")).toHaveText("3 张");
   await dialog.getByTestId("submit-creation").click();
-  await expect(page).toHaveURL(/\/tasks$/);
+  // 提交后停在资源夹详情页，创作区就地显示两个阶段（MKACG-916 AC-C-1）。
+  await expect(page).toHaveURL(
+    new RegExp(`/collections/${chain.collectionId}(\\?tab=assets)?(#creation)?$`),
+  );
 
   const created = await waitForNewTask(request, chain.collectionId!, new Set());
   const task = await waitForTerminal(request, created.id, "succeeded");
@@ -557,7 +560,10 @@ test("第 6 步 制造文案阶段失败后重试：只重跑文案阶段，图�
   await expect(dialog.getByTestId("expected-image-count")).toHaveText("3 张");
   await dialog.getByLabel("补充要求").fill(MOCK_SCRIPT_HINTS.failCopyOnce);
   await dialog.getByTestId("submit-creation").click();
-  await expect(page).toHaveURL(/\/tasks$/);
+  // 提交后停在资源夹详情页，创作区就地显示两个阶段（MKACG-916 AC-C-1）。
+  await expect(page).toHaveURL(
+    new RegExp(`/collections/${chain.collectionId}(\\?tab=assets)?(#creation)?$`),
+  );
 
   const created = await waitForNewTask(
     request,

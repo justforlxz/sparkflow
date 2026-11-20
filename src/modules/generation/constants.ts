@@ -68,6 +68,12 @@ export const DEFAULT_TASK_TIMEOUT_MS = 45 * 60 * 1000;
 /** worker 轮询间隔 1–2 秒（docs/prd/04 SHOULD）。 */
 export const DEFAULT_POLL_INTERVAL_MS = 1500;
 
+/**
+ * 界面轮询未终态任务的间隔（docs/prd/07 MUST 4）：任务列表与资源夹详情的创作区共用同一个值，
+ * 两处各写一份迟早会漂移。
+ */
+export const STAGE_POLL_INTERVAL_MS = 3000;
+
 // 目标张数已取消：成品张数 = 这次的原图张数（ADR 0008），没有可配置的上下限。
 
 /** 视觉方向 / 文案风格是短 key，不含描述正文（描述在各自模块的 styles.ts）。 */
@@ -173,6 +179,31 @@ export const RESULT_COPY = {
   deleteFailed: "删除失败",
   retryFailed: "重试失败",
   retryQueued: "文案阶段已重新排队，完成后刷新页面查看。",
+} as const;
+
+/**
+ * 资源夹详情「创作」区的文案（docs/prd/07-results.md「资源夹详情的「创作」区」）。
+ * 折叠摘要只写状态，不写标题正文：折叠态不能把文案露出来。
+ */
+export const CREATION_SECTION_COPY = {
+  title: "创作",
+  description: "这个资源夹的创作进度与结果都在这里，不用跳到任务列表。",
+  runningTitle: "正在创作",
+  troubledTitle: "创作未完成",
+  resultsTitle: "创作结果",
+  expandAction: "展开",
+  collapseAction: "收起",
+  /** 成品图对应的原图编号前缀（「原图 2」），与 `sortOrder` 一起形成一图对一图的对照（ADR 0008）。 */
+  sourceAssetLabelPrefix: "原图",
+  /** 原图被解除关联后不猜编号，如实说明。 */
+  noSourceAssetLabel: "原图已解除关联",
+  summaryGeneratedAt: "生成于",
+  summaryImageCountLabel: "张",
+  copyFailedLabel: "文案阶段失败",
+  retryQueued: "已重新排队，完成后这里会自动刷新。",
+  pollFailed: "刷新创作进度失败，稍后会自动重试。",
+  emptyMessage: "这个资源夹还没有开始 AI 创作。",
+  emptyHint: "上传原图后点「开始 AI 创作」，进度与结果会直接出现在这里。",
 } as const;
 
 /** 开始创作弹窗的文案（参数与接口见 docs/prd/04「数据与接口」）。 */

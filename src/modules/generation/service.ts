@@ -147,6 +147,16 @@ export async function listTasks(): Promise<TaskSummaryView[]> {
   });
 }
 
+/**
+ * 单个资源夹的任务（资源夹详情的「创作」区用，MKACG-916）：
+ * 只在 `listTasks` 的结果上按资源夹过滤，不另写一条查询路径，
+ * 取值口径（派生状态、阶段进度、重试说明）因此与 `/tasks` 完全一致。
+ */
+export async function listCollectionTasks(collectionId: string): Promise<TaskSummaryView[]> {
+  const tasks = await listTasks();
+  return tasks.filter((task) => task.collectionId === collectionId);
+}
+
 export async function getTask(taskId: string): Promise<TaskDetailView> {
   return buildDetail(taskId);
 }

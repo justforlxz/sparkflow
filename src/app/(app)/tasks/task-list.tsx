@@ -10,7 +10,12 @@ import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { STAGE_STATUS_TONE, TASK_STATUS_TONE } from "@/components/ui/status-tone";
 import { buttonClass, noticeClass, TEXT_LINK_CLASS } from "@/components/ui/styles";
-import { STAGE_NAMES, TASK_COPY, type StageStatus } from "@/modules/generation/constants";
+import {
+  STAGE_NAMES,
+  STAGE_POLL_INTERVAL_MS,
+  TASK_COPY,
+  type StageStatus,
+} from "@/modules/generation/constants";
 import type { TaskSummaryView } from "@/modules/generation/view";
 
 /**
@@ -21,8 +26,7 @@ import type { TaskSummaryView } from "@/modules/generation/view";
  * 4. `queued`/`running` 时每 3 秒轮询一次，终态停止，离开页面清理定时器（MUST 4、AC-07-9）。
  */
 
-/** 轮询间隔（docs/prd/07 MUST 4）。 */
-const POLL_INTERVAL_MS = 3000;
+/* 轮询间隔与创作区共用同一个常量（docs/prd/07 MUST 4）：两处各写一份迟早会漂移。 */
 
 interface TaskListProps {
   initialTasks: TaskSummaryView[];
@@ -74,7 +78,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
           if (stopped) return;
           setError(cause instanceof Error ? cause.message : TASK_COPY.refreshFailed);
         });
-    }, POLL_INTERVAL_MS);
+    }, STAGE_POLL_INTERVAL_MS);
 
     return () => {
       stopped = true;
@@ -212,7 +216,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
-                    href={`/collections/${task.collectionId}?tab=results`}
+                    href={`/collections/${task.collectionId}#creation`}
                     className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     {TASK_COPY.viewResultAction}

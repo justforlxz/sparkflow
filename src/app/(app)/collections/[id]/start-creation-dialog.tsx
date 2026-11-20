@@ -80,8 +80,12 @@ export function StartCreationDialog({
         }),
       });
       setOpen(false);
-      // 任务已经进队列：直接去任务列表看两个阶段的状态。
-      router.push("/tasks");
+      /* 不跳 `/tasks`（MKACG-916 MUST 1、AC-C-1）：回到资源夹详情的「创作」区，
+       * 那里就地显示两个阶段的状态与「第 k/N 张」进度。
+       * 显式带上 `?tab=assets`：从「AI 创作结果」页签发起时也要回到有创作区的那个页签，
+       * 而且查询串变化才会重新取服务端数据（同一路径只改 hash 不会刷新）。 */
+      router.push(`/collections/${collectionId}?tab=assets#creation`);
+      setSubmitting(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : CREATION_COPY.submitFailed);
       setSubmitting(false);

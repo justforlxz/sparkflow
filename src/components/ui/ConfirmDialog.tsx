@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ErrorState } from "./ErrorState";
+import { buttonClass, dialogClass, DIALOG_TITLE_CLASS, OVERLAY_CLASS } from "./styles";
 
 /**
  * 二次确认弹窗（docs/prd/09-dashboard.md MUST 4、docs/prd/00-overview.md 全局规则 7）。
@@ -9,6 +10,7 @@ import { ErrorState } from "./ErrorState";
  * 只负责「确认 / 取消」这一层：删除、重新生成这类不可撤销或会产生新数据的操作都复用它，
  * 弹窗里的文案与按钮标签由调用方的模块常量给出。
  * `error` 非空时在弹窗内显示后端返回的 `error.message`，调用方不自己拼技术细节。
+ * 确认按钮按 `danger` 分成「危险实心红」与「主操作深色实心」两种，取消按钮一律次操作外观。
  */
 export interface ConfirmDialogProps {
   open: boolean;
@@ -46,22 +48,17 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl"
-      >
-        <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
-        {body ? <div className="text-sm leading-6 text-zinc-600">{body}</div> : null}
+    <div className={OVERLAY_CLASS}>
+      <div role="dialog" aria-modal="true" aria-label={title} className={dialogClass({ width: "md" })}>
+        <h2 className={DIALOG_TITLE_CLASS}>{title}</h2>
+        {body ? <div className="text-body text-ink-secondary">{body}</div> : null}
         {error ? <ErrorState message={error} /> : null}
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
             data-testid={cancelTestId}
-            className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+            className={buttonClass({ variant: "secondary" })}
           >
             {cancelLabel}
           </button>
@@ -70,10 +67,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             data-testid={confirmTestId}
             disabled={busy}
-            className={[
-              "rounded px-4 py-2 text-sm font-medium text-white disabled:opacity-60",
-              danger ? "bg-danger hover:bg-danger/90" : "bg-zinc-900 hover:bg-zinc-700",
-            ].join(" ")}
+            className={buttonClass({ variant: danger ? "danger" : "primary" })}
           >
             {busy ? (busyLabel ?? confirmLabel) : confirmLabel}
           </button>

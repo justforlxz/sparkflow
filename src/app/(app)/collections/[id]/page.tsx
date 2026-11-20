@@ -6,6 +6,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { COLLECTION_STATUS_TONE } from "@/components/ui/status-tone";
+import {
+  PAGE_SUBTITLE_CLASS,
+  PAGE_TITLE_CLASS,
+  TEXT_LINK_CLASS,
+} from "@/components/ui/styles";
 import { isAppError } from "@/lib/errors";
 import { listCollectionResults } from "@/modules/generation/results";
 import { RESULT_COPY } from "@/modules/generation/constants";
@@ -53,9 +58,9 @@ async function loadCollection(id: string): Promise<CollectionDetailView> {
 
 function SourceRow({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="flex gap-3 border-b border-zinc-100 py-2 last:border-b-0">
-      <dt className="w-24 shrink-0 text-zinc-500">{label}</dt>
-      <dd className="min-w-0 whitespace-pre-wrap break-words text-zinc-900">
+    <div className="flex gap-3 border-b border-line py-2 last:border-b-0">
+      <dt className="w-24 shrink-0 text-ink-tertiary">{label}</dt>
+      <dd className="min-w-0 whitespace-pre-wrap break-words text-ink">
         {value ?? COLLECTION_COPY.notFoundSource}
       </dd>
     </div>
@@ -64,8 +69,8 @@ function SourceRow({ label, value }: { label: string; value: string | null }) {
 
 function tabClass(active: boolean): string {
   return active
-    ? "-mb-px border-b-2 border-zinc-900 px-1 pb-2 font-medium text-zinc-900"
-    : "-mb-px border-b-2 border-transparent px-1 pb-2 text-zinc-500 hover:text-zinc-900";
+    ? `-mb-px border-b-2 border-accent px-1 pb-2 text-body font-medium text-ink`
+    : `-mb-px border-b-2 border-transparent px-1 pb-2 text-body text-ink-secondary hover:text-ink`;
 }
 
 export default async function CollectionDetailPage({ params, searchParams }: PageProps) {
@@ -84,14 +89,14 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
 
   return (
     <section className="space-y-6">
-      <Link href="/collections" className="text-sm text-zinc-500 hover:text-zinc-900">
+      <Link href="/collections" className={`text-footnote ${TEXT_LINK_CLASS}`}>
         ← {COLLECTION_COPY.listTitle}
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold text-zinc-900">{collection.name}</h1>
-          <p className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+          <h1 className={PAGE_TITLE_CLASS}>{collection.name}</h1>
+          <p className={`flex flex-wrap items-center gap-3 ${PAGE_SUBTITLE_CLASS}`}>
             <Pill tone={COLLECTION_STATUS_TONE[collection.status]}>
               {COLLECTION_STATUS_LABELS[collection.status]}
             </Pill>
@@ -120,7 +125,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
         </div>
       </div>
 
-      <nav aria-label="资源夹页签" className="flex gap-4 border-b border-zinc-200 text-sm">
+      <nav aria-label="资源夹页签" className="flex gap-4 border-b border-line">
         <Link
           href={`/collections/${collection.id}`}
           aria-current={tab === "assets" ? "page" : undefined}
@@ -147,20 +152,25 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
       {tab === "assets" ? (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <div className="min-w-0 space-y-3">
-            <h2 className="text-base font-semibold text-zinc-900">{COLLECTION_COPY.imagesSection}</h2>
+            <h2 className="text-heading font-semibold text-ink">{COLLECTION_COPY.imagesSection}</h2>
             {collection.assets.length === 0 ? (
               <EmptyState message={COLLECTION_COPY.emptyAssets} />
             ) : (
               <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {collection.assets.map((asset) => (
-                  <li key={asset.id} className="space-y-1 text-xs text-zinc-500">
-                    <a href={asset.url} target="_blank" rel="noreferrer" className="block">
+                  <li key={asset.id} className="space-y-1 text-caption text-ink-tertiary">
+                    <a
+                      href={asset.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block rounded-md"
+                    >
                       {/* 鉴权路由读取原图缩略图，不走 Next 图片优化器。 */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={asset.url}
                         alt={asset.fileName}
-                        className="h-32 w-full rounded border border-zinc-200 object-cover"
+                        className="h-32 w-full rounded-md border border-line object-cover"
                       />
                     </a>
                     <span className="block truncate">{asset.fileName}</span>
@@ -175,7 +185,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           </div>
 
           <Panel title={COLLECTION_COPY.sourceSection} className="h-fit min-w-0">
-            <dl className="text-sm">
+            <dl className="text-body">
               <SourceRow label="来源平台" value={collection.platform} />
               <SourceRow label="来源链接" value={collection.sourceUrl} />
               <SourceRow label="原始标题" value={collection.sourceTitle} />
@@ -192,7 +202,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           {publishedRecords && publishedRecords.total > publishedRecords.items.length ? (
             <Link
               href={`/published?collectionId=${collection.id}`}
-              className="text-sm text-zinc-600 underline hover:text-zinc-900"
+              className={`text-footnote ${TEXT_LINK_CLASS}`}
             >
               {PUBLISH_COPY.pageTitle}
             </Link>

@@ -1,31 +1,94 @@
 @import "tailwindcss";
 
 /*
- * 设计变量：颜色只在这里写死字面值，页面与组件一律用变量派生出的 class
- * （docs/prd/09-dashboard.md MUST NOT、AC-10-9）。
+ * 设计变量的唯一来源（ADR 0007「界面按 Apple HIG 重做，保留现有骨架」）。
  *
- * 状态标签的颜色语义固定（docs/prd/09 SHOULD）：待创作=蓝、生成中=强调色、待发布=橙、已发布=绿。
+ * 规则：
+ * 1. 颜色、字号、圆角、阴影的字面值只写在这个文件里；页面与组件一律用 @theme 映射出的 class
+ *    （`bg-panel`、`text-ink`、`border-line`、`bg-soft`、`text-accent`…）。
+ * 2. 不使用 Tailwind 默认色阶（`zinc-*` / `gray-*` / `slate-*` / `red-*` / `amber-*` 等）。
+ * 3. 变量与用途的对照表在 `docs/design/tokens.md`，两处必须一一对应（AC-D-2）。
  */
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
+  /* 表面：页面底色、卡片、次级填充、分隔线与控件边框 */
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --soft: #eef0f4;
+  /* 分隔线只用于装饰性分隔（卡片头、表格行），不用于识别控件。 */
+  --line: #e2e5ea;
+  --line-strong: #c9ced6;
+  /* 控件边框要承担「这是一个输入框」的识别，对比度按 ≥3:1 选取（AC-D-6）。 */
+  --control-border: #7f8794;
+  /* 弹窗遮罩 */
+  --overlay: rgb(16 18 22 / 45%);
 
+  /* 文字：三级层次 */
+  --ink: #16181d;
+  --ink-secondary: #4c525c;
+  --ink-tertiary: #616874;
+
+  /* 强调色：品牌红用于图形与大面积色块；文字与实心按钮用加深的那一档保证 ≥4.5:1 */
+  --accent: #ef4d63;
+  --accent-strong: #c11f3a;
+  /* 深色或高饱和填充上的文字色（实心按钮、侧栏当前项） */
+  --on-inverse: #ffffff;
+
+  /* 焦点环：键盘焦点专用，与强调色区分开，避免和「危险」「品牌」混淆 */
+  --focus: #1a6dff;
+
+  /* 语义色：正向 / 警告 / 危险，各自带一个浅色底 */
+  --positive: #15803d;
+  --positive-soft: #dcfce7;
+  --warning: #92400e;
+  --warning-soft: #fef3c7;
+  --warning-strong: #7c2d12;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
+  --danger-strong: #991b1b;
+
+  /*
+   * 业务状态色语义固定（docs/prd/09-dashboard.md SHOULD）：待创作=蓝、生成中=强调色、待发布=橙、已发布=绿。
+   * 取值沿用第一版交付时的色值：生成中当前是紫色 #6d28d9，与 PRD 的「强调色」措辞不一致。
+   * 本节点只做视觉重做、不改需求，这一处偏离交给功能检测判定。
+   */
   --status-draft: #1d4ed8;
   --status-draft-soft: #dbeafe;
   --status-generating: #6d28d9;
   --status-generating-soft: #ede9fe;
   --status-pending-publish: #c2410c;
   --status-pending-publish-soft: #ffedd5;
-  --status-published: #15803d;
-  --status-published-soft: #dcfce7;
+  --status-published: var(--positive);
+  --status-published-soft: var(--positive-soft);
 
-  --danger: #b91c1c;
-  --danger-soft: #fee2e2;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* 颜色 → class：bg-* / text-* / border-* / outline-* / ring-* */
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-soft: var(--soft);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-control-border: var(--control-border);
+  --color-overlay: var(--overlay);
+
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-tertiary: var(--ink-tertiary);
+
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-on-inverse: var(--on-inverse);
+  --color-focus: var(--focus);
+
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-strong: var(--warning-strong);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-strong: var(--danger-strong);
 
   --color-status-draft: var(--status-draft);
   --color-status-draft-soft: var(--status-draft-soft);
@@ -36,13 +99,39 @@
   --color-status-published: var(--status-published);
   --color-status-published-soft: var(--status-published-soft);
 
-  --color-danger: var(--danger);
-  --color-danger-soft: var(--danger-soft);
+
+  /* 字号阶梯：11 / 12 / 13 / 15 / 17 / 22 / 28，行高随字号一起定，页面不再随手写 text-sm */
+  --text-caption: 11px;
+  --text-caption--line-height: 14px;
+  --text-footnote: 12px;
+  --text-footnote--line-height: 16px;
+  --text-body: 13px;
+  --text-body--line-height: 18px;
+  --text-body-lg: 15px;
+  --text-body-lg--line-height: 20px;
+  --text-heading: 17px;
+  --text-heading--line-height: 22px;
+  --text-title: 22px;
+  --text-title--line-height: 28px;
+  --text-display: 28px;
+  --text-display--line-height: 34px;
+
+  /* 圆角：小标签 6、控件 10、卡片 14 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* 阴影只有一档：卡片与弹窗共用 */
+  --shadow-panel: 0 1px 2px rgb(16 18 22 / 6%), 0 1px 3px rgb(16 18 22 / 4%);
+
+  /* 动效默认值：只做过属性过渡，150ms 收尾（ADR 0007 第 6 条） */
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--ink);
   font-family:
     ui-sans-serif,
     system-ui,
@@ -52,4 +141,19 @@ body {
     "PingFang SC",
     "Microsoft YaHei",
     sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * 键盘焦点环（ADR 0007 第 5 条、AC-D-5）：一条全局规则代替每个组件各写一份，
+ * 任何可聚焦元素都不会漏。`outline` 不占布局；`offset` 让环落在元素外侧，
+ * 整块可点且 `overflow-hidden` 的卡片用 `focus-visible:outline-offset-0` 把环收进内部。
+ */
+@layer base {
+  :focus-visible {
+    outline-width: 2px;
+    outline-style: solid;
+    outline-color: var(--focus);
+    outline-offset: 2px;
+  }
 }

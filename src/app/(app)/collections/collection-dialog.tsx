@@ -1,6 +1,17 @@
 "use client";
 
 import { ErrorState } from "@/components/ui/ErrorState";
+import {
+  buttonClass,
+  dialogClass,
+  DIALOG_TITLE_CLASS,
+  FIELD_CLASS,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  OVERLAY_CLASS,
+  TEXT_LINK_CLASS,
+  TEXTAREA_CLASS,
+} from "@/components/ui/styles";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ACCEPTED_IMAGE_MIME, COLLECTION_COPY } from "@/modules/media-collection/constants";
@@ -184,31 +195,27 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
       <button
         type="button"
         onClick={openDialog}
-        className={
-          mode === "create"
-            ? "rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-            : "rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100"
-        }
+        className={buttonClass({ variant: mode === "create" ? "primary" : "secondary" })}
       >
         {mode === "create" ? COLLECTION_COPY.createAction : COLLECTION_COPY.editAction}
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-zinc-900/40 p-6">
+        <div className={OVERLAY_CLASS}>
           <div
             role="dialog"
             aria-modal="true"
             aria-label={mode === "create" ? COLLECTION_COPY.createAction : COLLECTION_COPY.editAction}
-            className="w-full max-w-2xl space-y-5 rounded-lg bg-white p-6 shadow-xl"
+            className={dialogClass({ width: "2xl", className: "space-y-5" })}
           >
-            <h2 className="text-lg font-semibold text-zinc-900">
+            <h2 className={DIALOG_TITLE_CLASS}>
               {mode === "create" ? COLLECTION_COPY.createAction : COLLECTION_COPY.editAction}
             </h2>
 
             <div className="space-y-3">
               {FIELD_LABELS.map((field) => (
-                <label key={field.key} className="block space-y-1 text-sm">
-                  <span className="font-medium text-zinc-900">{field.label}</span>
+                <label key={field.key} className={FIELD_CLASS}>
+                  <span className={LABEL_CLASS}>{field.label}</span>
                   {field.textarea ? (
                     <textarea
                       value={values[field.key]}
@@ -216,7 +223,7 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
                         setValues((current) => ({ ...current, [field.key]: event.target.value }))
                       }
                       rows={4}
-                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      className={TEXTAREA_CLASS}
                     />
                   ) : (
                     <input
@@ -225,7 +232,7 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
                       onChange={(event) =>
                         setValues((current) => ({ ...current, [field.key]: event.target.value }))
                       }
-                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      className={INPUT_CLASS}
                     />
                   )}
                 </label>
@@ -233,14 +240,14 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
             </div>
 
             <div className="space-y-2">
-              <label className="block space-y-1 text-sm">
-                <span className="font-medium text-zinc-900">{COLLECTION_COPY.addImagesLabel}</span>
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{COLLECTION_COPY.addImagesLabel}</span>
                 <input
                   type="file"
                   multiple
                   accept={ACCEPTED_IMAGE_MIME.join(",")}
                   onChange={(event) => addFiles(event.target.files)}
-                  className="block w-full text-sm text-zinc-700"
+                  className="block w-full text-body text-ink-secondary file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-soft file:px-3 file:py-1.5 file:text-footnote file:font-medium file:text-ink hover:file:bg-line"
                 />
               </label>
 
@@ -248,22 +255,22 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
                 {savedAssets.map((asset) => {
                   const marked = pendingRemove.includes(asset.id);
                   return (
-                    <li key={asset.id} className="space-y-1 text-xs">
+                    <li key={asset.id} className="space-y-1 text-footnote">
                       <div className="relative">
                         {/* eslint-disable-next-line @next/next/no-img-element -- 鉴权路由，不走 Next 图片优化器 */}
                         <img
                           src={asset.url}
                           alt={asset.fileName}
-                          className={`h-20 w-full rounded object-cover ${marked ? "opacity-40" : ""}`}
+                          className={`h-20 w-full rounded-md border border-line object-cover ${marked ? "opacity-40" : ""}`}
                         />
-                        <span className="absolute left-1 top-1 rounded bg-white/90 px-1 py-0.5 text-[11px] text-zinc-700">
+                        <span className="absolute left-1 top-1 rounded-sm bg-panel/90 px-1 py-0.5 text-caption text-ink-secondary">
                           {marked ? COLLECTION_COPY.assetStatePendingRemove : COLLECTION_COPY.assetStateSaved}
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => toggleRemove(asset.id)}
-                        className="text-zinc-600 underline hover:text-zinc-900"
+                        className={`text-footnote ${TEXT_LINK_CLASS}`}
                       >
                         {marked ? COLLECTION_COPY.undoRemove : "移除"}
                       </button>
@@ -272,22 +279,22 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
                 })}
 
                 {pendingFiles.map((item) => (
-                  <li key={item.key} className="space-y-1 text-xs">
+                  <li key={item.key} className="space-y-1 text-footnote">
                     <div className="relative">
                       {/* eslint-disable-next-line @next/next/no-img-element -- 本地预览，用 object URL */}
                       <img
                         src={item.previewUrl}
                         alt={item.file.name}
-                        className="h-20 w-full rounded object-cover"
+                        className="h-20 w-full rounded-md border border-line object-cover"
                       />
-                      <span className="absolute left-1 top-1 rounded bg-amber-100 px-1 py-0.5 text-[11px] text-amber-700">
+                      <span className="absolute left-1 top-1 rounded-sm bg-warning-soft px-1 py-0.5 text-caption text-warning">
                         {COLLECTION_COPY.assetStatePendingAdd}
                       </span>
                     </div>
                     <button
                       type="button"
                       onClick={() => dropPendingFile(item.key)}
-                      className="text-zinc-600 underline hover:text-zinc-900"
+                      className={`text-footnote ${TEXT_LINK_CLASS}`}
                     >
                       {COLLECTION_COPY.dropPending}
                     </button>
@@ -302,7 +309,7 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
               <button
                 type="button"
                 onClick={closeDialog}
-                className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                className={buttonClass({ variant: "secondary" })}
               >
                 {COLLECTION_COPY.cancelAction}
               </button>
@@ -310,7 +317,7 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+                className={buttonClass({ variant: "primary" })}
               >
                 {saving ? "保存中…" : COLLECTION_COPY.saveAction}
               </button>

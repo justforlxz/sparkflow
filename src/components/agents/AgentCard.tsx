@@ -4,6 +4,16 @@ import { useState } from "react";
 import { fetchJson } from "@/components/api";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
+import {
+  buttonClass,
+  CHECKBOX_CLASS,
+  FIELD_CLASS,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  noticeClass,
+  SELECT_CLASS,
+  TEXTAREA_CLASS,
+} from "@/components/ui/styles";
 import type { AgentConfigView, AgentModelCandidate } from "@/modules/agent-config/view";
 import { findCapability } from "@/modules/gateway/constants";
 
@@ -139,17 +149,18 @@ export function AgentCard({ agent, gateways, candidates, onSaved }: AgentCardPro
       <Panel bodyClassName="space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="space-y-1">
-            <h3 className="text-base font-semibold text-zinc-900">{agent.label}</h3>
-            <p className="max-w-xl text-sm text-zinc-600">{agent.description}</p>
+            <h3 className="text-heading font-semibold text-ink">{agent.label}</h3>
+            <p className="max-w-xl text-body text-ink-secondary">{agent.description}</p>
           </div>
           <Pill data-testid="agent-ready-badge" tone={agent.ready ? "published" : "neutral"}>
             {agent.ready ? "就绪" : "未就绪"}
           </Pill>
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-zinc-800">
+        <label className="flex items-center gap-2 text-body text-ink">
           <input
             type="checkbox"
+            className={CHECKBOX_CLASS}
             checked={draft.enabled}
             onChange={(event) =>
               setDraft((current) => ({ ...current, enabled: event.target.checked }))
@@ -158,23 +169,23 @@ export function AgentCard({ agent, gateways, candidates, onSaved }: AgentCardPro
           <span>启用</span>
         </label>
 
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-zinc-800">名称</span>
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>名称</span>
           <input
             value={draft.name}
             onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+            className={INPUT_CLASS}
           />
         </label>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-zinc-800">网关</span>
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>网关</span>
             <select
               data-testid="agent-gateway"
               value={draft.gatewayId}
               onChange={(event) => changeGateway(event.target.value)}
-              className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+              className={SELECT_CLASS}
             >
               <option value="">未绑定网关</option>
               {gateways.map((gateway) => (
@@ -185,13 +196,13 @@ export function AgentCard({ agent, gateways, candidates, onSaved }: AgentCardPro
             </select>
           </label>
 
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-zinc-800">模型</span>
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>模型</span>
             <select
               data-testid="agent-model"
               value={draft.modelId}
               onChange={(event) => setDraft((current) => ({ ...current, modelId: event.target.value }))}
-              className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+              className={SELECT_CLASS}
             >
               <option value="">{agent.emptyModelLabel}</option>
               {modelOptions.map((candidate) => (
@@ -206,12 +217,12 @@ export function AgentCard({ agent, gateways, candidates, onSaved }: AgentCardPro
           </label>
         </div>
 
-        <div className="space-y-1 text-sm">
-          <p data-testid="agent-binding-state" className="text-zinc-700">
+        <div className="space-y-1 text-body">
+          <p data-testid="agent-binding-state" className="text-ink-secondary">
             {modelBindingText(agent)}
           </p>
           {agent.issues.length > 0 ? (
-            <ul className="space-y-0.5 text-xs text-amber-600">
+            <ul className="space-y-0.5 text-footnote text-warning">
               {agent.issues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}
@@ -219,54 +230,54 @@ export function AgentCard({ agent, gateways, candidates, onSaved }: AgentCardPro
           ) : null}
         </div>
 
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-zinc-800">角色说明</span>
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>角色说明</span>
           <textarea
             value={draft.role}
             onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}
             rows={2}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+            className={TEXTAREA_CLASS}
           />
         </label>
 
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-zinc-800">系统提示词</span>
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>系统提示词</span>
           <textarea
             value={draft.systemPrompt}
             onChange={(event) =>
               setDraft((current) => ({ ...current, systemPrompt: event.target.value }))
             }
             rows={3}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+            className={TEXTAREA_CLASS}
           />
         </label>
 
-        <label className="block space-y-1">
-          <span className="text-sm font-medium text-zinc-800">输出要求</span>
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>输出要求</span>
           <textarea
             value={draft.outputRequirements}
             onChange={(event) =>
               setDraft((current) => ({ ...current, outputRequirements: event.target.value }))
             }
             rows={2}
-            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+            className={TEXTAREA_CLASS}
           />
         </label>
 
         {error ? (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-body text-danger">
             {error}
           </p>
         ) : null}
         {notice ? (
-          <p role="status" className="text-sm text-emerald-700">
+          <p role="status" className="text-body text-positive">
             {notice}
           </p>
         ) : null}
 
         {confirmingReset ? (
-          <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-2">
-            <p className="text-sm text-amber-800">
+          <div className={noticeClass("warning", "space-y-2")}>
+            <p className="text-body">
               恢复默认会重置名称、角色说明、系统提示词与输出要求，模型绑定保持不变。
             </p>
             <div className="flex gap-2">
@@ -274,14 +285,14 @@ export function AgentCard({ agent, gateways, candidates, onSaved }: AgentCardPro
                 type="button"
                 onClick={() => void reset()}
                 disabled={resetting}
-                className="rounded bg-amber-600 px-3 py-1.5 text-sm text-white disabled:bg-amber-300"
+                className={buttonClass({ variant: "warning", size: "sm" })}
               >
                 确认恢复
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmingReset(false)}
-                className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
+                className={buttonClass({ variant: "secondary", size: "sm" })}
               >
                 取消
               </button>
@@ -289,19 +300,19 @@ export function AgentCard({ agent, gateways, candidates, onSaved }: AgentCardPro
           </div>
         ) : null}
 
-        <div className="flex flex-wrap gap-2 border-t border-zinc-200 pt-3">
+        <div className="flex flex-wrap gap-2 border-t border-line pt-3">
           <button
             type="button"
             onClick={() => void save()}
             disabled={saving}
-            className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:bg-zinc-400"
+            className={buttonClass({ variant: "primary" })}
           >
             保存
           </button>
           <button
             type="button"
             onClick={() => setConfirmingReset(true)}
-            className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700"
+            className={buttonClass({ variant: "secondary" })}
           >
             恢复默认
           </button>

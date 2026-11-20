@@ -4,6 +4,7 @@ import { useState } from "react";
 import { fetchJson } from "@/components/api";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Pill } from "@/components/ui/Pill";
+import { CHECKBOX_CLASS, noticeClass } from "@/components/ui/styles";
 import type { ResolvedFeatureFlag } from "@/modules/feature-flags/resolve";
 
 export interface FeatureFlagSectionProps {
@@ -55,28 +56,29 @@ export function FeatureFlagSection({ initialFeatures }: FeatureFlagSectionProps)
 
     return (
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-zinc-800">{title}</h3>
+        <h3 className="text-body font-semibold text-ink">{title}</h3>
         <ul className="space-y-2">
           {items.map((feature) => (
             <li
               key={feature.key}
               data-testid={`feature-flag-${feature.key}`}
-              className="flex flex-wrap items-start justify-between gap-3 rounded border border-zinc-200 bg-white px-3 py-2"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-line bg-panel px-3 py-2.5"
             >
               <div className="space-y-1">
-                <p className="text-sm font-medium text-zinc-900">{feature.name}</p>
-                <p className="max-w-xl text-xs text-zinc-600">{feature.description}</p>
+                <p className="text-body font-medium text-ink">{feature.name}</p>
+                <p className="max-w-xl text-footnote text-ink-secondary">{feature.description}</p>
               </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-zinc-500">{feature.active ? "生效中" : "未生效"}</span>
+              <div className="flex items-center gap-2 text-footnote">
+                <span className="text-ink-tertiary">{feature.active ? "生效中" : "未生效"}</span>
                 {!feature.implemented ? (
                   <Pill data-testid="feature-unimplemented" tone="neutral">
                     {UNIMPLEMENTED_GROUP}
                   </Pill>
                 ) : null}
-                <label className="flex items-center gap-1 text-sm text-zinc-700">
+                <label className="flex items-center gap-1.5 text-body text-ink-secondary">
                   <input
                     type="checkbox"
+                    className={CHECKBOX_CLASS}
                     checked={feature.enabled}
                     disabled={!feature.implemented || busyKey === feature.key}
                     onChange={(event) => void toggle(feature, event.target.checked)}
@@ -94,15 +96,15 @@ export function FeatureFlagSection({ initialFeatures }: FeatureFlagSectionProps)
   return (
     <section aria-label="功能开关" className="space-y-4">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold text-zinc-900">功能开关</h2>
-        <p className="max-w-2xl text-sm text-zinc-600">
+        <h2 className="text-heading font-semibold text-ink">功能开关</h2>
+        <p className="max-w-2xl text-body text-ink-secondary">
           按功能粒度控制这个版本能不能用。关闭时对应入口提示「该功能未启用」，接口也不会产生数据。
         </p>
       </div>
 
       {error ? <ErrorState message={error} /> : null}
       {notice ? (
-        <p role="status" className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <p role="status" className={noticeClass("positive")}>
           {notice}
         </p>
       ) : null}

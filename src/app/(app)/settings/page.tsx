@@ -7,6 +7,7 @@
 import { AgentSection } from "@/components/agents/AgentSection";
 import { FeatureFlagSection } from "@/components/features/FeatureFlagSection";
 import { GatewaySection } from "@/components/gateway/GatewaySection";
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from "@/components/ui/styles";
 import { listAgentViews } from "@/modules/agent-config/service";
 import { listFeatures } from "@/modules/feature-flags/service";
 import { listGatewayViews } from "@/modules/gateway/service";
@@ -24,8 +25,8 @@ export default async function SettingsPage() {
   return (
     <div className="space-y-10">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold text-zinc-900">设置</h1>
-        <p className="max-w-2xl text-sm leading-6 text-zinc-600">
+        <h1 className={PAGE_TITLE_CLASS}>设置</h1>
+        <p className={`max-w-2xl ${PAGE_SUBTITLE_CLASS}`}>
           模型与 Agent 设置：先配置模型网关，再让两个 Agent 从这里选择模型；最后是本版本的功能开关。
         </p>
       </header>

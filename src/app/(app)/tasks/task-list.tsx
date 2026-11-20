@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { STAGE_STATUS_TONE, TASK_STATUS_TONE } from "@/components/ui/status-tone";
+import { buttonClass, noticeClass, TEXT_LINK_CLASS } from "@/components/ui/styles";
 import { STAGE_NAMES, TASK_COPY, type StageStatus } from "@/modules/generation/constants";
 import type { TaskSummaryView } from "@/modules/generation/view";
 
@@ -127,7 +128,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
         action={
           <Link
             href="/collections"
-            className="inline-block rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+            className={buttonClass({ variant: "primary" })}
           >
             {TASK_COPY.listAction}
           </Link>
@@ -150,16 +151,16 @@ export function TaskList({ initialTasks }: TaskListProps) {
               data-task-id={task.id}
               data-task-status={task.status}
             >
-              <Panel bodyClassName="space-y-3 text-sm">
+              <Panel bodyClassName="space-y-3 text-body">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <Link
                       href={`/collections/${task.collectionId}`}
-                      className="font-medium text-zinc-900 hover:underline"
+                      className={`font-medium ${TEXT_LINK_CLASS}`}
                     >
                       {task.collectionName}
                     </Link>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-footnote text-ink-tertiary">
                       {formatTime(task.createdAt)} · {task.visualStyleLabel} · {task.copyStyleLabel} ·{" "}
                       {TASK_COPY.imageCountLabel} {task.imageCount} 张
                     </p>
@@ -167,28 +168,28 @@ export function TaskList({ initialTasks }: TaskListProps) {
                   <Pill tone={TASK_STATUS_TONE[task.status]}>{task.statusLabel}</Pill>
                 </div>
 
-                <dl className="flex flex-wrap gap-2 text-xs">
+                <dl className="flex flex-wrap gap-2 text-footnote">
                   {STAGE_NAMES.map((name) => {
                     const stage = task.stages[name];
                     return (
                       <div
                         key={name}
-                        className="flex items-center gap-2 rounded border border-zinc-200 px-2 py-1"
+                        className="flex items-center gap-2 rounded-md border border-line px-2 py-1"
                       >
-                        <dt className="text-zinc-500">{stage.label}</dt>
+                        <dt className="text-ink-tertiary">{stage.label}</dt>
                         <dd data-testid={`stage-${name}-status`}>
                           <Pill tone={STAGE_STATUS_TONE[stage.status as StageStatus]}>
                             {stage.statusLabel}
                           </Pill>
                         </dd>
-                        <span className="text-zinc-400">第 {stage.attempts} 次</span>
+                        <span className="text-ink-tertiary">第 {stage.attempts} 次</span>
                       </div>
                     );
                   })}
                 </dl>
 
                 {failed.length > 0 ? (
-                  <div className="space-y-1 text-xs text-red-600">
+                  <div className="space-y-1 text-footnote text-danger">
                     {STAGE_NAMES.filter((name) => task.stages[name].error).map((name) => (
                       <p key={name} data-testid={`stage-${name}-error`}>
                         {task.stages[name].label}：{task.stages[name].error?.message}
@@ -202,8 +203,8 @@ export function TaskList({ initialTasks }: TaskListProps) {
                     data-testid="retry-hint"
                     className={
                       task.retryHint.state === "snapshot-changed"
-                        ? "rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800"
-                        : "text-xs text-zinc-500"
+                        ? noticeClass("warning", "text-footnote")
+                        : "text-footnote text-ink-tertiary"
                     }
                   >
                     {task.retryHint.message}
@@ -213,13 +214,13 @@ export function TaskList({ initialTasks }: TaskListProps) {
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
                     href={`/collections/${task.collectionId}?tab=results`}
-                    className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700 hover:bg-zinc-100"
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     {TASK_COPY.viewResultAction}
                   </Link>
                   <Link
                     href={`/tasks/${task.id}`}
-                    className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700 hover:bg-zinc-100"
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     {TASK_COPY.detailAction}
                   </Link>
@@ -229,7 +230,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
                       data-testid="retry-button"
                       onClick={() => retry(task)}
                       disabled={busyId === task.id}
-                      className="rounded bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+                      className={buttonClass({ variant: "warning", size: "sm" })}
                     >
                       {TASK_COPY.retryAction}
                     </button>
@@ -239,7 +240,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
                     data-testid="regenerate-button"
                     onClick={() => setConfirming(task)}
                     disabled={busyId === task.id}
-                    className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700 hover:bg-zinc-100 disabled:opacity-60"
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     {TASK_COPY.regenerateAction}
                   </button>

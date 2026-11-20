@@ -1,3 +1,4 @@
+import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS } from "@/components/ui/styles";
 import { TASK_COPY } from "@/modules/generation/constants";
 import { listTasks } from "@/modules/generation/service";
 import { TaskList } from "./task-list";
@@ -11,8 +12,8 @@ export default async function TasksPage() {
   return (
     <section className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold text-zinc-900">{TASK_COPY.listTitle}</h1>
-        <p className="text-sm text-zinc-600">{TASK_COPY.listSubtitle}</p>
+        <h1 className={PAGE_TITLE_CLASS}>{TASK_COPY.listTitle}</h1>
+        <p className={PAGE_SUBTITLE_CLASS}>{TASK_COPY.listSubtitle}</p>
       </div>
       <TaskList initialTasks={tasks} />
     </section>

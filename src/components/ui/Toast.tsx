@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
  * 用法：外壳里包一层 `<ToastProvider>`，交互组件里 `const toast = useToast()` 后调用
  * `toast.show(message)`。文案只用后端 `error.message`，不拼接技术细节。
  * 没有提示时容器不渲染任何节点，页面上不会常驻一个 `role="status"`。
+ * 三种色调与 `ErrorState` / 提示条同一套设计变量，不另造颜色。
  */
 const TOAST_DURATION_MS = 4000;
 
@@ -25,9 +26,9 @@ interface ToastItem {
 }
 
 const TOAST_TONE_CLASS: Record<ToastTone, string> = {
-  info: "border-zinc-200 bg-white text-zinc-800",
-  success: "border-status-published-soft bg-status-published-soft text-status-published",
-  danger: "border-danger-soft bg-danger-soft text-danger",
+  info: "border-line bg-panel text-ink",
+  success: "border-positive/25 bg-positive-soft text-positive",
+  danger: "border-danger/25 bg-danger-soft text-danger",
 };
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -59,7 +60,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               role="status"
               data-testid="toast"
               className={[
-                "pointer-events-auto max-w-md rounded border px-4 py-2 text-sm shadow-sm",
+                "pointer-events-auto max-w-md rounded-md border px-4 py-2 text-body shadow-panel",
                 TOAST_TONE_CLASS[item.tone],
               ].join(" ")}
             >

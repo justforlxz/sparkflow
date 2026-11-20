@@ -56,11 +56,11 @@ export function AppNav({ counts }: AppNavProps) {
             aria-current={active ? "page" : undefined}
             data-testid={`nav-${item.key}`}
             className={[
-              "flex items-center gap-3 rounded px-2 py-2 text-sm",
+              "flex min-h-10 items-center gap-3 rounded-md px-2.5 text-body transition-colors",
               "justify-center min-[720px]:justify-start",
-              active
-                ? "bg-zinc-100 font-medium text-zinc-900"
-                : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900",
+                          active
+                ? "bg-accent-strong font-medium text-on-inverse"
+                : "text-ink-secondary hover:bg-soft hover:text-ink",
             ].join(" ")}
           >
             <svg
@@ -79,7 +79,10 @@ export function AppNav({ counts }: AppNavProps) {
             {count === null ? null : (
               <span
                 data-testid={`nav-count-${item.key}`}
-                className="hidden rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-700 min-[720px]:ml-auto min-[720px]:inline"
+                className={[
+                  "hidden rounded-sm px-1.5 py-0.5 text-caption min-[720px]:ml-auto min-[720px]:inline",
+                  active ? "bg-on-inverse/20 text-on-inverse" : "bg-soft text-ink-secondary",
+                ].join(" ")}
               >
                 {count}
               </span>

@@ -37,7 +37,13 @@ describe("状态标签的颜色语义", () => {
     }
   });
 
-  it("globals.css 之外的状态色不出现颜色字面值", () => {
-    expect(GLOBALS_CSS).not.toMatch(/#ef4d63/i);
+  it("状态色不借用品牌强调色：四种语义各自独立取值", () => {
+    // 品牌强调色（--accent / --accent-strong）只用于强调与选中，不允许被状态语义借用，
+    // 否则「生成中」和「品牌红」会混在一起，状态就失去了固定含义。
+    const statusLines = GLOBALS_CSS.split("\n").filter((line) => line.trim().startsWith("--status-"));
+    expect(statusLines.length).toBeGreaterThanOrEqual(8);
+    for (const line of statusLines) {
+      expect(line).not.toMatch(/(--accent|#ef4d63|#c11f3a)/i);
+    }
   });
 });

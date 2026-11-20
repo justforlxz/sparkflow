@@ -1,5 +1,14 @@
 import Link from "next/link";
 import { PublishRecordList } from "@/components/publish/publish-record-list";
+import {
+  buttonClass,
+  FIELD_CLASS,
+  LABEL_CLASS,
+  PAGE_SUBTITLE_CLASS,
+  PAGE_TITLE_CLASS,
+  SELECT_CLASS,
+  TEXT_LINK_CLASS,
+} from "@/components/ui/styles";
 import { MAX_PAGE_SIZE } from "@/modules/media-collection/constants";
 import { listCollections } from "@/modules/media-collection/service";
 import { PUBLISH_COPY } from "@/modules/publish/constants";
@@ -49,18 +58,18 @@ export default async function PublishedPage({ searchParams }: PageProps) {
   return (
     <section className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold text-zinc-900">{PUBLISH_COPY.pageTitle}</h1>
-        <p className="text-sm text-zinc-500">{PUBLISH_COPY.pageSubtitle}</p>
+        <h1 className={PAGE_TITLE_CLASS}>{PUBLISH_COPY.pageTitle}</h1>
+        <p className={PAGE_SUBTITLE_CLASS}>{PUBLISH_COPY.pageSubtitle}</p>
       </div>
 
-      <form method="get" className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="w-full space-y-1 sm:w-auto">
-          <span className="block text-xs text-zinc-500">{PUBLISH_COPY.filterLabel}</span>
+      <form method="get" className="flex flex-wrap items-end gap-3 text-body">
+        <label className={`${FIELD_CLASS} w-full sm:w-auto`}>
+          <span className={LABEL_CLASS}>{PUBLISH_COPY.filterLabel}</span>
           <select
             name="collectionId"
             aria-label={PUBLISH_COPY.filterLabel}
             defaultValue={query.collectionId ?? ""}
-            className="w-full rounded border border-zinc-300 px-3 py-2 sm:w-auto"
+            className={`${SELECT_CLASS} w-full sm:w-64`}
           >
             <option value="">{PUBLISH_COPY.filterAll}</option>
             {collections.items.map((collection) => (
@@ -72,7 +81,7 @@ export default async function PublishedPage({ searchParams }: PageProps) {
         </label>
         <button
           type="submit"
-          className="rounded border border-zinc-300 px-4 py-2 text-zinc-700 hover:bg-zinc-100"
+          className={buttonClass({ variant: "secondary" })}
         >
           {PUBLISH_COPY.filterAction}
         </button>
@@ -81,17 +90,17 @@ export default async function PublishedPage({ searchParams }: PageProps) {
       <PublishRecordList records={records.items} emptyText={PUBLISH_COPY.emptyList} />
 
       {totalPages > 1 ? (
-        <nav aria-label="分页" className="flex items-center gap-3 text-sm">
+        <nav aria-label="分页" className="flex items-center gap-3 text-body">
           {query.page > 1 ? (
-            <Link href={pageHref(query.page - 1)} className="text-zinc-600 hover:text-zinc-900">
+            <Link href={pageHref(query.page - 1)} className={TEXT_LINK_CLASS}>
               {PUBLISH_COPY.previousPage}
             </Link>
           ) : null}
-          <span className="text-zinc-500">
+          <span className="text-ink-tertiary">
             {query.page} / {totalPages}
           </span>
           {query.page < totalPages ? (
-            <Link href={pageHref(query.page + 1)} className="text-zinc-600 hover:text-zinc-900">
+            <Link href={pageHref(query.page + 1)} className={TEXT_LINK_CLASS}>
               {PUBLISH_COPY.nextPage}
             </Link>
           ) : null}

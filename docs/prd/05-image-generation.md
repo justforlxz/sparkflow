@@ -30,6 +30,22 @@
 - 生成可能同步完成，也可能返回一个 id，需要 `generation_result` 轮询；同一 id 轮询不重复计费。
 - 图片可由回包内联或由网关 URL 提供；URL 只保留约 1 小时，因此拿到就落盘。
 
+### 水印（实测结论，2026-11-20）
+
+sensenova 默认模型（`sensenova-token-plan/sensenova-u1.5-lite`）出图右下角带「日日新 / senseNova」水印。
+通过 magpie 的两条路径都试过传 `watermark: false`：
+
+| 路径 | 结果 |
+| --- | --- |
+| MCP `generate_image`（在本体参数里加 `watermark: false`） | 不报错（200，工具 schema 未拒绝未知字段），取回成品**水印仍在** |
+| REST `POST /v1/images/generations`（加 `watermark: false`） | 200 返回 b64，成品**水印仍在** |
+
+因此：
+
+- **MUST NOT** 在实现里加 `watermark` 参数或以为它能关水印；magpie 与 sensenova 这条链路上无效。
+- 也不要把「不要水印」写成提示词要求然后承诺无水印——实测同模型下提示词无效。
+- 界面（结果页与发布准备）必须提示「水印由上游模型决定，发布前请自行确认」，并在需要无水印时由用户换模型。
+
 ## 设计契约
 
 ### MUST

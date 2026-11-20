@@ -13,12 +13,7 @@ import { countCollectionPublishRecords } from "@/modules/publish/counts";
 import { DEFAULT_THUMBNAIL_WIDTH, type CollectionStatus } from "./constants";
 import { readAssetFile, removeAssetFile, removeCollectionFiles, writeAssetBytes } from "./files";
 import * as repo from "./repo";
-import {
-  assertCanRemoveImage,
-  assertCollectionMutable,
-  assertHasImage,
-  COLLECTION_ERROR_MESSAGES,
-} from "./rules";
+import { assertCollectionMutable, COLLECTION_ERROR_MESSAGES } from "./rules";
 import type {
   CollectionEditAssetInput,
   CollectionFieldsInput,
@@ -174,15 +169,17 @@ export async function getCollection(id: string): Promise<CollectionDetailView> {
   return { ...toSummary(row, counts), assets: assets.map((asset) => toAssetView(id, asset)) };
 }
 
-/** 创建（MUST 1、MUST 2、MUST 3）：至少一张图片，路径由服务端生成，类型与大小逐张校验。 */
+/**
+ * 创建（MUST 1、MUST 2、MUST 3）：图片可以为空，路径由服务端生成，类型与大小逐张校验。
+ * 「至少要有一张原图」不在这里，也不在保存路径上：只在发起创作时校验（AC-01-8）。
+ */
 export async function createCollection(
   fields: CollectionFieldsInput,
   files: readonly IncomingFile[],
 ): Promise<CollectionDetailView> {
   const images = prepareImages(files, getEnv().MAX_UPLOAD_BYTES);
-  assertHasImage(images.length);
 
-  // 先定 id：storage_key 要用它做目录名（MUST 2），也避免「先建空资源夹再补图片」的中间状态。
+  // 先定 id：storage_key 要用它做目录名（MUST 2），新建时还没有图片也不影响这一步。
   const collectionId = randomUUID();
   const prepared = images.map((image) => ({
     ...image,
@@ -225,8 +222,6 @@ export async function addCollectionAssets(
   assertCollectionMutable((await relatedCounts(id)).runningTasks);
 
   const images = prepareImages(files, getEnv().MAX_UPLOAD_BYTES);
-  assertHasImage(images.length);
-
   const prepared = images.map((image) => ({
     ...image,
     storageKey: buildAssetStorageKey(id, image.mimeType),
@@ -249,15 +244,16 @@ export async function addCollectionAssets(
   return getCollection(id);
 }
 
-/** 解除单张原图（AC-01-5）：只删关联记录，磁盘文件保留（MUST 4），且不允许删到 0 张。 */
+/**
+ * 解除单张原图（AC-01-5）：只删关联记录，磁盘文件保留（MUST 4）。
+ * 允许移除到最后一张——资源夹允许没有图片，之后补图即可（AC-01-2）。
+ */
 export async function removeCollectionAsset(
   id: string,
   assetId: string,
 ): Promise<CollectionDetailView> {
   if (!(await repo.collectionExists(id))) throw AppError.notFound("资源夹不存在");
   assertCollectionMutable((await relatedCounts(id)).runningTasks);
-
-  assertCanRemoveImage((await repo.countAssets(id)) - 1);
 
   if (!(await repo.deleteAsset(id, assetId))) throw AppError.notFound("图片不存在");
   return getCollection(id);
@@ -275,10 +271,11 @@ export interface CollectionEditPayload {
 /**
  * 编辑保存的唯一入口：来源信息与图片变更一次提交，服务端一个事务。
  *
- * 执行顺序（MKACG-870 定稿方案）：
- * 1. 校验集合：保留 + 新增至少 1 张；2. 校验图片归属与是否给出处理方式；
- * 3. 有运行中任务时拒绝；4. 逐个校验上传文件；5. 全部通过后才写盘；
- * 6. 事务内改字段、删关联、插新增、更新保留项顺序；7. 成功后返回最终列表。
+ * 执行顺序（MKACG-870 定稿方案，MKACG-914 去掉「至少 1 张」后的顺序）：
+ * 1. 校验图片归属与是否给出处理方式；2. 有运行中任务时拒绝；
+ * 3. 逐个校验上传文件；4. 全部通过后才写盘；
+ * 5. 事务内改字段、删关联、插新增、更新保留项顺序；6. 成功后返回最终列表。
+ * 保存后的图片张数不设下限：全部移除等于得到一个 0 张图的资源夹（AC-01-2）。
  * 任何一步失败都不动数据库；写盘之后失败会补偿删除本次新写的文件，返回 500。
  * 被移除的原图文件保留在磁盘（MUST 4）。
  */
@@ -286,9 +283,6 @@ export async function saveCollectionEdit(
   id: string,
   payload: CollectionEditPayload,
 ): Promise<CollectionDetailView> {
-  const remaining = payload.assets.filter((item) => item.kind !== "remove").length;
-  assertCanRemoveImage(remaining);
-
   if (!(await repo.collectionExists(id))) throw AppError.notFound("资源夹不存在");
 
   const existingIds = new Set((await repo.listAssets(id)).map((asset) => asset.id));

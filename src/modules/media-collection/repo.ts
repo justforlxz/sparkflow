@@ -208,10 +208,6 @@ export async function findAsset(collectionId: string, assetId: string): Promise<
   });
 }
 
-export async function countAssets(collectionId: string): Promise<number> {
-  return getDb().mediaAsset.count({ where: { collectionId } });
-}
-
 /** 追加图片接在当前最大排序值之后，保持「按上传顺序」。 */
 export async function appendAssets(collectionId: string, assets: NewAsset[]): Promise<void> {
   const last = await getDb().mediaAsset.findFirst({

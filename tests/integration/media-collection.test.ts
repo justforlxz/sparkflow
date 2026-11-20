@@ -68,6 +68,19 @@ test("AC-01-1 两张图片落库后按上传顺序返回，文件写在 media-as
   }
 });
 
+test("AC-01-2 不带图片也能建夹：没有图片记录，也不写磁盘", async () => {
+  const created = await createCollection(
+    { name: "集成-先建夹", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    [],
+  );
+  createdIds.push(created.id);
+
+  expect(created.assetCount).toBe(0);
+  expect(created.assets).toEqual([]);
+  expect(await getDb().mediaAsset.count({ where: { collectionId: created.id } })).toBe(0);
+  expect(await storedFiles(created.id)).toEqual([]);
+});
+
 test("AC-01-4 只改来源信息时图片数量与内容不变", async () => {
   const created = await createCollection(
     { name: "集成-改来源", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
@@ -144,17 +157,20 @@ test("追加图片接在现有顺序之后，排序不重叠", async () => {
   expect(appended.assets.map((asset) => asset.sortOrder)).toEqual([0, 1, 2]);
 });
 
-test("最后一张图片不能被解除关联（MUST 1）", async () => {
+test("最后一张图片可以解除关联，资源夹变成 0 张（AC-01-2）", async () => {
   const created = await createCollection(
-    { name: "集成-最后一张", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    { name: "集成-零张", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
     [pngFile("only.png")],
   );
   createdIds.push(created.id);
 
-  await expect(removeCollectionAsset(created.id, created.assets[0].id)).rejects.toMatchObject({
-    code: "VALIDATION_FAILED",
-  });
-  expect(await getDb().mediaAsset.count({ where: { collectionId: created.id } })).toBe(1);
+  const emptied = await removeCollectionAsset(created.id, created.assets[0].id);
+  expect(emptied.assetCount).toBe(0);
+  expect(emptied.assets).toEqual([]);
+  expect(await getDb().mediaAsset.count({ where: { collectionId: created.id } })).toBe(0);
+
+  // 图片文件仍留在磁盘（MUST 4：只删关联记录）。
+  expect(await storedFiles(created.id)).toHaveLength(1);
 });
 
 /* ---------- 编辑整组保存（MKACG-870）：一次提交、一个事务、失败不留部分改动 ---------- */
@@ -232,22 +248,22 @@ test("AC-FIX-2 新图不合法时保存失败，图片、顺序与来源字段�
   expect(await storedFiles(created.id)).toEqual(filesBefore);
 });
 
-test("AC-FIX-5 结果集为 0 张时返回 VALIDATION_FAILED，库与磁盘均无变化", async () => {
+test("AC-01-2 结果集为 0 张时保存成功：来源字段写入、关联全删、磁盘文件保留", async () => {
   const created = await createCollection(EDIT_FIELDS, [pngFile("a.png")]);
   createdIds.push(created.id);
   const filesBefore = await storedFiles(created.id);
 
-  await expect(
-    saveCollectionEdit(created.id, {
-      fields: { ...EDIT_FIELDS, name: "不该被写入的名称" },
-      assets: [{ kind: "remove", assetId: created.assets[0].id }],
-      files: new Map(),
-    }),
-  ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  await saveCollectionEdit(created.id, {
+    fields: { ...EDIT_FIELDS, name: "改成没有图片" },
+    assets: [{ kind: "remove", assetId: created.assets[0].id }],
+    files: new Map(),
+  });
 
   const after = await getCollection(created.id);
-  expect(after.name).toBe(EDIT_FIELDS.name);
-  expect(after.assets.map((asset) => asset.id)).toEqual([created.assets[0].id]);
+  expect(after.name).toBe("改成没有图片");
+  expect(after.assetCount).toBe(0);
+  expect(after.assets).toEqual([]);
+  // 被移除的原图文件留在磁盘（MUST 4）。
   expect(await storedFiles(created.id)).toEqual(filesBefore);
 });
 

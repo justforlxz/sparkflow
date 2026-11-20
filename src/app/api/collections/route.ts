@@ -16,7 +16,7 @@ export const GET = route(async (request) => {
   return okResponse(await listCollections(query));
 });
 
-/** 创建：multipart，字段与至少一张图片一起提交（MUST 1）。 */
+/** 创建：multipart，字段与图片一起提交；图片可以为空（MUST 1）。 */
 export const POST = route(async (request) => {
   await requireUser();
 

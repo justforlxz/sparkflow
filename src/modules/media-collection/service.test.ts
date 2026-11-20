@@ -8,14 +8,14 @@ import type { CollectionRow, AssetRow } from "./repo";
 /**
  * 整组保存（`saveCollectionEdit`）的单测：磁盘与数据库都替换成 mock，
  * 用来断言「校验不通过时什么都不写」「事务失败时补偿删除本次新写的文件」这类
- * 真实数据库跑不出来的分支（AC-FIX-4、AC-FIX-5）。
+ * 真实数据库跑不出来的分支（AC-FIX-2、AC-FIX-4）。
  */
 
 vi.mock("./repo", () => ({
   collectionExists: vi.fn(),
   findCollection: vi.fn(),
   listAssets: vi.fn(),
-  countAssets: vi.fn(),
+  createCollection: vi.fn(),
   saveCollectionEdit: vi.fn(),
 }));
 
@@ -218,25 +218,34 @@ describe("事务失败时补偿删除新写文件（AC-FIX-4）", () => {
   });
 });
 
-describe("校验不通过时不做任何写操作（AC-FIX-2、AC-FIX-5）", () => {
-  it("结果集为 0 张时返回 VALIDATION_FAILED", async () => {
-    const error = await catchAppError(() =>
-      service.saveCollectionEdit(COLLECTION_ID, {
-        fields: FIELDS,
-        assets: [
-          { kind: "remove", assetId: ASSET_A.id },
-          { kind: "remove", assetId: ASSET_B.id },
-        ],
-        files: new Map(),
-      }),
-    );
+describe("资源夹允许没有图片（AC-01-2）", () => {
+  it("0 张图片也能建夹：不写盘，建一条没有图片的记录", async () => {
+    await service.createCollection(FIELDS, []);
 
-    expect(error.code).toBe("VALIDATION_FAILED");
-    expect(error.message).toContain("至少需要保留 1 张");
     expect(files.writeAssetBytes).not.toHaveBeenCalled();
-    expect(repo.saveCollectionEdit).not.toHaveBeenCalled();
+    expect(repo.createCollection).toHaveBeenCalledWith(expect.any(String), FIELDS, []);
   });
 
+  it("全部标为移除时保存成功：保留为空、删除两条旧关联（AC-01-2）", async () => {
+    await service.saveCollectionEdit(COLLECTION_ID, {
+      fields: FIELDS,
+      assets: [
+        { kind: "remove", assetId: ASSET_A.id },
+        { kind: "remove", assetId: ASSET_B.id },
+      ],
+      files: new Map(),
+    });
+
+    expect(files.writeAssetBytes).not.toHaveBeenCalled();
+    expect(repo.saveCollectionEdit).toHaveBeenCalledWith(COLLECTION_ID, FIELDS, {
+      keep: [],
+      remove: [ASSET_A.id, ASSET_B.id],
+      adds: [],
+    });
+  });
+});
+
+describe("校验不通过时不做任何写操作（AC-FIX-2）", () => {
   it("新增文件不是图片时整体拒绝，磁盘与库都不动", async () => {
     const error = await catchAppError(() =>
       service.saveCollectionEdit(COLLECTION_ID, {

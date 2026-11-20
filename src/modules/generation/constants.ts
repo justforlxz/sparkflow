@@ -176,4 +176,6 @@ export const CREATION_COPY = {
   submitAction: "开始创作",
   cancelAction: "取消",
   submitFailed: "开始创作失败",
+  /** 0 张原图时点「开始 AI 创作」只给这一句提示，不发请求（AC-01-2）。 */
+  needsImages: "先上传原始素材",
 } as const;

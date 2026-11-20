@@ -10,19 +10,25 @@
 **本项目不实现图片生成模型，也不实现图生图逻辑**：全部经由 magpie 的 MCP 工具完成
 （插件仓库 `github.com/justforlxz/magpie-image-edit`）。
 
-## 上游接口事实（来自插件 README 与源码，2026-11-19）
+## 上游接口事实（2026-11-20 对线上 endpoint 实测 `tools/list`）
 
-插件在 magpie 的 MCP 里提供三个工具：
+线上 `https://magpie.mkacg.com/mcp/magpie/image`（serverInfo `magpie-image` v0.1.4582）暴露的工具是
+**magpie 内置的三件**，不是 `magpie-image-edit` 插件的 `edit_image` / `image_result`：
 
-| 工具 | 参数 | 返回 |
+| 工具 | 必填 | 可用参数 |
 | --- | --- | --- |
-| `edit_image` | `prompt`（必填）、`images`（一张或几张；接受纯 base64 / `data:` URL / http 地址 / 本机路径） | `{status:"done", model, count, images:[{index, mimeType, bytes, b64}], totalBytes}` |
-| `generate_image` | `prompt` | 同上（本版本不用：发起创作要求至少一张原图） |
-| `image_result` | `jobId` | 同上；用于「还没画完」时轮询 |
+| `generate_image` | `prompt` | `n`、`size`、`resolution`、`quality`、`background`、`complexity`、`model`、`reference_images` |
+| `generate_video` | `prompt` | 本版本不用 |
+| `generation_result` | `id` | 轮询未就绪的生成结果 |
 
-- 插件自己最多等约 40 秒；超时先回 `{status:"running", jobId}`，调用方稍后用 `image_result` 取。
-  **同一张图只画一次**，重复调用 `image_result` 不会重复计费。
-- 图片以 **base64** 回包（约 1–2 MB/张），不是 URL —— 所以拿到就立刻落盘。
+因此**图生图走 `generate_image` 的 `reference_images` 参数**，不是 `edit_image`；
+轮询工具名是 `generation_result`，不是 `image_result`。
+
+要点：
+
+- `n` 上限 4；一图对一图时每次 `n = 1`、`reference_images` 只放那一张原图。
+- 生成可能同步完成，也可能返回一个 id，需要 `generation_result` 轮询；同一 id 轮询不重复计费。
+- 图片可由回包内联或由网关 URL 提供；URL 只保留约 1 小时，因此拿到就落盘。
 
 ## 设计契约
 

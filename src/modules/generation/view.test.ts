@@ -36,6 +36,7 @@ function stage(stage: "image" | "copy", status: StageRecord["status"]): StageRec
     attempts: 1,
     error: null,
     meta: null,
+    progress: null,
     startedAt: null,
     finishedAt: null,
   };
@@ -48,7 +49,6 @@ function taskWithStages(stages: StageRecord[]): TaskWithStages {
       collectionId: "collection-1",
       visualStyle: "fresh",
       copyStyle: "story",
-      imageCount: 4,
       extraPrompt: null,
       agentSnapshot: { image: SNAPSHOT, copy: SNAPSHOT },
       createdAt: new Date("2026-11-18T02:00:00.000Z"),
@@ -68,8 +68,20 @@ function result(overrides: Partial<ResultRecord> = {}): ResultRecord {
     visualStyle: "fresh",
     createdAt: new Date("2026-11-18T02:00:00.000Z"),
     assets: [
-      { id: "asset-1", fileName: "1.png", mimeType: "image/png", sortOrder: 0 },
-      { id: "asset-2", fileName: "2.png", mimeType: "image/png", sortOrder: 1 },
+      {
+        id: "asset-1",
+        fileName: "1.png",
+        mimeType: "image/png",
+        sortOrder: 1,
+        sourceAssetId: "source-1",
+      },
+      {
+        id: "asset-2",
+        fileName: "2.png",
+        mimeType: "image/png",
+        sortOrder: 2,
+        sourceAssetId: "source-2",
+      },
     ],
     ...overrides,
   };
@@ -81,6 +93,7 @@ describe("任务列表视图", () => {
       taskWithStages([stage("image", "succeeded"), stage("copy", "failed")]),
       "我的资源夹",
       CURRENT_AGENTS,
+      2,
     );
 
     expect(view.collectionName).toBe("我的资源夹");
@@ -96,7 +109,7 @@ describe("任务列表视图", () => {
     const record = taskWithStages([stage("image", "queued"), stage("copy", "queued")]);
     record.task = { ...record.task, visualStyle: "unknown", copyStyle: "unknown" };
 
-    const view = toTaskSummaryView(record, "资源夹", CURRENT_AGENTS);
+    const view = toTaskSummaryView(record, "资源夹", CURRENT_AGENTS, 2);
 
     expect(view.visualStyleLabel).toBe("unknown");
     expect(view.copyStyleLabel).toBe("unknown");
@@ -104,7 +117,12 @@ describe("任务列表视图", () => {
 
   it("缺一条阶段记录时报内部错误，不当成空状态", () => {
     expect(() =>
-      toTaskSummaryView(taskWithStages([stage("image", "succeeded")]), "资源夹", CURRENT_AGENTS),
+      toTaskSummaryView(
+        taskWithStages([stage("image", "succeeded")]),
+        "资源夹",
+        CURRENT_AGENTS,
+        2,
+      ),
     ).toThrow(/任务缺少 文案阶段记录/);
   });
 
@@ -113,6 +131,7 @@ describe("任务列表视图", () => {
       taskWithStages([stage("image", "succeeded"), stage("copy", "failed")]),
       "资源夹",
       CURRENT_AGENTS,
+      2,
     );
     expect(failed.retryHint?.state).toBe("snapshot");
     expect(failed.retryHint?.message).toContain("沿用该任务创建时的 Agent 配置");
@@ -122,6 +141,7 @@ describe("任务列表视图", () => {
       taskWithStages([stage("image", "succeeded"), stage("copy", "succeeded")]),
       "资源夹",
       CURRENT_AGENTS,
+      2,
     );
     expect(succeeded.retryHint).toBeNull();
   });
@@ -134,6 +154,7 @@ describe("任务列表视图", () => {
         ...CURRENT_AGENTS,
         image: { gatewayId: SNAPSHOT.gatewayId, modelId: "sensenova-u1.5-lite" },
       },
+      2,
     );
 
     expect(view.retryHint?.state).toBe("snapshot-changed");
@@ -150,6 +171,28 @@ describe("结果视图", () => {
     ]);
 
     expect(view.copyFailed).toBe(true);
+  });
+
+  it("AC-06-8 降级原因分两种：没配置理解网关 / 识别失败，各自给一句可操作的话", () => {
+    const withoutGateway = toResultView(result(), [
+      { ...stage("image", "succeeded") },
+      { ...stage("copy", "succeeded"), meta: { visualExtraction: "skipped-no-vision-gateway" } },
+    ]);
+    expect(withoutGateway.copyVisualDegraded).toBe(true);
+    expect(withoutGateway.copyVisualDegradedHint).toContain("请到设置页添加");
+
+    const failed = toResultView(result(), [
+      stage("image", "succeeded"),
+      { ...stage("copy", "succeeded"), meta: { visualExtraction: "skipped-vision-failed" } },
+    ]);
+    expect(failed.copyVisualDegradedHint).toContain("可重试文案阶段");
+
+    const ok = toResultView(result(), [
+      stage("image", "succeeded"),
+      { ...stage("copy", "succeeded"), meta: { visualExtraction: "done" } },
+    ]);
+    expect(ok.copyVisualDegraded).toBe(false);
+    expect(ok.copyVisualDegradedHint).toBeNull();
   });
 
   it("两个阶段都成功时不标记失败，标题正文原样返回", () => {

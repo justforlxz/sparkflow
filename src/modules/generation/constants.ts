@@ -62,15 +62,13 @@ export const TASK_ERROR_CODES = {
   noFailedStage: "NO_FAILED_STAGE",
 } as const;
 
-/** 单任务总超时默认 15 分钟（docs/prd/04 SHOULD）；runner 允许注入更短的值便于验收。 */
-export const DEFAULT_TASK_TIMEOUT_MS = 15 * 60 * 1000;
+/** 单任务总超时默认 45 分钟（docs/prd/04 SHOULD）：一图对一图后上游调用次数随原图量增长。 */
+export const DEFAULT_TASK_TIMEOUT_MS = 45 * 60 * 1000;
 
 /** worker 轮询间隔 1–2 秒（docs/prd/04 SHOULD）。 */
 export const DEFAULT_POLL_INTERVAL_MS = 1500;
 
-/** 目标张数范围。PRD 05 以 9 张（4+4+1，三批）为例，上限按三批取。 */
-export const MIN_IMAGE_COUNT = 1;
-export const MAX_IMAGE_COUNT = 9;
+// 目标张数已取消：成品张数 = 这次的原图张数（ADR 0008），没有可配置的上下限。
 
 /** 视觉方向 / 文案风格是短 key，不含描述正文（描述在各自模块的 styles.ts）。 */
 export const MAX_STYLE_LENGTH = 40;
@@ -90,6 +88,11 @@ export const GENERATED_STORAGE_PREFIX = "generated-assets";
 export const MAX_RESULT_TITLE_LENGTH = 200;
 export const MAX_RESULT_BODY_LENGTH = 5000;
 export const MAX_RESULT_TAG_LENGTH = 30;
+/**
+ * 一次发布最多勾选几张成品图：只是防超长输入的护栏，不是产品规则
+ * （成品张数 = 原图张数，没有产品上限，见 ADR 0008）。
+ */
+export const MAX_SELECTED_ASSET_IDS = 50;
 
 /** 任务列表与任务详情页的文案（AGENTS.md 硬性规则 1：文案集中在这里）。 */
 export const TASK_COPY = {
@@ -118,13 +121,16 @@ export const TASK_COPY = {
   cancelAction: "取消",
   createdAtLabel: "创建时间",
   paramsLabel: "创作参数",
-  imageCountLabel: "目标张数",
+  expectedImageCountLabel: "预计成品张数",
   visualStyleLabel: "视觉方向",
   copyStyleLabel: "文案风格",
   extraPromptLabel: "补充要求",
   stageSection: "执行阶段",
   stageAttemptsLabel: "执行次数",
   stageErrorLabel: "失败原因",
+  /** 生图阶段有原图失败但仍有成品：说明缺了哪几张，不用「失败原因」吓人。 */
+  stagePartialErrorLabel: "部分原图失败",
+  stageProgressLabel: "正在生图",
   stageFinishedLabel: "完成时间",
   agentSection: "Agent 配置快照",
   noResult: "该任务还没有生成结果。",
@@ -154,7 +160,13 @@ export const RESULT_COPY = {
   tagsHint: "用逗号或换行分隔",
   visualStyleLabel: "视觉风格",
   generatedAtLabel: "生成日期",
-  imageCountLabel: "图片",
+  generatedImageCountLabel: "图片",
+  /**
+   * 视觉提取降级的两种原因（docs/prd/06「视觉提取」）：文案照常生成，但没拿到照片内容时必须标注。
+   * 两句都要说清下一步去哪改，不能把原因归到文案模型上（它已经不参与判定）。
+   */
+  copyVisualDegradedNoGateway: "未配置图片理解网关，文案未包含照片内容；请到设置页添加 magpie-vision 网关",
+  copyVisualDegradedFailed: "图片理解识别失败，文案未包含照片内容；可重试文案阶段",
   openLarge: "查看大图",
   saveFailed: "保存失败",
   saveSucceeded: "结果已保存",
@@ -167,10 +179,12 @@ export const RESULT_COPY = {
 export const CREATION_COPY = {
   action: "开始 AI 创作",
   title: "开始 AI 创作",
-  intro: "两个 Agent 都已就绪时才能开始；生图与文案会各跑一个阶段。",
+  intro: "两个 Agent 都已就绪时才能开始；每张原图各生成一张成品图，生图与文案会各跑一个阶段。",
   visualStyleLabel: "视觉方向",
   copyStyleLabel: "文案风格",
-  imageCountLabel: "目标张数",
+  expectedImageCountLabel: "预计成品张数",
+  /** 张数由原图决定，界面只显示结果、不给输入框（ADR 0008）。 */
+  expectedImageCountHint: "每张原图各生成一张成品图，张数取自原始素材",
   extraPromptLabel: "补充要求",
   extraPromptPlaceholder: "想强调的角度、必须出现的元素等，可留空",
   submitAction: "开始创作",

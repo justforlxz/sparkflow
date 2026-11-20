@@ -12,6 +12,7 @@ import type {
   ResultAssetInput,
   ResultRecord,
   StageErrorRecord,
+  StageProgress,
   TaskAgentSnapshots,
   TaskWithStages,
 } from "./types";
@@ -20,10 +21,11 @@ export interface NewTaskInput {
   collectionId: string;
   visualStyle: string;
   copyStyle: string;
-  imageCount: number;
+  // 不写 imageCount：成品张数 = 原图张数（ADR 0008），旧列只保留历史数据。
   extraPrompt: string | null;
   agentSnapshot: TaskAgentSnapshots;
 }
+
 
 export interface NewResultInput {
   id: string;
@@ -50,6 +52,8 @@ export interface TaskStore {
   markStageSucceeded(
     stageId: string,
     meta: Record<string, unknown> | null,
+    /** 部分原图失败时把原因留在阶段 `error` 上（docs/prd/05 MUST 7）；全部成功时为 null。 */
+    error: StageErrorRecord | null,
     now: Date,
   ): Promise<number>;
   markStageFailed(
@@ -60,6 +64,8 @@ export interface TaskStore {
   ): Promise<number>;
   /** 启动时把残留的 running 记为失败（AC-04-10）；返回处理条数。 */
   failRunningStages(error: StageErrorRecord, now: Date): Promise<number>;
+  /** 写执行中阶段的进度（`generation_stage.progress`）；阶段已是终态时写 0 行。 */
+  updateStageProgress(stageId: string, progress: StageProgress): Promise<number>;
   createResult(input: NewResultInput): Promise<void>;
   /** 已有结果行时替换它的生成图片（重试生图、异常数据恢复都走这里，避免撞上 task_id 唯一约束）。 */
   replaceResultAssets(resultId: string, assets: readonly ResultAssetInput[]): Promise<void>;

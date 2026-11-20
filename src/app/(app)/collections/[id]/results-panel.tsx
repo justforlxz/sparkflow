@@ -216,6 +216,13 @@ export function ResultsPanel({
                   </div>
                 ) : null}
 
+                {/* 视觉提取降级时必须标注原因与下一步动作，不得静默降级（docs/prd/06 AC-06-8）。 */}
+                {result.copyVisualDegradedHint ? (
+                  <p data-testid="copy-visual-degraded" className="text-footnote text-ink-tertiary">
+                    {result.copyVisualDegradedHint}
+                  </p>
+                ) : null}
+
                 {result.title ? (
                   <h3 data-testid="result-title" className="text-heading font-semibold text-ink">
                     {result.title}
@@ -237,7 +244,7 @@ export function ResultsPanel({
 
                 <p className="text-footnote text-ink-tertiary">
                   {result.visualStyleLabel} · {RESULT_COPY.generatedAtLabel}{" "}
-                  {result.createdAt.slice(0, 10)} · {RESULT_COPY.imageCountLabel}{" "}
+                  {result.createdAt.slice(0, 10)} · {RESULT_COPY.generatedImageCountLabel}{" "}
                   {result.assets.length} 张 ·{" "}
                   {/* 发布状态由服务端查到的记录决定，前端不推断（docs/prd/07 MUST NOT）。 */}
                   <Pill

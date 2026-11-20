@@ -8,9 +8,11 @@ import { createTask, getTask } from "@/modules/generation/service";
 import { createStageRegistry } from "@/modules/generation/registry";
 import { taskStore } from "@/modules/generation/repo";
 import { createRunner } from "@/modules/generation/runner";
-import { mockCopyStage, mockImageStage } from "@/modules/generation/stages/mock";
+import { mockCopyStage } from "@/modules/generation/stages/mock";
 import { resultAssetWriter } from "@/modules/generation/storage";
-import { loadStageCollectionContext } from "@/modules/generation/worker";
+import { loadSourceImage, loadStageCollectionContext } from "@/modules/generation/worker";
+import { MockImageGenerator } from "@/modules/image-generation/adapters/mock";
+import { createImageStage } from "@/modules/image-generation/stage";
 import { createCollection, deleteCollection } from "@/modules/media-collection/service";
 import { markPublishedSchema } from "@/modules/publish/schema";
 import { markPublished } from "@/modules/publish/service";
@@ -72,7 +74,8 @@ afterEach(async () => {
   }
 });
 
-async function createCollectionWithImage(name: string): Promise<string> {
+/** 造一个带 n 张原图的资源夹：成品张数 = 原图张数（ADR 0008）。 */
+async function createCollectionWithImage(name: string, count = 1): Promise<string> {
   const collection = await createCollection(
     {
       name,
@@ -81,7 +84,10 @@ async function createCollectionWithImage(name: string): Promise<string> {
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
     },
-    [{ fileName: "a.png", bytes: PNG_BYTES }],
+    Array.from({ length: count }, (_, index) => ({
+      fileName: `${String.fromCharCode(97 + index)}.png`,
+      bytes: PNG_BYTES,
+    })),
   );
   createdCollectionIds.push(collection.id);
   return collection.id;
@@ -92,8 +98,12 @@ async function runStages(rounds = 2): Promise<void> {
   const runner = createRunner({
     store: taskStore,
     files: resultAssetWriter,
-    registry: createStageRegistry([mockImageStage, mockCopyStage]),
+    registry: createStageRegistry([
+      createImageStage({ generator: new MockImageGenerator() }),
+      mockCopyStage,
+    ]),
     loadCollection: loadStageCollectionContext,
+    loadSourceImage,
   });
   for (let index = 0; index < rounds; index += 1) {
     const outcome = await runner.runOnce();
@@ -101,11 +111,10 @@ async function runStages(rounds = 2): Promise<void> {
   }
 }
 
-async function createFinishedResult(collectionId: string, imageCount = 2): Promise<string> {
+async function createFinishedResult(collectionId: string): Promise<string> {
   const task = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount,
     extraPrompt: null,
   });
   await runStages(2);

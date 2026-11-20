@@ -167,7 +167,22 @@ async function patchAgent(
   expect(response.status(), `更新 ${type} Agent 失败`).toBe(200);
 }
 
-async function createCollectionWithImage(request: APIRequestContext): Promise<string> {
+/** 造一个带 n 张原图的资源夹：成品张数 = 原图张数（ADR 0008）。 */
+async function createCollectionWithImage(
+  request: APIRequestContext,
+  count = 1,
+): Promise<string> {
+  const images = Object.fromEntries(
+    Array.from({ length: count }, (_, index) => [
+      `images-${index}`,
+      {
+        name: `${String.fromCharCode(97 + index)}.png`,
+        mimeType: "image/png",
+        buffer: PNG_ONE_PIXEL,
+      },
+    ]),
+  );
+
   const response = await request.post("/api/collections", {
     multipart: {
       name: uniqueName("e2e-publish-collection"),
@@ -175,7 +190,7 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
       sourceUrl: "https://example.com/note/publish",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
-      "images-0": { name: "a.png", mimeType: "image/png", buffer: PNG_ONE_PIXEL },
+      ...images,
     },
   });
   expect(response.status()).toBe(201);
@@ -187,10 +202,9 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
 async function createTask(
   request: APIRequestContext,
   collectionId: string,
-  imageCount: number,
 ): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
-    data: { visualStyle: "fresh", copyStyle: "story", imageCount, extraPrompt: null },
+    data: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
   });
   expect(response.status()).toBe(201);
   return ((await response.json()) as { data: { task: TaskView } }).data.task;
@@ -205,10 +219,10 @@ async function getTask(request: APIRequestContext, taskId: string): Promise<Task
 /** 创建一条带上图片的结果，返回结果视图（含图片 id 与文件名）。 */
 async function createResult(
   request: APIRequestContext,
-  imageCount = 2,
+  count = 2,
 ): Promise<{ collectionId: string; result: ResultView }> {
-  const collectionId = await createCollectionWithImage(request);
-  const created = await createTask(request, collectionId, imageCount);
+  const collectionId = await createCollectionWithImage(request, count);
+  const created = await createTask(request, collectionId);
 
   const deadline = Date.now() + 40_000;
   let latest = await getTask(request, created.id);

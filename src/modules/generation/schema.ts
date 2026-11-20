@@ -3,12 +3,10 @@ import { z } from "zod";
 import { MAX_TAGS } from "@/modules/copy-generation/constants";
 import {
   MAX_EXTRA_PROMPT_LENGTH,
-  MAX_IMAGE_COUNT,
   MAX_RESULT_BODY_LENGTH,
   MAX_RESULT_TAG_LENGTH,
   MAX_RESULT_TITLE_LENGTH,
   MAX_STYLE_LENGTH,
-  MIN_IMAGE_COUNT,
 } from "./constants";
 
 /**
@@ -18,7 +16,7 @@ import {
 export const createTaskSchema = z.object({
   visualStyle: z.string().trim().min(1, "请选择视觉方向").max(MAX_STYLE_LENGTH),
   copyStyle: z.string().trim().min(1, "请选择文案风格").max(MAX_STYLE_LENGTH),
-  imageCount: z.number().int().min(MIN_IMAGE_COUNT).max(MAX_IMAGE_COUNT),
+  // 不再接收 imageCount：成品张数 = 原图张数（ADR 0008）。旧客户端多传的字段被忽略。
   extraPrompt: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? null : value),
     z.string().trim().max(MAX_EXTRA_PROMPT_LENGTH).nullish(),

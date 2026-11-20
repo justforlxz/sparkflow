@@ -37,12 +37,17 @@ describe("功能开关生效规则（AC-S1-5）", () => {
     expect(resolved.active).toBe(false);
   });
 
-  it("第一版注册表只有两项且都未实现", () => {
+  it("注册表两项：图生图已实现且默认开启，分享仍未实现（ADR 0008、docs/prd/10）", () => {
     expect(FEATURE_FLAGS.map((entry) => entry.key)).toEqual([
       "image-to-image",
       "share-to-xiaohongshu",
     ]);
-    expect(FEATURE_FLAGS.every((entry) => entry.implemented === false)).toBe(true);
+    expect(findFeatureFlag("image-to-image")).toMatchObject({
+      implemented: true,
+      defaultEnabled: true,
+    });
+    expect(findFeatureFlag("share-to-xiaohongshu")).toMatchObject({ implemented: false });
+    expect(findFeatureFlag("not-registered")).toBeUndefined();
     expect(findFeatureFlag("not-registered")).toBeUndefined();
   });
 });

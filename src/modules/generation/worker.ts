@@ -5,7 +5,7 @@
  * 队列里有多条时连续推进，但任意时刻只有一个阶段在跑。轮询间隔与超时可注入，单测与验收用短值。
  */
 import { logger } from "@/lib/logger";
-import { getCollection } from "@/modules/media-collection/service";
+import { getAssetImage, getCollection } from "@/modules/media-collection/service";
 import { DEFAULT_POLL_INTERVAL_MS } from "./constants";
 import type { StageRegistry } from "./registry";
 import { taskStore } from "./repo";
@@ -13,7 +13,7 @@ import { createRunner } from "./runner";
 import { defaultStageRegistry } from "./stages";
 import { resultAssetWriter } from "./storage";
 import type { ResultAssetWriter, TaskStore } from "./store";
-import type { CollectionContext } from "./types";
+import type { CollectionContext, SourceImageBytes } from "./types";
 
 /** 开发热重载会重复调用启动钩子；用全局标记保证一个进程只有一个循环。 */
 const WORKER_FLAG = Symbol.for("sparkflow.generation.worker");
@@ -31,9 +31,10 @@ export interface WorkerOptions {
   store?: TaskStore;
   files?: ResultAssetWriter;
   loadCollection?: (collectionId: string) => Promise<CollectionContext>;
+  loadSourceImage?: (collectionId: string, assetId: string) => Promise<SourceImageBytes>;
 }
 
-/** 阶段处理器只需要来源信息与图片张数，不读原图字节（本版本不传参考图）。 */
+/** 阶段处理器要来源信息与原图清单；图片字节按需逐张读（一图对一图，不一次性载入内存）。 */
 export async function loadStageCollectionContext(collectionId: string): Promise<CollectionContext> {
   const collection = await getCollection(collectionId);
   return {
@@ -41,8 +42,21 @@ export async function loadStageCollectionContext(collectionId: string): Promise<
     platform: collection.platform,
     sourceTitle: collection.sourceTitle,
     sourceBody: collection.sourceBody,
-    assetCount: collection.assetCount,
+    assets: collection.assets.map((asset) => ({
+      id: asset.id,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+    })),
   };
+}
+
+/** 读一张原图的字节（鉴权读取用例走同一条路径）：生图与文案的视觉提取都用它。 */
+export async function loadSourceImage(
+  collectionId: string,
+  assetId: string,
+): Promise<SourceImageBytes> {
+  const asset = await getAssetImage(collectionId, assetId);
+  return { bytes: asset.bytes, mimeType: asset.mimeType };
 }
 
 /** 启动 worker；返回停止函数。重复调用是幂等的（第二次直接返回空停止函数）。 */
@@ -55,6 +69,7 @@ export function startTaskWorker(options: WorkerOptions = {}): () => void {
     files: options.files ?? resultAssetWriter,
     registry: options.registry ?? defaultStageRegistry(),
     loadCollection: options.loadCollection ?? loadStageCollectionContext,
+    loadSourceImage: options.loadSourceImage ?? loadSourceImage,
     timeoutMs: options.timeoutMs,
   });
   const intervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;

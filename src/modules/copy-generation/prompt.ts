@@ -25,7 +25,10 @@ export interface CopyPromptInput {
     sourceBody: string | null;
   };
   images: {
-    count: number;
+    /** 本次生成的成品图张数（= 原图张数，ADR 0008）。 */
+    generatedCount: number;
+    /** 每张原图一条视觉描述，按原图顺序编号；空数组表示这次没有提取到内容。 */
+    descriptions: readonly string[];
     /** 视觉方向的 key（由图片创作模块登记）；描述也从那份登记表取，这里不另写一份。 */
     visualStyle: string;
   };
@@ -88,8 +91,9 @@ export function buildCopyPrompt(input: CopyPromptInput): CopyPrompt {
     `- 原始文案（仅作参考，不得照搬，也不得当作待改写文本）：${orPlaceholder(collection.sourceBody, "未填写")}`,
     "",
     "【本次生成的图片】",
-    `- 张数：${images.count}`,
+    `- 张数：${images.generatedCount}`,
     `- 视觉方向：${describeVisualStyle(images.visualStyle)}`,
+    ...describeVisualDescriptions(images.descriptions),
     "- 说明：这批图片按上述视觉方向生成，文案语气与画面调性保持一致。",
     "",
     "【这次的要求】",
@@ -98,4 +102,19 @@ export function buildCopyPrompt(input: CopyPromptInput): CopyPrompt {
   ].join("\n");
 
   return { system, user };
+}
+
+/**
+ * 视觉描述进提示词的样子（docs/prd/06「视觉提取」）：按原图编号逐条列出，
+ * 第 k 条对应第 k 张原图与第 k 张成品图。没有描述时明说「未提供」，不假装看过图。
+ */
+function describeVisualDescriptions(descriptions: readonly string[]): string[] {
+  if (descriptions.length === 0) {
+    return ["- 照片内容：未提供（本次没有获取到照片内容）"];
+  }
+
+  return [
+    "- 照片内容（按原图编号，第 k 条对应第 k 张原图与成品图）：",
+    ...descriptions.map((description, index) => `  ${index + 1}. ${description}`),
+  ];
 }

@@ -17,17 +17,37 @@ export interface TaskAgentSnapshots {
 export interface TaskParams {
   visualStyle: string;
   copyStyle: string;
-  imageCount: number;
+  /** 成品张数不再由任务参数决定：它等于这次的原图张数（ADR 0008）。 */
   extraPrompt: string | null;
 }
 
-/** 资源夹里阶段处理器要用的部分（来源信息、图片张数），不含图片字节：本版本不传参考图。 */
+/** 一张原图，只给标识与展示信息；字节按需单独读取，不把整个资源夹的图片一次性载入内存。 */
+export interface SourceAssetRef {
+  id: string;
+  fileName: string;
+  mimeType: string;
+}
+
+/** 读出来的一张原图字节。 */
+export interface SourceImageBytes {
+  bytes: Buffer;
+  mimeType: string;
+}
+
+/** 阶段执行进度：界面据此显示「正在生图 第 done/N 张」。 */
+export interface StageProgress {
+  done: number;
+  total: number;
+}
+
+/** 资源夹里阶段处理器要用的部分（来源信息与原图清单，按 `sort_order` 排列）。 */
 export interface CollectionContext {
   id: string;
   platform: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
-  assetCount: number;
+  /** 本次要一对一出图的原图，顺序即成品顺序。 */
+  assets: readonly SourceAssetRef[];
 }
 
 export interface StageErrorRecord {
@@ -45,6 +65,10 @@ export interface GeneratedImage {
   fileName?: string;
   width?: number | null;
   height?: number | null;
+  /** 第几张原图（从 1 开始）：`sort_order` 用它，因此中间一张失败时编号会跳号（AC-05-5）。 */
+  sortOrder?: number;
+  /** 这张成品对应的原图 id，写进 `generated_asset.source_asset_id`。 */
+  sourceAssetId?: string | null;
 }
 
 /** 文案阶段的产出；字段与清洗规则见 docs/prd/06-generation-copy.md。 */
@@ -66,10 +90,23 @@ export interface StageContext {
   resultId: string | null;
   /** 超时或服务停止时被 abort，处理器应尽快放弃正在进行的上游请求。 */
   signal: AbortSignal;
+  /** 按 id 读一张原图的字节（由 runner 接到资源夹模块；处理器不直接查别的模块的表）。 */
+  readSourceImage(assetId: string): Promise<SourceImageBytes>;
+  /** 写阶段执行进度（界面读它显示「正在生图 第 k/N 张」）；runner 负责清空终态。 */
+  reportProgress(progress: StageProgress): Promise<void>;
 }
 
 export type StageOutcome =
-  | { stage: "image"; images: GeneratedImage[]; meta?: Record<string, unknown> }
+  | {
+      stage: "image";
+      images: GeneratedImage[];
+      meta?: Record<string, unknown>;
+      /**
+       * 部分原图失败时的说明：阶段本身有产出，状态仍是 `succeeded`，
+       * 但要把失败的原图与原因如实记进阶段 `error`（docs/prd/05 MUST 7），任务因此判为 `partial`。
+       */
+      partialError?: { code: string; message: string };
+    }
   | { stage: "copy"; copy: CopyContent; meta?: Record<string, unknown> };
 
 export interface StageHandler {
@@ -103,6 +140,8 @@ export interface StageRecord {
   attempts: number;
   error: StageErrorRecord | null;
   meta: Record<string, unknown> | null;
+  /** 执行中的进度；进入终态后为 null。 */
+  progress: StageProgress | null;
   startedAt: Date | null;
   finishedAt: Date | null;
 }
@@ -112,7 +151,7 @@ export interface TaskRecord {
   collectionId: string;
   visualStyle: string;
   copyStyle: string;
-  imageCount: number;
+  /** 成品张数 = 原图张数，不落库（ADR 0008）。 */
   extraPrompt: string | null;
   agentSnapshot: TaskAgentSnapshots;
   createdAt: Date;
@@ -135,6 +174,8 @@ export interface ResultAssetInput {
   sortOrder: number;
   width: number | null;
   height: number | null;
+  /** 对应原图；与 `sortOrder` 一起形成「一图对一图」的对照关系。 */
+  sourceAssetId: string | null;
 }
 
 export interface ResultAssetRecord {
@@ -142,6 +183,7 @@ export interface ResultAssetRecord {
   fileName: string;
   mimeType: string;
   sortOrder: number;
+  sourceAssetId: string | null;
 }
 
 export interface ResultRecord {

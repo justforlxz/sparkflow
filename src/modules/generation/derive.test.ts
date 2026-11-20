@@ -23,6 +23,22 @@ describe("任务状态派生（AC-04-2、AC-04-5）", () => {
     expect(deriveTaskStatus(statuses("succeeded", "failed"))).toBe("partial");
   });
 
+  it("AC-05-5 生图阶段有原图失败（阶段 error 非空）时任务为 partial，两个阶段成功也一样", () => {
+    const partialImage: StageState[] = [
+      { stage: "image", status: "succeeded", error: { code: "UPSTREAM_PARTIAL", message: "第 2 张失败" } },
+      { stage: "copy", status: "succeeded" },
+    ];
+    expect(deriveTaskStatus(partialImage)).toBe("partial");
+
+    // 文案阶段还没跑完时任务仍在推进，不被提前判成部分完成。
+    expect(
+      deriveTaskStatus([
+        { stage: "image", status: "succeeded", error: { code: "UPSTREAM_PARTIAL", message: "x" } },
+        { stage: "copy", status: "running" },
+      ]),
+    ).toBe("running");
+  });
+
   it("生图失败、文案保持排队 → failed", () => {
     expect(deriveTaskStatus(statuses("failed", "queued"))).toBe("failed");
   });

@@ -95,9 +95,19 @@ export default async function TaskDetailPage({ params }: PageProps) {
                       <span data-testid={`stage-${name}-attempts`}>{stage.attempts}</span> 次 ·{" "}
                       {TASK_COPY.stageFinishedLabel} {formatTime(stage.finishedAt)}
                     </p>
+                    {/* 执行中显示进度：「正在生图 第 k/N 张」（生图阶段一对一出图，耗时随素材量增长）。 */}
+                    {stage.progress ? (
+                      <p data-testid={`stage-${name}-progress`} className="text-footnote text-ink-tertiary">
+                        {TASK_COPY.stageProgressLabel} 第 {stage.progress.done}/{stage.progress.total} 张
+                      </p>
+                    ) : null}
                     {stage.error ? (
                       <p data-testid={`stage-${name}-error`} className="text-footnote text-danger">
-                        {TASK_COPY.stageErrorLabel}：{stage.error.message}
+                        {/* 阶段已成功但有原图失败时，说「部分原图失败」而不是「失败原因」。 */}
+                        {stage.status === "succeeded"
+                          ? TASK_COPY.stagePartialErrorLabel
+                          : TASK_COPY.stageErrorLabel}
+                        ：{stage.error.message}
                       </p>
                     ) : null}
                   </Panel>
@@ -123,7 +133,10 @@ export default async function TaskDetailPage({ params }: PageProps) {
           <dl className="text-body">
             <ParameterRow label={TASK_COPY.visualStyleLabel} value={task.visualStyleLabel} />
             <ParameterRow label={TASK_COPY.copyStyleLabel} value={task.copyStyleLabel} />
-            <ParameterRow label={TASK_COPY.imageCountLabel} value={`${task.imageCount} 张`} />
+            <ParameterRow
+              label={TASK_COPY.expectedImageCountLabel}
+              value={`${task.expectedImageCount} 张`}
+            />
             <ParameterRow
               label={TASK_COPY.extraPromptLabel}
               value={task.extraPrompt ?? "未填写"}
@@ -163,6 +176,12 @@ export default async function TaskDetailPage({ params }: PageProps) {
             {TASK_COPY.noResult}
           </p>
         )}
+        {/* 视觉提取降级时，任务详情也要标注（docs/prd/06 AC-06-8「任务详情与结果上标注」）。 */}
+        {task.result?.copyVisualDegradedHint ? (
+          <p data-testid="copy-visual-degraded" className="text-footnote text-ink-tertiary">
+            {task.result.copyVisualDegradedHint}
+          </p>
+        ) : null}
       </div>
     </section>
   );

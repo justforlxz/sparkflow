@@ -12,7 +12,8 @@ model GenerationTask {
   collectionId  String            @map("collection_id")
   visualStyle   String            @map("visual_style")
   copyStyle     String            @map("copy_style")
-  imageCount    Int               @map("image_count")
+  // 已废弃：成品张数 = 本次的原图张数（ADR 0008）。列与历史数据保留，新任务不再写入。
+  imageCount    Int?              @map("image_count")
   extraPrompt   String?           @map("extra_prompt")
   // 创建任务时固化的两份 Agent 配置快照（docs/prd/03-agent-config.md MUST 6）。
   // 密钥不进快照：执行时按快照里的 gatewayId 现取（docs/prd/04 MUST 4）。
@@ -28,7 +29,8 @@ model GenerationTask {
 
 // 一个任务固定两条阶段：`stage` 取 `image` / `copy`；`status` 取 `queued` / `running` /
 // `succeeded` / `failed`。`attempts` 是已排入执行队列的尝试次数：创建时为 1，每次重试加 1。
-// `error` 存 `{ code, message, at }`；`meta` 存各阶段的调用摘要（模型名、耗时、每批张数等）。
+// `error` 存 `{ code, message, at }`；`meta` 存各阶段的调用摘要（模型名、耗时、每张原图的调用记录）；
+// `progress` 只在执行中写 `{ done, total }`，进入终态时清空（界面据此显示「正在生图 第 k/N 张」）。
 model GenerationStage {
   id         String         @id @default(uuid())
   taskId     String         @map("task_id")
@@ -37,6 +39,7 @@ model GenerationStage {
   attempts   Int            @default(0)
   error      Json?
   meta       Json?
+  progress   Json?
   startedAt  DateTime?      @map("started_at")
   finishedAt DateTime?      @map("finished_at")
   task       GenerationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -68,6 +71,7 @@ model GenerationResult {
 }
 
 // 生成图片：落在 `<UPLOAD_DIR>/generated-assets/<resultId>/` 下，数据库只存 storage_key。
+// `sort_order` 按原图顺序编号（第 2 张原图失败时保留 1 与 3），因此可能出现不连续的编号。
 // 宽高由生图阶段回填（mock 实现不知道尺寸时留空）。
 model GeneratedAsset {
   id         String           @id @default(uuid())
@@ -78,8 +82,12 @@ model GeneratedAsset {
   sortOrder  Int              @default(0) @map("sort_order")
   width      Int?
   height     Int?
+  // 这张成品对应的原图（一图对一图）；原图被解除关联时置空，成品本身保留。
+  sourceAssetId String?        @map("source_asset_id")
   result     GenerationResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  sourceAsset MediaAsset?     @relation(fields: [sourceAssetId], references: [id], onDelete: SetNull)
 
   @@index([resultId, sortOrder])
+  @@index([sourceAssetId])
   @@map("generated_asset")
 }

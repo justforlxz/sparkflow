@@ -303,7 +303,7 @@ test("AC-D-7 主要可点元素有 hover 与 focus-visible，禁用控件不响�
 
   // 禁用态：本版本未实现的功能开关不可操作，并且旁边写明了原因。
   await page.goto("/settings");
-  const disabledFlag = page.locator('[data-testid="feature-flag-image-to-image"]');
+  const disabledFlag = page.locator('[data-testid="feature-flag-share-to-xiaohongshu"]');
   const checkbox = disabledFlag.locator('input[type="checkbox"]');
   await expect(checkbox).toBeDisabled();
   await expect(disabledFlag.getByTestId("feature-unimplemented")).toHaveText("本版本未实现");

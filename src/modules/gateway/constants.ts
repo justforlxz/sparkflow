@@ -31,6 +31,12 @@ export const GATEWAY_PROTOCOLS = [
     usage: "图片",
     endpoint: "POST <baseUrl>/mcp/magpie/image",
   },
+  {
+    value: "magpie-vision",
+    label: "magpie 图片理解 MCP",
+    usage: "图片理解",
+    endpoint: "POST <baseUrl>/mcp/magpie/vision",
+  },
 ] as const satisfies readonly ProtocolDefinition[];
 
 export type GatewayProtocol = (typeof GATEWAY_PROTOCOLS)[number]["value"];

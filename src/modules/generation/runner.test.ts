@@ -63,6 +63,7 @@ class MemoryStore implements TaskStore {
         attempts: 1,
         error: null,
         meta: null,
+        progress: null,
         startedAt: null,
         finishedAt: null,
       });
@@ -119,14 +120,26 @@ class MemoryStore implements TaskStore {
   async markStageSucceeded(
     stageId: string,
     meta: Record<string, unknown> | null,
+    error: StageErrorRecord | null,
     now: Date,
   ): Promise<number> {
     const stage = this.findStage(stageId);
     if (!stage || stage.status !== "running") return 0;
     stage.status = "succeeded";
     stage.finishedAt = now;
-    stage.error = null;
+    stage.error = error;
     stage.meta = meta;
+    stage.progress = null;
+    return 1;
+  }
+
+  async updateStageProgress(
+    stageId: string,
+    progress: { done: number; total: number },
+  ): Promise<number> {
+    const stage = this.findStage(stageId);
+    if (!stage || stage.status !== "running") return 0;
+    stage.progress = { ...progress };
     return 1;
   }
 
@@ -142,6 +155,7 @@ class MemoryStore implements TaskStore {
     stage.finishedAt = now;
     stage.error = error;
     stage.meta = meta;
+    stage.progress = null;
     return 1;
   }
 
@@ -152,6 +166,7 @@ class MemoryStore implements TaskStore {
       stage.status = "failed";
       stage.finishedAt = now;
       stage.error = error;
+      stage.progress = null;
       count += 1;
     }
     return count;
@@ -180,6 +195,7 @@ class MemoryStore implements TaskStore {
         fileName: asset.fileName,
         mimeType: asset.mimeType,
         sortOrder: asset.sortOrder,
+        sourceAssetId: asset.sourceAssetId,
       };
     });
   }
@@ -214,6 +230,7 @@ class MemoryStore implements TaskStore {
       stage.attempts += 1;
       stage.error = null;
       stage.meta = null;
+      stage.progress = null;
       stage.startedAt = null;
       stage.finishedAt = null;
       count += 1;
@@ -248,9 +265,10 @@ class MemoryFiles implements ResultAssetWriter {
       storageKey: `generated-assets/${resultId}/${index}.png`,
       fileName: image.fileName ?? `${index + 1}.png`,
       mimeType: image.mimeType,
-      sortOrder: index,
+      sortOrder: image.sortOrder ?? index,
       width: image.width ?? null,
       height: image.height ?? null,
+      sourceAssetId: image.sourceAssetId ?? null,
     }));
   }
 }
@@ -277,9 +295,12 @@ const imageStage: StageHandler = {
   async run(context) {
     return {
       stage: "image",
-      images: Array.from({ length: context.params.imageCount }, () => ({
+      // 一图对一图：每张原图各一张成品，`sort_order` 用原图序号（ADR 0008）。
+      images: context.collection.assets.map((asset, index) => ({
         bytes: PNG,
         mimeType: "image/png",
+        sortOrder: index + 1,
+        sourceAssetId: asset.id,
       })),
       meta: { model: "fake-image" },
     };
@@ -297,36 +318,54 @@ const copyStage: StageHandler = {
   },
 };
 
-const COLLECTION: CollectionContext = {
-  id: "collection-1",
-  platform: "xiaohongshu",
-  sourceTitle: "原始标题",
-  sourceBody: "原始文案",
-  assetCount: 2,
-};
+/** 造 N 张原图：成品张数就等于它（ADR 0008），任务参数里不再有张数。 */
+function collectionWith(assetCount: number): CollectionContext {
+  return {
+    id: "collection-1",
+    platform: "xiaohongshu",
+    sourceTitle: "原始标题",
+    sourceBody: "原始文案",
+    assets: Array.from({ length: assetCount }, (_, index) => ({
+      id: `source-${index + 1}`,
+      fileName: `${index + 1}.png`,
+      mimeType: "image/png",
+    })),
+  };
+}
+
+const COLLECTION = collectionWith(2);
 
 function setup(
   handlers: readonly StageHandler[] = [imageStage, copyStage],
-  options: { timeoutMs?: number; registry?: StageRegistry } = {},
+  options: {
+    timeoutMs?: number;
+    registry?: StageRegistry;
+    /** 这次资源夹里有几张原图：成品张数由它决定（ADR 0008）。 */
+    assetCount?: number;
+  } = {},
 ) {
+  const collection = collectionWith(options.assetCount ?? 2);
   const store = new MemoryStore();
   const files = new MemoryFiles();
   const runner = createRunner({
     store,
     files,
     registry: options.registry ?? createStageRegistry(handlers),
-    loadCollection: async () => COLLECTION,
+    loadCollection: async () => collection,
+    loadSourceImage: async (collectionId: string, assetId: string) => ({
+      bytes: Buffer.from(`${collectionId}/${assetId}`),
+      mimeType: "image/png",
+    }),
     timeoutMs: options.timeoutMs,
   });
   return { store, files, runner };
 }
 
-async function createTask(store: MemoryStore, imageCount = 2, extraPrompt: string | null = null) {
+async function createTask(store: MemoryStore, extraPrompt: string | null = null) {
   const created = await store.createTask({
     collectionId: COLLECTION.id,
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount,
     extraPrompt,
     agentSnapshot: { image: snapshot("image"), copy: snapshot("copy") },
   });
@@ -335,8 +374,8 @@ async function createTask(store: MemoryStore, imageCount = 2, extraPrompt: strin
 
 describe("任务推进与产出写入时机（AC-04-2、AC-04-5、AC-05-11）", () => {
   it("两个阶段都成功后任务为 succeeded，结果带图片与文案", async () => {
-    const { store, runner } = setup();
-    const task = await createTask(store, 3);
+    const { store, runner } = setup(undefined, { assetCount: 3 });
+    const task = await createTask(store);
 
     expect(await runner.runOnce()).toMatchObject({ ran: true, stage: "image", status: "succeeded" });
     expect(await runner.runOnce()).toMatchObject({ ran: true, stage: "copy", status: "succeeded" });
@@ -380,8 +419,8 @@ describe("任务推进与产出写入时机（AC-04-2、AC-04-5、AC-05-11）", 
         throw new StageError("COPY_FORMAT", "模型返回的不是 JSON");
       },
     };
-    const { store, runner } = setup([imageStage, failingCopy]);
-    const task = await createTask(store, 4);
+    const { store, runner } = setup([imageStage, failingCopy], { assetCount: 4 });
+    const task = await createTask(store);
 
     await runner.runOnce();
     expect(await runner.runOnce()).toMatchObject({ stage: "copy", status: "failed" });
@@ -407,7 +446,7 @@ describe("重试只重跑失败阶段（AC-04-6、AC-04-7）", () => {
       },
     };
     const { store, files, runner } = setup([imageStage, onceFailing]);
-    const task = await createTask(store, 2);
+    const task = await createTask(store);
 
     await runner.runOnce();
     await runner.runOnce();
@@ -443,15 +482,17 @@ describe("重试只重跑失败阶段（AC-04-6、AC-04-7）", () => {
         if (imageAttempts === 1) throw new StageError("UPSTREAM_TIMEOUT", "第一次超时");
         return {
           stage: "image",
-          images: Array.from({ length: context.params.imageCount }, () => ({
+          images: context.collection.assets.map((asset, index) => ({
             bytes: PNG,
             mimeType: "image/png",
+            sortOrder: index + 1,
+            sourceAssetId: asset.id,
           })),
         };
       },
     };
     const { store, runner } = setup([onceFailing, copyStage]);
-    const task = await createTask(store, 2);
+    const task = await createTask(store);
 
     await runner.runOnce();
     expect(store.results).toHaveLength(0);
@@ -469,7 +510,7 @@ describe("重试只重跑失败阶段（AC-04-6、AC-04-7）", () => {
 
   it("生图阶段重跑时复用已有结果行并替换图片，不再新建（避免撞 task_id 唯一约束）", async () => {
     const { store, files, runner } = setup();
-    const task = await createTask(store, 2);
+    const task = await createTask(store);
 
     await runner.runOnce();
     const firstResult = store.results[0];
@@ -519,9 +560,10 @@ describe("重启恢复与超时（AC-04-10）", () => {
           storageKey: `generated-assets/result-${waiting.id}/0.png`,
           fileName: "1.png",
           mimeType: "image/png",
-          sortOrder: 0,
+          sortOrder: 1,
           width: null,
           height: null,
+          sourceAssetId: COLLECTION.assets[0]?.id ?? null,
         },
       ],
     });
@@ -650,6 +692,7 @@ describe("失败的可诊断性与边界（MUST 5）", () => {
       loadCollection: async () => {
         throw AppError.notFound("资源夹不存在");
       },
+      loadSourceImage: async () => ({ bytes: PNG, mimeType: "image/png" }),
     });
     const task = await createTask(store);
 

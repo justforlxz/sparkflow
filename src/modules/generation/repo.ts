@@ -14,6 +14,7 @@ import type {
   ResultAssetInput,
   ResultRecord,
   StageErrorRecord,
+  StageProgress,
   StageRecord,
   TaskAgentSnapshots,
   TaskRecord,
@@ -28,6 +29,7 @@ const STAGE_FIELDS = {
   attempts: true,
   error: true,
   meta: true,
+  progress: true,
   startedAt: true,
   finishedAt: true,
 } as const;
@@ -37,7 +39,6 @@ const TASK_FIELDS = {
   collectionId: true,
   visualStyle: true,
   copyStyle: true,
-  imageCount: true,
   extraPrompt: true,
   agentSnapshot: true,
   createdAt: true,
@@ -56,6 +57,7 @@ interface RawStageRow {
   attempts: number;
   error: unknown;
   meta: unknown;
+  progress: unknown;
   startedAt: Date | null;
   finishedAt: Date | null;
 }
@@ -65,7 +67,6 @@ interface RawTaskRow {
   collectionId: string;
   visualStyle: string;
   copyStyle: string;
-  imageCount: number;
   extraPrompt: string | null;
   agentSnapshot: unknown;
   createdAt: Date;
@@ -84,6 +85,7 @@ function toStageRecord(row: RawStageRow): StageRecord {
     attempts: row.attempts,
     error: (row.error as StageErrorRecord | null) ?? null,
     meta: (row.meta as Record<string, unknown> | null) ?? null,
+    progress: (row.progress as StageProgress | null) ?? null,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
   };
@@ -95,7 +97,6 @@ function toTaskRecord(row: RawTaskRow): TaskRecord {
     collectionId: row.collectionId,
     visualStyle: row.visualStyle,
     copyStyle: row.copyStyle,
-    imageCount: row.imageCount,
     extraPrompt: row.extraPrompt,
     agentSnapshot: row.agentSnapshot as TaskAgentSnapshots,
     createdAt: row.createdAt,
@@ -123,7 +124,6 @@ export async function createTask(input: NewTaskInput): Promise<TaskWithStages> {
     collectionId: input.collectionId,
     visualStyle: input.visualStyle,
     copyStyle: input.copyStyle,
-    imageCount: input.imageCount,
     extraPrompt: input.extraPrompt,
     agentSnapshot: input.agentSnapshot,
     createdAt: new Date(),
@@ -137,6 +137,7 @@ export async function createTask(input: NewTaskInput): Promise<TaskWithStages> {
     attempts: 1,
     error: null,
     meta: null,
+    progress: null,
     startedAt: null,
     finishedAt: null,
   }));
@@ -147,7 +148,6 @@ export async function createTask(input: NewTaskInput): Promise<TaskWithStages> {
       collectionId: task.collectionId,
       visualStyle: task.visualStyle,
       copyStyle: task.copyStyle,
-      imageCount: task.imageCount,
       extraPrompt: task.extraPrompt,
       agentSnapshot: task.agentSnapshot as unknown as Prisma.InputJsonValue,
       createdAt: task.createdAt,
@@ -239,11 +239,19 @@ export async function claimNextStage(now: Date): Promise<ClaimedStage | null> {
 export async function markStageSucceeded(
   stageId: string,
   meta: Record<string, unknown> | null,
+  error: StageErrorRecord | null,
   now: Date,
 ): Promise<number> {
   const { count } = await getDb().generationStage.updateMany({
     where: { id: stageId, status: "running" },
-    data: { status: "succeeded", finishedAt: now, error: Prisma.DbNull, meta: jsonOrDbNull(meta) },
+    data: {
+      status: "succeeded",
+      finishedAt: now,
+      // 部分原图失败时保留原因（docs/prd/05 MUST 7）；全部成功时为 NULL。
+      error: jsonOrDbNull(error),
+      meta: jsonOrDbNull(meta),
+      progress: Prisma.DbNull,
+    },
   });
   return count;
 }
@@ -256,7 +264,13 @@ export async function markStageFailed(
 ): Promise<number> {
   const { count } = await getDb().generationStage.updateMany({
     where: { id: stageId, status: "running" },
-    data: { status: "failed", finishedAt: now, error: jsonOrDbNull(error), meta: jsonOrDbNull(meta) },
+    data: {
+      status: "failed",
+      finishedAt: now,
+      error: jsonOrDbNull(error),
+      meta: jsonOrDbNull(meta),
+      progress: Prisma.DbNull,
+    },
   });
   return count;
 }
@@ -265,7 +279,28 @@ export async function markStageFailed(
 export async function failRunningStages(error: StageErrorRecord, now: Date): Promise<number> {
   const { count } = await getDb().generationStage.updateMany({
     where: { status: "running" },
-    data: { status: "failed", finishedAt: now, error: jsonOrDbNull(error), meta: Prisma.DbNull },
+    data: {
+      status: "failed",
+      finishedAt: now,
+      error: jsonOrDbNull(error),
+      meta: Prisma.DbNull,
+      progress: Prisma.DbNull,
+    },
+  });
+  return count;
+}
+
+/**
+ * 写执行中阶段的进度（docs/prd/05「阶段进度计数」）：`{ done, total }`，供界面显示「正在生图 第 k/N 张」。
+ * 条件更新只认 running：阶段已经进入终态时不写（终态会清空进度）。
+ */
+export async function updateStageProgress(
+  stageId: string,
+  progress: StageProgress,
+): Promise<number> {
+  const { count } = await getDb().generationStage.updateMany({
+    where: { id: stageId, status: "running" },
+    data: { progress: progress as unknown as Prisma.InputJsonValue },
   });
   return count;
 }
@@ -286,6 +321,7 @@ export async function createResult(input: NewResultInput): Promise<void> {
           sortOrder: asset.sortOrder,
           width: asset.width,
           height: asset.height,
+          sourceAssetId: asset.sourceAssetId,
         })),
       },
     },
@@ -303,7 +339,7 @@ const RESULT_SELECT = {
   visualStyle: true,
   createdAt: true,
   assets: {
-    select: { id: true, fileName: true, mimeType: true, sortOrder: true },
+    select: { id: true, fileName: true, mimeType: true, sortOrder: true, sourceAssetId: true },
     orderBy: { sortOrder: "asc" },
   },
 } as const;
@@ -317,7 +353,13 @@ interface RawResultRow {
   tags: string[];
   visualStyle: string;
   createdAt: Date;
-  assets: { id: string; fileName: string; mimeType: string; sortOrder: number }[];
+  assets: {
+    id: string;
+    fileName: string;
+    mimeType: string;
+    sortOrder: number;
+    sourceAssetId: string | null;
+  }[];
 }
 
 function toResultRecord(row: RawResultRow): ResultRecord {
@@ -367,6 +409,7 @@ export async function replaceResultAssets(
               sortOrder: asset.sortOrder,
               width: asset.width,
               height: asset.height,
+              sourceAssetId: asset.sourceAssetId,
             })),
           }),
         ]
@@ -398,6 +441,7 @@ export async function resetStages(taskId: string, stages: readonly StageName[]):
       attempts: { increment: 1 },
       error: Prisma.DbNull,
       meta: Prisma.DbNull,
+      progress: Prisma.DbNull,
       startedAt: null,
       finishedAt: null,
     },
@@ -411,7 +455,7 @@ export async function countCollectionUsage(collectionId: string): Promise<Collec
   const [tasks, results] = await Promise.all([
     db.generationTask.findMany({
       where: { collectionId },
-      select: { stages: { select: { stage: true, status: true } } },
+      select: { stages: { select: { stage: true, status: true, error: true } } },
     }),
     db.generationResult.count({ where: { collectionId } }),
   ]);
@@ -545,6 +589,7 @@ export const taskStore: TaskStore = {
   markStageSucceeded,
   markStageFailed,
   failRunningStages,
+  updateStageProgress,
   createResult,
   replaceResultAssets,
   findResultByTask,

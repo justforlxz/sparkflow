@@ -1,14 +1,17 @@
 /**
  * magpie 图片 MCP 适配器（MCP Streamable HTTP，JSON-RPC），端点 `POST <baseUrl>/mcp/magpie/image`。
  *
- * 接口事实见 docs/prd/05「调研结论」与 magpie 的 `internal/gateway/image_mcp.go`：
+ * 接口事实见 docs/prd/05「上游接口事实」（2026-11-20 对线上 endpoint 实测 `tools/list`）：
  *
- * - `generate_image` 约 20 秒内画完就直接回图：图片作为 MCP 的 image content 内联（≤ 5 MiB），
- *   同时在 `_meta["usemagpie.ai/files"]` 里给出每个文件的 URL 与是否内联；
- * - 超过 20 秒回 `_meta["usemagpie.ai/pending"]` 里的 id，要用 `generation_result` 轮询取回；
- * - 网关 URL 只保留 1 小时，所以拿到 URL 也要立刻取回字节（MUST 3）。
+ * - 工具是 magpie 内置的 `generate_image` / `generate_video` / `generation_result`，
+ *   不是 `magpie-image-edit` 插件的 `edit_image` / `image_result`（该插件没启用）；
+ * - 图生图走 `generate_image` 的 `reference_images`：一图对一图时 `n = 1`，只放那一张原图；
+ * - 生成可能同步完成：小图内联在 `content` 的 image 块里；成品大于 5 MB 时只给一个 URL
+ *   （可能放在 `_meta["usemagpie.ai/files"]`，也可能直接写在文字里），URL 打开不需要任何 header；
+ * - 超过约 20 秒没画完就回作业 id（`_meta["usemagpie.ai/pending"]`），只能用 `generation_result` 轮询；
+ * - 网关 URL 只保留约 1 小时，所以拿到 URL 也要立刻取回字节。
  *
- * 本版本不传 `reference_images`（MUST NOT），也不认识视频工具。
+ * 本适配器不认识具体模型，也不认识视频工具。
  */
 import { logger } from "@/lib/logger";
 import {
@@ -23,20 +26,23 @@ import { IMAGE_ERROR_CODES, type GenerateImageInput, type ImageGenerator } from 
 const CLIENT_NAME = "sparkflow";
 const CLIENT_VERSION = "1.0.0";
 
-/** 单次 HTTP 请求的超时：上游约 20 秒会回 id 或图，留到 60 秒足够。 */
+/** 单次 HTTP 请求的超时：网关约 20 秒会回 id 或图，留到 60 秒足够。 */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
-/** 未就绪时的轮询间隔（MUST 4）。 */
+/** 未就绪时的轮询间隔（MUST 5）。 */
 export const DEFAULT_POLL_INTERVAL_MS = 3_000;
-/** 轮询上限，与任务总超时一致（docs/prd/04 SHOULD 15 分钟）。 */
-export const DEFAULT_MAX_POLL_MS = 15 * 60_000;
+/** 轮询上限：与任务总超时一致（docs/prd/04 SHOULD 45 分钟）。 */
+export const DEFAULT_MAX_POLL_MS = 45 * 60_000;
 
-const GENERATE_IMAGE_TOOL = "generate_image";
-const GENERATION_RESULT_TOOL = "generation_result";
+/** 线上 `tools/list` 给出的工具名（适配器只依赖这两个）。 */
+export const GENERATE_IMAGE_TOOL = "generate_image";
+export const GENERATION_RESULT_TOOL = "generation_result";
+
+/** 一图对一图固定只要 1 张；`n` 的上限是 4，这里不放开。 */
+export const IMAGES_PER_CALL = 1;
 
 /** magpie 在工具结果的 `_meta` 里用这两个键告知「还没好」与「存了哪些文件」。 */
 export const PENDING_META_KEY = "usemagpie.ai/pending";
 export const FILES_META_KEY = "usemagpie.ai/files";
-
 
 interface ToolResultMeta {
   [PENDING_META_KEY]?: unknown;
@@ -50,13 +56,17 @@ export interface McpToolResult {
 }
 
 /**
- * `generate_image` 的请求参数（AC-05-2、AC-05-3）：
- * 本版本不传 `reference_images`，快照没有模型时不出现 `model` 字段。
+ * `generate_image` 的请求参数（AC-05-1、AC-05-3、AC-05-4）：
+ * 一图对一图 —— `n = 1`，`reference_images` 只有那一张原图（data URL）。
+ * 快照没有模型时不出现 `model` 字段。
  */
 export function buildGenerateArguments(input: GenerateImageInput): Record<string, unknown> {
-  const args: Record<string, unknown> = { prompt: input.prompt, n: input.n };
+  const args: Record<string, unknown> = {
+    prompt: input.prompt,
+    n: IMAGES_PER_CALL,
+    reference_images: [input.image],
+  };
   if (input.size) args.size = input.size;
-  if (input.quality) args.quality = input.quality;
   if (input.model) args.model = input.model;
   return args;
 }
@@ -98,6 +108,15 @@ export function parsePendingId(result: McpToolResult): string | null {
   return typeof pending === "string" && pending.trim().length > 0 ? pending.trim() : null;
 }
 
+/**
+ * 文字里直接给出的图片 URL：成品大于 5 MB 时上游可能不给 base64、也不写 `_meta`，
+ * 只把 URL 写在 `content` 的文字块里（MKACG-920 AC-MCP-6 实测）。
+ */
+export function parseTextUrls(result: McpToolResult): string[] {
+  const urls = joinTextContent(result).match(/https?:\/\/[^\s"'<>()]+/g) ?? [];
+  return [...new Set(urls.map((url) => url.trim()).filter((url) => url.length > 0))];
+}
+
 export interface MadeFile {
   url: string;
   inline: boolean;
@@ -117,7 +136,7 @@ export function parseFiles(result: McpToolResult): MadeFile[] {
   return made;
 }
 
-export interface MagpieMcpOptions {
+export interface MagpieImageOptions {
   /** 网关 Base URL（已去掉尾部 `/`）。 */
   baseUrl: string;
   /** 解密后的网关密钥，只用于请求头，不写日志、不进错误消息。 */
@@ -164,7 +183,7 @@ function describeFetchFailure(error: unknown, timeoutMs: number): string {
   return "无法连接到网关（地址不可达或网络不通）";
 }
 
-export class MagpieMcpImageGenerator implements ImageGenerator {
+export class MagpieImageGenerator implements ImageGenerator {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
@@ -178,7 +197,7 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
   private initialized = false;
   private nextRequestId = 1;
 
-  constructor(options: MagpieMcpOptions) {
+  constructor(options: MagpieImageOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.apiKey = options.apiKey;
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -213,7 +232,7 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
   }
 
   /**
-   * 轮询 `generation_result` 直到拿到图片（MUST 4）。
+   * 轮询 `generation_result` 直到拿到图片（MUST 5）。
    * 期间绝不重复调用 `generate_image`：那会重新画一遍并产生新的任务。
    */
   private async pollGenerationResult(id: string, signal?: AbortSignal): Promise<GeneratedImage[]> {
@@ -260,8 +279,17 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
     const inline = parseInlineImages(result);
     const files = parseFiles(result);
 
-    // 没有 _meta 文件清单时，内联图片就是全部产出。
-    if (files.length === 0) return inline.length > 0 ? inline : null;
+    // 没有 _meta 文件清单、也没有内联图片时，URL 可能直接写在文字里。
+    if (files.length === 0) {
+      if (inline.length > 0) return inline;
+
+      const textUrls = parseTextUrls(result);
+      if (textUrls.length === 0) return null;
+
+      const downloaded: GeneratedImage[] = [];
+      for (const url of textUrls) downloaded.push(await this.download(url, signal));
+      return downloaded.length > 0 ? downloaded : null;
+    }
 
     const images: GeneratedImage[] = [];
     let inlineIndex = 0;
@@ -292,9 +320,9 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
 
     let response: Response;
     try {
+      // 图片 URL 打开不需要任何 header（MKACG-920 实测），也不该把网关密钥发给别的域名。
       response = await this.fetchImpl(parsed.toString(), {
         method: "GET",
-        headers: { authorization: `Bearer ${this.apiKey}` },
         signal: requestSignal(this.requestTimeoutMs, signal),
       });
     } catch (error) {
@@ -414,8 +442,7 @@ export class MagpieMcpImageGenerator implements ImageGenerator {
     }
     if (!response.ok) {
       const code = response.status >= 500 ? IMAGE_ERROR_CODES.timeout : IMAGE_ERROR_CODES.rejected;
-      // 4xx 的正文里常有上游原因（例如模型不存在）：只按脱敏规则进日志，
-      // 界面与接口里只留中文说明（MKACG-902 MUST 1、MUST 2）。
+      // 4xx 的正文里常有上游原因（例如模型不存在）：只按脱敏规则进日志，界面只留中文说明。
       const reason = await response.text().catch(() => "");
       logger.warn("magpie 图片 MCP 拒绝了请求", { status: response.status, reason });
       const message =

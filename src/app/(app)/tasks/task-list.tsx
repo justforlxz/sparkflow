@@ -108,7 +108,6 @@ export function TaskList({ initialTasks }: TaskListProps) {
         body: JSON.stringify({
           visualStyle: task.visualStyle,
           copyStyle: task.copyStyle,
-          imageCount: task.imageCount,
           extraPrompt: task.extraPrompt,
         }),
       });
@@ -162,7 +161,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
                     </Link>
                     <p className="text-footnote text-ink-tertiary">
                       {formatTime(task.createdAt)} · {task.visualStyleLabel} · {task.copyStyleLabel} ·{" "}
-                      {TASK_COPY.imageCountLabel} {task.imageCount} 张
+                      {TASK_COPY.expectedImageCountLabel} {task.expectedImageCount} 张
                     </p>
                   </div>
                   <Pill tone={TASK_STATUS_TONE[task.status]}>{task.statusLabel}</Pill>

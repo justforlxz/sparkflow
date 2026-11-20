@@ -334,12 +334,16 @@ test("AC-10-6 设置页的功能开关区块显示两项、标注本版本未实
   await page.goto("/settings");
 
   const section = page.locator('[aria-label="功能开关"]');
-  await expect(section.getByTestId("feature-unimplemented")).toHaveCount(2);
+  // 图生图已实现：不标「本版本未实现」，开关可操作；分享仍未实现。
+  await expect(section.getByTestId("feature-unimplemented")).toHaveCount(1);
 
-  for (const key of ["image-to-image", "share-to-xiaohongshu"]) {
-    const item = page.getByTestId(`feature-flag-${key}`);
-    await expect(item).toBeVisible();
-    await expect(item.getByTestId("feature-unimplemented")).toHaveText("本版本未实现");
-    await expect(item.getByRole("checkbox")).toBeDisabled();
-  }
+  const imageToImage = page.getByTestId("feature-flag-image-to-image");
+  await expect(imageToImage).toBeVisible();
+  await expect(imageToImage.getByTestId("feature-unimplemented")).toHaveCount(0);
+  await expect(imageToImage.getByRole("checkbox")).toBeEnabled();
+
+  const share = page.getByTestId("feature-flag-share-to-xiaohongshu");
+  await expect(share).toBeVisible();
+  await expect(share.getByTestId("feature-unimplemented")).toHaveText("本版本未实现");
+  await expect(share.getByRole("checkbox")).toBeDisabled();
 });

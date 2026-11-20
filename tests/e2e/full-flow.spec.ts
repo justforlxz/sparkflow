@@ -391,14 +391,18 @@ test("第 1 步 设置页：新增网关（密钥掩码）、配置两个 Agent�
   await expect(copyAgent.getByTestId("agent-binding-state")).toContainText(COPY_MODEL_ID);
   await expect(copyAgent.getByTestId("agent-ready-badge")).toHaveText("就绪");
 
-  // 功能开关区块：两项都标「本版本未实现」，复选框不可操作。
+  // 功能开关区块：图生图已实现（可操作、默认开启），分享仍标「本版本未实现」且不可操作。
   const featureSection = page.locator('[aria-label="功能开关"]');
-  await expect(featureSection.getByTestId("feature-unimplemented")).toHaveCount(2);
-  for (const key of ["image-to-image", "share-to-xiaohongshu"]) {
-    const item = featureSection.getByTestId(`feature-flag-${key}`);
-    await expect(item.getByTestId("feature-unimplemented")).toHaveText(UNIMPLEMENTED_TEXT);
-    await expect(item.getByRole("checkbox")).toBeDisabled();
-  }
+  await expect(featureSection.getByTestId("feature-unimplemented")).toHaveCount(1);
+
+  const imageToImage = featureSection.getByTestId("feature-flag-image-to-image");
+  await expect(imageToImage.getByTestId("feature-unimplemented")).toHaveCount(0);
+  await expect(imageToImage.getByRole("checkbox")).toBeEnabled();
+  await expect(imageToImage.getByRole("checkbox")).toBeChecked();
+
+  const share = featureSection.getByTestId("feature-flag-share-to-xiaohongshu");
+  await expect(share.getByTestId("feature-unimplemented")).toHaveText(UNIMPLEMENTED_TEXT);
+  await expect(share.getByRole("checkbox")).toBeDisabled();
 
   // 记下网关 id，供最后清理。
   const listed = await request.get("/api/gateways");
@@ -471,7 +475,7 @@ test("第 3 步 编辑资源夹：新增 1 张、移除 1 张并撤销，再保�
   await expect(page.getByAltText("原始三.png")).toBeVisible();
 });
 
-test("第 4 步 发起创作（4 张图），两个阶段进入终态", async ({ page, request }) => {
+test("第 4 步 发起创作（3 张原图 → 3 张成品），两个阶段进入终态", async ({ page, request }) => {
   await loginInBrowser(page);
   await page.goto(`/collections/${chain.collectionId}`);
 
@@ -479,7 +483,8 @@ test("第 4 步 发起创作（4 张图），两个阶段进入终态", async ({
   const dialog = page.getByRole("dialog", { name: "开始 AI 创作" });
   await dialog.getByLabel("视觉方向").selectOption("fresh");
   await dialog.getByLabel("文案风格").selectOption("story");
-  await dialog.getByLabel("目标张数").fill("4");
+  // 张数不再可选：弹窗只显示「预计成品张数 = 原图张数」（ADR 0008）。
+  await expect(dialog.getByTestId("expected-image-count")).toHaveText("3 张");
   await dialog.getByTestId("submit-creation").click();
   await expect(page).toHaveURL(/\/tasks$/);
 
@@ -489,7 +494,7 @@ test("第 4 步 发起创作（4 张图），两个阶段进入终态", async ({
   expect(task.stages.image.status).toBe("succeeded");
   expect(task.stages.copy.status).toBe("succeeded");
   expect(task.resultId).toBeTruthy();
-  expect(task.result?.assets).toHaveLength(4);
+  expect(task.result?.assets).toHaveLength(3);
   expect(task.result?.title?.length).toBeGreaterThan(0);
   expect(task.result?.body?.length).toBeGreaterThan(0);
   expect(task.result?.tags.length).toBeGreaterThan(0);
@@ -549,7 +554,7 @@ test("第 6 步 制造文案阶段失败后重试：只重跑文案阶段，图�
   // 「补充要求」里带上 mock 的失败标记：文案阶段第一次失败，图片阶段照常成功。
   await page.getByTestId("start-creation").click();
   const dialog = page.getByRole("dialog", { name: "开始 AI 创作" });
-  await dialog.getByLabel("目标张数").fill("2");
+  await expect(dialog.getByTestId("expected-image-count")).toHaveText("3 张");
   await dialog.getByLabel("补充要求").fill(MOCK_SCRIPT_HINTS.failCopyOnce);
   await dialog.getByTestId("submit-creation").click();
   await expect(page).toHaveURL(/\/tasks$/);
@@ -563,7 +568,7 @@ test("第 6 步 制造文案阶段失败后重试：只重跑文案阶段，图�
   expect(partial.stages.image.status).toBe("succeeded");
   expect(partial.stages.copy.status).toBe("failed");
   const assetIdsBefore = partial.result?.assets.map((asset) => asset.id) ?? [];
-  expect(assetIdsBefore).toHaveLength(2);
+  expect(assetIdsBefore).toHaveLength(3);
 
   // 列表上两个阶段各自的状态与失败原因都可见，重试入口只在有失败阶段时出现。
   await page.goto("/tasks");
@@ -619,7 +624,7 @@ test("第 7 步 重新生成：出现确认，确认后新增任务，旧结果�
   // 旧任务与旧结果原样保留（ADR 0005：重新生成是新任务，不是覆盖）。
   const original = await getTask(request, chain.firstTaskId!);
   expect(original.resultId).toBe(chain.firstResultId);
-  expect(original.result?.assets).toHaveLength(4);
+  expect(original.result?.assets).toHaveLength(3);
 
   expect(await listTasksOfCollection(request, chain.collectionId!)).toHaveLength(
     before.length + 1,
@@ -632,24 +637,20 @@ test("第 8 步 整理发布：取消勾选 1 张、下载 ZIP、复制文案", 
   await loginInBrowser(page);
   const dialog = await openPublishDialog(page, chain.collectionId!, chain.firstResultId!);
 
-  // 4 张默认全选，取消第 2 张。
+  // 3 张默认全选，取消第 2 张。
   const checkboxes = dialog.getByTestId("publish-asset");
-  await expect(checkboxes).toHaveCount(4);
+  await expect(checkboxes).toHaveCount(3);
   await checkboxes.nth(1).uncheck();
   await expect(checkboxes.nth(1)).not.toBeChecked();
 
-  // ZIP 只装选中的 3 张，条目名按选中顺序编号。
+  // ZIP 只装选中的 2 张，条目名按选中顺序编号。
   const downloadPromise = page.waitForEvent("download");
   await dialog.getByTestId("publish-download").click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.zip$/);
   const archive = await readFile((await download.path()) as string);
-  const kept = [0, 2, 3].map((index) => chain.firstResultAssets![index]!.fileName);
-  expect(zipEntryNames(archive)).toEqual([
-    `01-${kept[0]}`,
-    `02-${kept[1]}`,
-    `03-${kept[2]}`,
-  ]);
+  const kept = [0, 2].map((index) => chain.firstResultAssets![index]!.fileName);
+  expect(zipEntryNames(archive)).toEqual([`01-${kept[0]}`, `02-${kept[1]}`]);
 
   // 复制文案：标题 / 空行 / 正文 / 空行 / #标签。
   await dialog.getByTestId("publish-title").fill("全量验收发布标题");
@@ -683,25 +684,45 @@ test("第 9 步 分享到小红书：只提示「分享功能不可用」，不�
   expect(apiRequests, "分享入口不得发起接口请求").toEqual([]);
 });
 
-test("第 10 步 AC-10-4 图生图入口提示「该功能未启用」且无网络请求", async ({ page }) => {
-  // 图生图在本版本不实现（docs/prd/05「本版本的范围边界」）：资源夹详情的入口由
-  // <FeatureGate feature="image-to-image"> 渲染成禁用态，点击只出现注册表里的提示文案。
+test("第 10 步 AC-10-4 图生图入口双向验证：开启时可用，关掉时禁用且不发请求", async ({
+  page,
+  request,
+}) => {
   await loginInBrowser(page);
+
+  // 开启（注册表默认）：开始创作入口是可用按钮，没有禁用态占位。
   await page.goto(`/collections/${chain.collectionId}`);
+  const entry = page.getByTestId("start-creation");
+  await expect(entry).toBeEnabled();
+  await expect(page.getByRole("button", { name: "开始 AI 创作" })).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 
-  const apiRequests: string[] = [];
-  const collect = (request: import("@playwright/test").Request) => {
-    if (new URL(request.url()).pathname.startsWith("/api/")) apiRequests.push(request.url());
-  };
-  page.on("request", collect);
+  // 关掉开关：入口回到禁用态，点击只提示、不发请求。
+  const off = await request.patch("/api/features/image-to-image", { data: { enabled: false } });
+  expect(off.status()).toBe(200);
 
-  const entry = page.getByRole("button", { name: "图生图" });
-  await expect(entry).toHaveAttribute("aria-disabled", "true");
-  await entry.click({ force: true });
-  await expect(page.getByRole("status").filter({ hasText: "该功能未启用" })).toBeVisible();
+  try {
+    await page.reload();
+    const disabled = page.getByRole("button", { name: "开始 AI 创作" });
+    await expect(disabled).toHaveAttribute("aria-disabled", "true");
 
-  page.off("request", collect);
-  expect(apiRequests, "图生图入口不得发起接口请求").toEqual([]);
+    const apiRequests: string[] = [];
+    const collect = (incoming: import("@playwright/test").Request) => {
+      if (new URL(incoming.url()).pathname.startsWith("/api/")) apiRequests.push(incoming.url());
+    };
+    page.on("request", collect);
+
+    await disabled.click({ force: true });
+    await expect(page.getByRole("status").filter({ hasText: "该功能未启用" })).toBeVisible();
+    expect(apiRequests, "关掉开关后入口不得发起接口请求").toEqual([]);
+
+    page.off("request", collect);
+  } finally {
+    // 恢复默认，避免影响后续用例。
+    await request.patch("/api/features/image-to-image", { data: { enabled: true } });
+  }
 });
 
 test("第 11 步 标记已发布：全局与资源夹内记录一致，重复标记不新增", async ({

@@ -8,6 +8,7 @@ import { findCopyStyle } from "@/modules/copy-generation/styles";
 import { visualStyleLabel } from "@/modules/image-generation/styles";
 import { DEFAULT_THUMBNAIL_WIDTH } from "@/modules/media-collection/constants";
 import {
+  RESULT_COPY,
   STAGE_LABELS,
   STAGE_STATUS_LABELS,
   STAGE_NAMES,
@@ -39,6 +40,8 @@ export interface StageView {
   error: StageErrorRecord | null;
   startedAt: string | null;
   finishedAt: string | null;
+  /** 执行中的进度（「正在生图 第 done/N 张」）；终态为 null。 */
+  progress: { done: number; total: number } | null;
 }
 
 export interface ResultAssetView {
@@ -50,6 +53,8 @@ export interface ResultAssetView {
   url: string;
   /** 网格统一走缩略图参数（docs/prd/07 SHOULD）。 */
   thumbnailUrl: string;
+  /** 这张成品对应的原图；原图被解除关联后为 null（ADR 0008）。 */
+  sourceAssetId: string | null;
 }
 
 export interface ResultView {
@@ -67,6 +72,10 @@ export interface ResultView {
   assets: ResultAssetView[];
   /** 文案阶段失败：文案区域显示附加提示与重试入口，有内容时照常展示（AC-08-11）。 */
   copyFailed: boolean;
+  /** 视觉提取降级（没拿到照片内容），文案仍已生成（docs/prd/06 AC-06-8）。 */
+  copyVisualDegraded: boolean;
+  /** 降级的具体原因与下一步动作；未降级时为 null。 */
+  copyVisualDegradedHint: string | null;
 }
 
 /** 失败阶段上的重试说明（MKACG-904）：`state` 决定样式，`message` 直接渲染。 */
@@ -91,7 +100,8 @@ export interface TaskSummaryView {
   visualStyleLabel: string;
   copyStyle: string;
   copyStyleLabel: string;
-  imageCount: number;
+  /** 预计成品张数 = 这次的原图张数（ADR 0008）：任务不再接收图片数量参数。 */
+  expectedImageCount: number;
   extraPrompt: string | null;
   createdAt: string;
   /** 两条阶段各自的状态，界面必须分别展示（docs/prd/07 MUST 1）。 */
@@ -123,6 +133,7 @@ function toStageView(stage: StageRecord): StageView {
     error: stage.error,
     startedAt: stage.startedAt?.toISOString() ?? null,
     finishedAt: stage.finishedAt?.toISOString() ?? null,
+    progress: stage.progress ?? null,
   };
 }
 
@@ -159,6 +170,7 @@ function toSummary(
   record: TaskWithStages,
   collectionName: string,
   currentAgents: Record<StageName, AgentBindingState>,
+  expectedImageCount: number,
 ): TaskSummaryView {
   const { task, stages } = record;
   const status = deriveTaskStatus(stages);
@@ -172,7 +184,7 @@ function toSummary(
     visualStyleLabel: visualStyleLabel(task.visualStyle),
     copyStyle: task.copyStyle,
     copyStyleLabel: findCopyStyle(task.copyStyle)?.label ?? task.copyStyle,
-    imageCount: task.imageCount,
+    expectedImageCount,
     extraPrompt: task.extraPrompt,
     createdAt: task.createdAt.toISOString(),
     stages: toStageMap(stages),
@@ -184,8 +196,9 @@ export function toTaskSummaryView(
   record: TaskWithStages,
   collectionName: string,
   currentAgents: Record<StageName, AgentBindingState>,
+  expectedImageCount: number,
 ): TaskSummaryView {
-  return toSummary(record, collectionName, currentAgents);
+  return toSummary(record, collectionName, currentAgents, expectedImageCount);
 }
 
 /** 结果视图要带上任务的两条阶段：文案是否失败、能否重试都由它派生。 */
@@ -194,6 +207,15 @@ export function toResultView(
   stages: readonly StageRecord[],
 ): ResultView {
   const copyFailed = stages.some((stage) => stage.stage === "copy" && stage.status === "failed");
+  // 视觉提取被降级时必须显式标注，不得静默降级（docs/prd/06 AC-06-8）。
+  // 原因分两种：没配置理解网关 / 识别失败——给用户的下一步动作不同。
+  const visualExtraction = stages.find((stage) => stage.stage === "copy")?.meta?.visualExtraction;
+  const copyVisualDegraded = typeof visualExtraction === "string" && visualExtraction !== "done";
+  const copyVisualDegradedHint = !copyVisualDegraded
+    ? null
+    : visualExtraction === "skipped-no-vision-gateway"
+      ? RESULT_COPY.copyVisualDegradedNoGateway
+      : RESULT_COPY.copyVisualDegradedFailed;
   return {
     id: result.id,
     taskId: result.taskId,
@@ -205,6 +227,8 @@ export function toResultView(
     visualStyleLabel: visualStyleLabel(result.visualStyle),
     createdAt: result.createdAt.toISOString(),
     copyFailed,
+    copyVisualDegraded,
+    copyVisualDegradedHint,
     assets: result.assets.map((asset) => ({
       id: asset.id,
       fileName: asset.fileName,
@@ -212,6 +236,7 @@ export function toResultView(
       sortOrder: asset.sortOrder,
       url: generatedAssetUrl(result.id, asset.id),
       thumbnailUrl: generatedAssetUrl(result.id, asset.id, DEFAULT_THUMBNAIL_WIDTH),
+      sourceAssetId: asset.sourceAssetId ?? null,
     })),
   };
 }
@@ -221,9 +246,10 @@ export function toTaskDetailView(
   result: ResultRecord | null,
   collectionName: string,
   currentAgents: Record<StageName, AgentBindingState>,
+  expectedImageCount: number,
 ): TaskDetailView {
   return {
-    ...toSummary(record, collectionName, currentAgents),
+    ...toSummary(record, collectionName, currentAgents, expectedImageCount),
     agents: record.task.agentSnapshot,
     resultId: result?.id ?? null,
     result: result ? toResultView(result, record.stages) : null,

@@ -154,7 +154,22 @@ async function ensureGateway(request: APIRequestContext): Promise<string> {
   return gatewayId;
 }
 
-async function createCollectionWithImage(request: APIRequestContext): Promise<string> {
+/** 造一个带 n 张原图的资源夹：成品张数 = 原图张数（ADR 0008）。 */
+async function createCollectionWithImage(
+  request: APIRequestContext,
+  count = 1,
+): Promise<string> {
+  const images = Object.fromEntries(
+    Array.from({ length: count }, (_, index) => [
+      `images-${index}`,
+      {
+        name: `${String.fromCharCode(97 + index)}.png`,
+        mimeType: "image/png",
+        buffer: PNG_ONE_PIXEL,
+      },
+    ]),
+  );
+
   const response = await request.post("/api/collections", {
     multipart: {
       name: uniqueName("e2e-results-collection"),
@@ -162,7 +177,7 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
       sourceUrl: "https://example.com/note/1",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
-      "images-0": { name: "a.png", mimeType: "image/png", buffer: PNG_ONE_PIXEL },
+      ...images,
     },
   });
   expect(response.status()).toBe(201);
@@ -174,13 +189,12 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
 async function createTask(
   request: APIRequestContext,
   collectionId: string,
-  input: { imageCount?: number; extraPrompt?: string | null } = {},
+  input: { extraPrompt?: string | null } = {},
 ): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
     data: {
       visualStyle: "fresh",
       copyStyle: "story",
-      imageCount: input.imageCount ?? 2,
       extraPrompt: input.extraPrompt ?? null,
     },
   });
@@ -297,8 +311,8 @@ test("AC-07-1 无任务时列表显示空状态与入口，不显示假数据", 
 });
 
 test("AC-07-2 任务列表同时显示生图阶段与文案阶段的状态标签", async ({ page, request }) => {
-  const collectionId = await createCollectionWithImage(request);
-  const created = await createTask(request, collectionId, { imageCount: 2 });
+  const collectionId = await createCollectionWithImage(request, 2);
+  const created = await createTask(request, collectionId);
   await waitForTerminal(request, created.id, "succeeded");
 
   await loginInBrowser(page);
@@ -310,16 +324,15 @@ test("AC-07-2 任务列表同时显示生图阶段与文案阶段的状态标签
   await expect(row.getByText("文案阶段")).toBeVisible();
   await expect(row.getByTestId("stage-image-status")).toHaveText("已完成");
   await expect(row.getByTestId("stage-copy-status")).toHaveText("已完成");
-  await expect(row.getByText("目标张数 2 张")).toBeVisible();
+  await expect(row.getByText("预计成品张数 2 张")).toBeVisible();
 });
 
 test("AC-07-3 对 partial 任务点重试：只有文案阶段重排，生图阶段与图片数不变", async ({
   page,
   request,
 }) => {
-  const collectionId = await createCollectionWithImage(request);
+  const collectionId = await createCollectionWithImage(request, 2);
   const created = await createTask(request, collectionId, {
-    imageCount: 2,
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
   const partial = await waitForTerminal(request, created.id, "partial");
@@ -356,7 +369,7 @@ test("AC-07-3 对 partial 任务点重试：只有文案阶段重排，生图阶
 
 test("AC-07-4 重新生成先确认：取消不产生任务，确认后新增一个任务", async ({ page, request }) => {
   const collectionId = await createCollectionWithImage(request);
-  const created = await createTask(request, collectionId, { imageCount: 1 });
+  const created = await createTask(request, collectionId);
   await waitForTerminal(request, created.id, "succeeded");
   const countBefore = (await listTasks(request)).length;
 
@@ -391,7 +404,7 @@ test("AC-07-4 重新生成先确认：取消不产生任务，确认后新增一
 
 test("AC-07-5 全部成功的任务不显示重试按钮", async ({ page, request }) => {
   const collectionId = await createCollectionWithImage(request);
-  const created = await createTask(request, collectionId, { imageCount: 1 });
+  const created = await createTask(request, collectionId);
   await waitForTerminal(request, created.id, "succeeded");
 
   await loginInBrowser(page);
@@ -407,7 +420,7 @@ test("AC-07-6 编辑结果标题后刷新页面标题保持新值，原始素材
   request,
 }) => {
   const collectionId = await createCollectionWithImage(request);
-  const created = await createTask(request, collectionId, { imageCount: 1 });
+  const created = await createTask(request, collectionId);
   const finished = await waitForTerminal(request, created.id, "succeeded");
   const resultId = finished.resultId!;
   const newTitle = uniqueName("改过的标题");
@@ -442,7 +455,6 @@ test("AC-07-6 编辑结果标题后刷新页面标题保持新值，原始素材
 test("AC-07-6 partial 结果手动补写后在卡片上能看到新文案", async ({ page, request }) => {
   const collectionId = await createCollectionWithImage(request);
   const created = await createTask(request, collectionId, {
-    imageCount: 1,
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
   const partial = await waitForTerminal(request, created.id, "partial");
@@ -482,12 +494,12 @@ test("AC-07-7 删除某个结果后，同资源夹另一个结果与原始素材
   const collectionId = await createCollectionWithImage(request);
   const first = await waitForTerminal(
     request,
-    (await createTask(request, collectionId, { imageCount: 1 })).id,
+    (await createTask(request, collectionId)).id,
     "succeeded",
   );
   const second = await waitForTerminal(
     request,
-    (await createTask(request, collectionId, { imageCount: 1 })).id,
+    (await createTask(request, collectionId)).id,
     "succeeded",
   );
   const firstResultId = first.resultId!;
@@ -524,7 +536,6 @@ test("AC-07-7 删除某个结果后，同资源夹另一个结果与原始素材
 test("AC-07-8 失败阶段展示可读原因，不含密钥与堆栈", async ({ page, request }) => {
   const collectionId = await createCollectionWithImage(request);
   const created = await createTask(request, collectionId, {
-    imageCount: 1,
     extraPrompt: MOCK_SCRIPT_HINTS.failImage,
   });
   await waitForTerminal(request, created.id, "failed");
@@ -549,7 +560,6 @@ test("AC-904-1 AC-904-4 带失败阶段的任务在列表与详情都有重试�
 }) => {
   const collectionId = await createCollectionWithImage(request);
   const failed = await createTask(request, collectionId, {
-    imageCount: 1,
     extraPrompt: MOCK_SCRIPT_HINTS.failImage,
   });
   await waitForTerminal(request, failed.id, "failed");
@@ -557,7 +567,7 @@ test("AC-904-1 AC-904-4 带失败阶段的任务在列表与详情都有重试�
   // 对照：全部成功的任务没有「重试」入口，也不该出现这条说明。
   const succeeded = await waitForTerminal(
     request,
-    (await createTask(request, collectionId, { imageCount: 1 })).id,
+    (await createTask(request, collectionId)).id,
     "succeeded",
   );
 
@@ -593,7 +603,6 @@ test("AC-07-9 离开任务页后不再有新请求（轮询已停止）", async 
 
   const collectionId = await createCollectionWithImage(request);
   const created = await createTask(request, collectionId, {
-    imageCount: 1,
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
   await waitForTerminal(request, created.id, "partial");
@@ -645,7 +654,6 @@ test("AC-08-10 任务详情能看到 attempts，重试一次后失败阶段 atte
 
   const collectionId = await createCollectionWithImage(request);
   const created = await createTask(request, collectionId, {
-    imageCount: 1,
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
   await waitForTerminal(request, created.id, "partial");
@@ -672,9 +680,8 @@ test("AC-08-11 partial 结果的文案区域显示「文案阶段失败」提示
   page,
   request,
 }) => {
-  const collectionId = await createCollectionWithImage(request);
+  const collectionId = await createCollectionWithImage(request, 2);
   const created = await createTask(request, collectionId, {
-    imageCount: 2,
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
   const partial = await waitForTerminal(request, created.id, "partial");

@@ -19,10 +19,10 @@ export const FEATURE_FLAGS = [
   {
     key: "image-to-image",
     name: "图生图",
-    description: "把原始图片作为参考交给图片模型生成新图。本版本不实现（ADR 0004 记录将来做法）。",
-    defaultEnabled: false,
-    implemented: false,
-    affects: ["资源夹详情的图生图入口", "POST /api/tasks"],
+    description: "把每张原始图片作为参考交给图片模型，一张原图生成一张成品图（ADR 0008）。",
+    defaultEnabled: true,
+    implemented: true,
+    affects: ["资源夹详情的开始创作入口", "POST /api/collections/[id]/tasks"],
     disabledMessage: "该功能未启用",
   },
   {

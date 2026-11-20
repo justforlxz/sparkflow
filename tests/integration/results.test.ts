@@ -7,9 +7,11 @@ import { deleteResult, getResultImage, listCollectionResults, updateResult } fro
 import { createStageRegistry } from "@/modules/generation/registry";
 import { taskStore } from "@/modules/generation/repo";
 import { createRunner } from "@/modules/generation/runner";
-import { MOCK_SCRIPT_HINTS, mockCopyStage, mockImageStage } from "@/modules/generation/stages/mock";
+import { MOCK_SCRIPT_HINTS, mockCopyStage } from "@/modules/generation/stages/mock";
 import { resultAssetWriter } from "@/modules/generation/storage";
-import { loadStageCollectionContext } from "@/modules/generation/worker";
+import { loadSourceImage, loadStageCollectionContext } from "@/modules/generation/worker";
+import { MockImageGenerator } from "@/modules/image-generation/adapters/mock";
+import { createImageStage } from "@/modules/image-generation/stage";
 import { createCollection, deleteCollection } from "@/modules/media-collection/service";
 
 /**
@@ -65,7 +67,8 @@ afterEach(async () => {
   }
 });
 
-async function createCollectionWithImage(name: string): Promise<string> {
+/** 造一个带 n 张原图的资源夹：成品张数 = 原图张数（ADR 0008）。 */
+async function createCollectionWithImage(name: string, count = 2): Promise<string> {
   const collection = await createCollection(
     {
       name,
@@ -74,7 +77,10 @@ async function createCollectionWithImage(name: string): Promise<string> {
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
     },
-    [{ fileName: "a.png", bytes: PNG_BYTES }],
+    Array.from({ length: count }, (_, index) => ({
+      fileName: `${String.fromCharCode(97 + index)}.png`,
+      bytes: PNG_BYTES,
+    })),
   );
   createdCollectionIds.push(collection.id);
   return collection.id;
@@ -84,8 +90,12 @@ function buildRunner() {
   return createRunner({
     store: taskStore,
     files: resultAssetWriter,
-    registry: createStageRegistry([mockImageStage, mockCopyStage]),
+    registry: createStageRegistry([
+      createImageStage({ generator: new MockImageGenerator() }),
+      mockCopyStage,
+    ]),
     loadCollection: loadStageCollectionContext,
+    loadSourceImage,
   });
 }
 
@@ -106,7 +116,6 @@ async function createFinishedResult(
   const task = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 2,
     extraPrompt,
   });
   // 生图 + 文案两条阶段各推进一次。
@@ -199,7 +208,7 @@ describe("编辑结果", () => {
     });
     expect(collection?.sourceBody).toBe("原始文案");
     expect(collection?.sourceTitle).toBe("原始标题");
-    expect(collection?.assets).toHaveLength(1);
+    expect(collection?.assets).toHaveLength(2);
 
     const taskAfter = await getDb().generationResult.findUnique({
       where: { id: firstResultId },
@@ -249,7 +258,7 @@ describe("删除结果", () => {
       where: { id: collectionId },
       select: { assets: { select: { id: true } }, sourceBody: true },
     });
-    expect(collection?.assets).toHaveLength(1);
+    expect(collection?.assets).toHaveLength(2);
     expect(collection?.sourceBody).toBe("原始文案");
   });
 

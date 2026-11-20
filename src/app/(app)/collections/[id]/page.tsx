@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/styles";
 import { isAppError } from "@/lib/errors";
 import { listCollectionResults } from "@/modules/generation/results";
-import { RESULT_COPY } from "@/modules/generation/constants";
+import { CREATION_COPY, RESULT_COPY } from "@/modules/generation/constants";
 import { COLLECTION_COPY, COLLECTION_STATUS_LABELS, MAX_PAGE_SIZE } from "@/modules/media-collection/constants";
 import { getCollection, type CollectionDetailView } from "@/modules/media-collection/service";
 import { PUBLISH_COPY } from "@/modules/publish/constants";
@@ -106,7 +106,12 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <StartCreationDialog collectionId={collection.id} imageCount={collection.assetCount} />
+          {/* 图生图已是唯一的创作方式（ADR 0008）：入口由功能开关判定，关掉时只剩提示、
+              不发请求；这也是 AC-10-4 双向断言的一半。
+              资源夹允许 0 张原图，但发起创作要求至少一张：弹窗里按 `assetCount` 挡住。 */}
+          <FeatureGate feature="image-to-image" label={CREATION_COPY.action}>
+            <StartCreationDialog collectionId={collection.id} assetCount={collection.assetCount} />
+          </FeatureGate>
           <CollectionDialog
             mode="edit"
             collection={{
@@ -182,9 +187,6 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
               </ul>
             )}
 
-            {/* 图生图入口：本版本不实现，由功能开关渲染成禁用态，点击只提示、不发请求
-                （docs/prd/05「本版本的范围边界」、docs/prd/10 AC-10-4）。 */}
-            <FeatureGate feature="image-to-image" />
           </div>
 
           <Panel title={COLLECTION_COPY.sourceSection} className="h-fit min-w-0">
@@ -215,12 +217,14 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
         <EmptyState
           message={RESULT_COPY.emptyList}
           action={
-            <StartCreationDialog
-              collectionId={collection.id}
-              imageCount={collection.assetCount}
-              variant="secondary"
-              label={RESULT_COPY.emptyListAction}
-            />
+            <FeatureGate feature="image-to-image" label={RESULT_COPY.emptyListAction}>
+              <StartCreationDialog
+                collectionId={collection.id}
+                assetCount={collection.assetCount}
+                variant="secondary"
+                label={RESULT_COPY.emptyListAction}
+              />
+            </FeatureGate>
           }
         />
       ) : (

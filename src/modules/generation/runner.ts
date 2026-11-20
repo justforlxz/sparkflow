@@ -15,6 +15,7 @@ import {
   StageError,
   type CollectionContext,
   type ResultRecord,
+  type SourceImageBytes,
   type StageContext,
   type StageErrorRecord,
   type StageHandler,
@@ -27,10 +28,12 @@ export interface RunnerOptions {
   store: TaskStore;
   files: ResultAssetWriter;
   registry: StageRegistry;
-  /** 从资源夹模块取阶段要用的来源信息与图片张数（不直接查别的模块的表）。 */
+  /** 从资源夹模块取阶段要用的来源信息与原图清单（不直接查别的模块的表）。 */
   loadCollection: (collectionId: string) => Promise<CollectionContext>;
+  /** 按 id 读一张原图的字节：一图对一图时逐张读，不把整个资源夹的图片一次性载入内存。 */
+  loadSourceImage: (collectionId: string, assetId: string) => Promise<SourceImageBytes>;
   now?: () => Date;
-  /** 单任务总超时；默认 15 分钟，验收用例注入更短的值。 */
+  /** 单任务总超时；默认 45 分钟，验收用例注入更短的值。 */
   timeoutMs?: number;
 }
 
@@ -76,7 +79,7 @@ async function runHandler(
 }
 
 export function createRunner(options: RunnerOptions): TaskRunner {
-  const { store, files, registry, loadCollection } = options;
+  const { store, files, registry, loadCollection, loadSourceImage } = options;
   const now = options.now ?? (() => new Date());
   const timeoutMs = options.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
 
@@ -101,8 +104,10 @@ export function createRunner(options: RunnerOptions): TaskRunner {
   async function markStageSucceeded(
     stage: StageRecord,
     meta: Record<string, unknown> | null,
+    /** 部分原图失败的原因：阶段仍是 succeeded，但 `error` 要留住它（AC-05-5）。 */
+    error: StageErrorRecord | null = null,
   ): Promise<void> {
-    const count = await store.markStageSucceeded(stage.id, meta, now());
+    const count = await store.markStageSucceeded(stage.id, meta, error, now());
     if (count === 0) {
       logger.warn("阶段成功状态没有写入：该阶段行已不存在或已不是 running", {
         taskId: stage.taskId,
@@ -219,13 +224,26 @@ export function createRunner(options: RunnerOptions): TaskRunner {
       params: {
         visualStyle: task.visualStyle,
         copyStyle: task.copyStyle,
-        imageCount: task.imageCount,
         extraPrompt: task.extraPrompt,
       },
       agents: task.agentSnapshot,
       collection,
       resultId: existingResult?.id ?? null,
       signal: controller.signal,
+      readSourceImage: (assetId: string) => loadSourceImage(task.collectionId, assetId),
+      reportProgress: async (progress) => {
+        // 进度写入失败不该让阶段失败：界面最多少刷新一次「第 k/N 张」。
+        const written = await store.updateStageProgress(stage.id, progress).catch((error) => {
+          logger.warn("阶段进度写入失败，已跳过", { taskId: task.id, stage: stage.stage, error });
+          return 0;
+        });
+        if (written === 0) {
+          logger.warn("阶段进度没有写入：该阶段已不在执行中", {
+            taskId: task.id,
+            stage: stage.stage,
+          });
+        }
+      },
     };
 
     let outcome: StageOutcome;
@@ -252,7 +270,12 @@ export function createRunner(options: RunnerOptions): TaskRunner {
 
     try {
       await persistOutcome(task, outcome, existingResult);
-      await markStageSucceeded(stage, outcome.meta ?? null);
+      // 部分原图失败：阶段仍是 succeeded，但错误要留在阶段上（docs/prd/05 MUST 7、AC-05-5）。
+      const partial =
+        outcome.stage === "image" && outcome.partialError
+          ? stageErrorRecord(outcome.partialError.code, outcome.partialError.message, now())
+          : null;
+      await markStageSucceeded(stage, outcome.meta ?? null, partial);
     } catch (error) {
       // 落盘或写库失败：阶段必须如实失败，不能标成功。
       return failWith(stageErrorFrom(error, now()), outcome.meta ?? null);

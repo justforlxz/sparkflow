@@ -17,14 +17,18 @@ import {
 export interface StageState {
   stage: StageName;
   status: StageStatus;
+  /**
+   * 阶段错误记录。生图阶段「部分原图失败」时状态仍是 `succeeded`，
+   * 但 `error` 不为空 —— 判定表据此把任务算作 `partial`（docs/prd/05 MUST 7、AC-05-5）。
+   */
+  error?: unknown;
 }
 
 /**
  * 任务状态判定表（docs/prd/04「阶段与状态」）：
  *
- * | 阶段组合 | 任务状态 |
- * | --- | --- |
- * | 两个都 succeeded | `succeeded` |
+ * | 两个都 succeeded，且生图没有失败的张 | `succeeded` |
+ * | 生图 succeeded 但有原图失败（阶段 `error` 非空） | `partial` |
  * | image succeeded、copy failed | `partial` |
  * | image failed（copy 保持 queued 或 failed） | `failed` |
  * | 任一 running，或还有 queued 阶段没跑 | `running` |
@@ -35,9 +39,13 @@ export function deriveTaskStatus(stages: readonly StageState[]): TaskStatus {
 
   const image = statusOf("image");
   const copy = statusOf("copy");
+  // 一图对一图（ADR 0008）下，生图阶段可能「有成品、也有一两张失败」：这时阶段算成功，
+  // 但任务必须显示为部分完成，别把缺的那几张说成完整成功。
+  const imageError = stages.find((stage) => stage.stage === "image")?.error;
+  const imagePartial = imageError !== undefined && imageError !== null;
 
   if (image === "failed") return "failed";
-  if (image === "succeeded" && copy === "succeeded") return "succeeded";
+  if (image === "succeeded" && copy === "succeeded") return imagePartial ? "partial" : "succeeded";
   if (image === "succeeded" && copy === "failed") return "partial";
   return "running";
 }

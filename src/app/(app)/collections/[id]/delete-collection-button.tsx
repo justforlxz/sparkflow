@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { buttonClass } from "@/components/ui/styles";
 import { COLLECTION_COPY } from "@/modules/media-collection/constants";
 
 interface DeleteCollectionButtonProps {
@@ -46,7 +47,7 @@ export function DeleteCollectionButton({ collectionId }: DeleteCollectionButtonP
           setError(null);
           setConfirming(true);
         }}
-        className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+        className={buttonClass({ variant: "danger", size: "sm" })}
       >
         {COLLECTION_COPY.deleteAction}
       </button>

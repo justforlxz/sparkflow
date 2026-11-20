@@ -20,12 +20,12 @@ export function FeatureGateFallback({ label, message }: FeatureGateFallbackProps
         type="button"
         aria-disabled="true"
         onClick={() => setNotice(message)}
-        className="cursor-not-allowed rounded border border-zinc-300 bg-zinc-100 px-3 py-1.5 text-sm text-zinc-500"
+        className="inline-flex min-h-9 cursor-not-allowed items-center justify-center rounded-md border border-line bg-soft px-3.5 py-1.5 text-body text-ink-tertiary"
       >
         {label}
       </button>
       {notice ? (
-        <p role="status" className="text-xs text-amber-600">
+        <p role="status" className="text-footnote text-warning">
           {notice}
         </p>
       ) : null}

@@ -3,6 +3,16 @@
 import { useState } from "react";
 import { ErrorState } from "@/components/ui/ErrorState";
 import {
+  buttonClass,
+  dialogClass,
+  DIALOG_TITLE_CLASS,
+  FIELD_CLASS,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  OVERLAY_CLASS,
+  SELECT_CLASS,
+} from "@/components/ui/styles";
+import {
   GATEWAY_PROTOCOLS,
   MODEL_CAPABILITIES,
   findCapability,
@@ -107,30 +117,30 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/40 p-6">
+    <div className={OVERLAY_CLASS}>
       <div
         role="dialog"
         aria-label={editing ? "编辑网关" : "新增网关"}
-        className="w-full max-w-xl space-y-5 rounded-lg bg-white p-6 shadow-xl"
+        className={dialogClass({ width: "xl", className: "space-y-5" })}
       >
-        <h3 className="text-lg font-semibold text-zinc-900">{editing ? "编辑网关" : "新增网关"}</h3>
+        <h3 className={DIALOG_TITLE_CLASS}>{editing ? "编辑网关" : "新增网关"}</h3>
 
         <div className="space-y-4">
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-zinc-800">网关名称</span>
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>网关名称</span>
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+              className={INPUT_CLASS}
             />
           </label>
 
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-zinc-800">接口形状</span>
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>接口形状</span>
             <select
               value={protocol}
               onChange={(event) => setProtocol(event.target.value)}
-              className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+              className={SELECT_CLASS}
             >
               {GATEWAY_PROTOCOLS.map((entry) => (
                 <option key={entry.value} value={entry.value}>
@@ -139,22 +149,22 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
               ))}
             </select>
             {protocolDefinition ? (
-              <span className="block text-xs text-zinc-500">{protocolDefinition.endpoint}</span>
+              <span className="block text-footnote text-ink-tertiary">{protocolDefinition.endpoint}</span>
             ) : null}
           </label>
 
-          <label className="block space-y-1">
-            <span className="text-sm font-medium text-zinc-800">Base URL</span>
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>Base URL</span>
             <input
               value={baseUrl}
               onChange={(event) => setBaseUrl(event.target.value)}
               placeholder="https://magpie.example.com"
-              className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+              className={INPUT_CLASS}
             />
           </label>
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-zinc-800" htmlFor="gateway-api-key">
+            <label className={LABEL_CLASS} htmlFor="gateway-api-key">
               API Key
             </label>
             <div className="flex gap-2">
@@ -168,12 +178,12 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
                 placeholder={
                   editing ? `留空表示保留原密钥（当前 ${gateway?.apiKeyMask}）` : "填入网关密钥"
                 }
-                className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+                className={INPUT_CLASS}
               />
               <button
                 type="button"
                 onClick={() => setShowApiKey((value) => !value)}
-                className="shrink-0 rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700"
+                className={buttonClass({ variant: "secondary" })}
               >
                 {showApiKey ? "隐藏" : "显示"}
               </button>
@@ -182,20 +192,20 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
         </div>
 
         {editing ? (
-          <section aria-label="模型清单" className="space-y-2 border-t border-zinc-200 pt-4">
-            <h4 className="text-sm font-medium text-zinc-800">模型清单</h4>
+          <section aria-label="模型清单" className="space-y-2 border-t border-line pt-4">
+            <h4 className="text-body font-semibold text-ink">模型清单</h4>
             {models.length === 0 ? (
-              <p className="text-xs text-zinc-500">还没有模型。文本协议做连接测试前，需要一个「文本」能力的模型。</p>
+              <p className="text-footnote text-ink-tertiary">还没有模型。文本协议做连接测试前，需要一个「文本」能力的模型。</p>
             ) : (
               <ul className="space-y-1">
                 {models.map((model) => (
                   <li
                     key={model.id}
-                    className="flex items-center justify-between gap-2 rounded border border-zinc-200 px-3 py-2 text-sm"
+                    className="flex items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-body"
                   >
                     <span className="flex items-center gap-2">
-                      <code className="text-zinc-800">{model.modelId}</code>
-                      <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
+                      <code className="text-ink">{model.modelId}</code>
+                      <span className="rounded-sm bg-soft px-2 py-0.5 text-caption text-ink-secondary">
                         {findCapability(model.capability)?.label ?? model.capability}
                       </span>
                     </span>
@@ -204,7 +214,7 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
                       aria-label={`移除模型 ${model.modelId}`}
                       onClick={() => void removeModel(model.modelId)}
                       disabled={modelBusy}
-                      className="text-xs text-red-600 disabled:text-zinc-400"
+                      className="text-footnote text-danger transition-colors hover:text-danger-strong hover:underline disabled:text-ink-tertiary disabled:no-underline"
                     >
                       移除
                     </button>
@@ -215,19 +225,19 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
 
             <div className="flex flex-wrap items-end gap-2">
               <label className="flex-1 space-y-1">
-                <span className="block text-xs text-zinc-600">模型 ID</span>
+                <span className={LABEL_CLASS}>模型 ID</span>
                 <input
                   value={modelId}
                   onChange={(event) => setModelId(event.target.value)}
-                  className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+                  className={INPUT_CLASS}
                 />
               </label>
               <label className="space-y-1">
-                <span className="block text-xs text-zinc-600">能力</span>
+                <span className={LABEL_CLASS}>能力</span>
                 <select
                   value={capability}
                   onChange={(event) => setCapability(event.target.value)}
-                  className="rounded border border-zinc-300 px-3 py-2 text-sm"
+                  className={SELECT_CLASS}
                 >
                   {MODEL_CAPABILITIES.map((entry) => (
                     <option key={entry.value} value={entry.value}>
@@ -240,7 +250,7 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
                 type="button"
                 onClick={() => void addModel()}
                 disabled={modelBusy || modelId.trim().length === 0}
-                className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700 disabled:text-zinc-400"
+                className={buttonClass({ variant: "secondary" })}
               >
                 添加模型
               </button>
@@ -250,11 +260,11 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
 
         {error ? <ErrorState message={error} /> : null}
 
-        <div className="flex justify-end gap-2 border-t border-zinc-200 pt-4">
+        <div className="flex justify-end gap-2 border-t border-line pt-4">
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700"
+            className={buttonClass({ variant: "secondary" })}
           >
             取消
           </button>
@@ -262,7 +272,7 @@ export function GatewayDialog({ gateway, onClose, onChanged }: GatewayDialogProp
             type="button"
             onClick={() => void save()}
             disabled={saving}
-            className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:bg-zinc-400"
+            className={buttonClass({ variant: "primary" })}
           >
             {editing ? "保存" : "创建网关"}
           </button>

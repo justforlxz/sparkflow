@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
+import { buttonClass, noticeClass } from "@/components/ui/styles";
 import {
   CONNECTION_FAILURE_LABELS,
   findCapability,
@@ -105,15 +106,15 @@ export function GatewaySection({ initialGateways }: GatewaySectionProps) {
     <section aria-label="模型网关" className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold text-zinc-900">模型网关</h2>
-          <p className="max-w-2xl text-sm text-zinc-600">
+          <h2 className="text-heading font-semibold text-ink">模型网关</h2>
+          <p className="max-w-2xl text-body text-ink-secondary">
             你自己配置的模型服务入口：接口形状、Base URL、API Key 与模型清单。密钥加密保存，只显示掩码。
           </p>
         </div>
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="shrink-0 rounded bg-zinc-900 px-3 py-2 text-sm text-white"
+          className={buttonClass({ variant: "primary" })}
         >
           新增网关
         </button>
@@ -121,7 +122,7 @@ export function GatewaySection({ initialGateways }: GatewaySectionProps) {
 
       {error ? <ErrorState message={error} /> : null}
       {notice ? (
-        <p role="status" className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <p role="status" className={noticeClass("positive")}>
           {notice}
         </p>
       ) : null}
@@ -137,18 +138,18 @@ export function GatewaySection({ initialGateways }: GatewaySectionProps) {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-semibold text-zinc-900">{gateway.name}</h3>
+                    <h3 className="text-heading font-semibold text-ink">{gateway.name}</h3>
                     <Pill tone="neutral">
                       {findProtocol(gateway.protocol)?.label ?? gateway.protocol}
                     </Pill>
                   </div>
-                  <code className="block break-all text-xs text-zinc-500">{gateway.baseUrl}</code>
+                  <code className="block break-all text-footnote text-ink-tertiary">{gateway.baseUrl}</code>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => setEditing(gateway)}
-                    className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     编辑
                   </button>
@@ -156,49 +157,49 @@ export function GatewaySection({ initialGateways }: GatewaySectionProps) {
                     type="button"
                     onClick={() => void runTest(gateway)}
                     disabled={testingId === gateway.id}
-                    className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 disabled:text-zinc-400"
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     {testingId === gateway.id ? "测试中…" : "测试连接"}
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmingDelete(gateway.id)}
-                    className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600"
+                    className={buttonClass({ variant: "danger", size: "sm" })}
                   >
                     删除
                   </button>
                 </div>
               </div>
 
-              <dl className="grid gap-1 text-sm text-zinc-600 sm:grid-cols-2">
+              <dl className="grid gap-1 text-body text-ink-secondary sm:grid-cols-2">
                 <div className="flex items-baseline gap-2">
-                  <dt className="text-zinc-500">API Key</dt>
+                  <dt className="text-ink-tertiary">API Key</dt>
                   <dd data-testid="gateway-api-key-mask">
                     {gateway.apiKeyMask}
-                    <span className="ml-2 text-xs text-zinc-400">
+                    <span className="ml-2 text-caption text-ink-tertiary">
                       {gateway.hasApiKey ? "已保存" : "未设置"}
                     </span>
                   </dd>
                 </div>
                 <div className="flex items-baseline gap-2">
-                  <dt className="text-zinc-500">模型数量</dt>
+                  <dt className="text-ink-tertiary">模型数量</dt>
                   <dd>{gateway.models.length}</dd>
                 </div>
               </dl>
 
               <div className="space-y-1">
-                <p className="text-xs text-zinc-500">模型清单</p>
+                <p className="text-footnote text-ink-tertiary">模型清单</p>
                 {gateway.models.length === 0 ? (
-                  <p className="text-xs text-zinc-400">暂无模型</p>
+                  <p className="text-footnote text-ink-tertiary">暂无模型</p>
                 ) : (
                   <ul className="flex flex-wrap gap-2">
                     {gateway.models.map((model) => (
                       <li
                         key={model.id}
-                        className="flex items-center gap-1 rounded border border-zinc-200 px-2 py-1 text-xs text-zinc-700"
+                        className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-footnote text-ink-secondary"
                       >
                         <code>{model.modelId}</code>
-                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-600">
+                        <span className="rounded-sm bg-soft px-1.5 py-0.5 text-caption text-ink-secondary">
                           {findCapability(model.capability)?.label ?? model.capability}
                         </span>
                       </li>
@@ -207,28 +208,28 @@ export function GatewaySection({ initialGateways }: GatewaySectionProps) {
                 )}
               </div>
 
-              <p className="text-xs text-zinc-500">{lastTestText(gateway)}</p>
+              <p className="text-footnote text-ink-tertiary">{lastTestText(gateway)}</p>
 
               {gateway.references.length > 0 ? (
-                <p className="text-xs text-amber-600">
+                <p className="text-footnote text-warning">
                   被 {gateway.references.map((reference) => reference.name).join("、")} 引用，不能删除
                 </p>
               ) : null}
 
               {confirmingDelete === gateway.id ? (
-                <div className="flex flex-wrap items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2">
-                  <span className="text-sm text-red-700">确认删除网关 {gateway.name}？此操作不可恢复。</span>
+                <div className={noticeClass("danger", "flex flex-wrap items-center gap-2")}>
+                  <span className="text-body">确认删除网关 {gateway.name}？此操作不可恢复。</span>
                   <button
                     type="button"
                     onClick={() => void remove(gateway)}
-                    className="rounded bg-red-600 px-3 py-1.5 text-sm text-white"
+                    className={buttonClass({ variant: "danger", size: "sm" })}
                   >
                     确认删除
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmingDelete(null)}
-                    className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700"
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     取消
                   </button>

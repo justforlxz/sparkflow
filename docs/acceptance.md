@@ -33,6 +33,9 @@
 2. 只断言用户可观测量：页面文字、可见状态、接口字段与状态码。
 3. 每个用例自带数据准备与清理（资源夹名带随机后缀），不依赖执行顺序。
 4. 涉及外部模型的用例一律用 mock 适配器（`GENERATION_ADAPTER=mock`），真实调用只做人工验证。
+5. **界面源码检查（ADR 0007）**：`src/` 里不得出现 Tailwind 默认色阶（`zinc-*` / `gray-*` / `slate-*` /
+   `red-*` / `amber-*` 等）或默认字号阶梯；颜色与字号只能来自 `globals.css` 的设计变量。
+   该检查由单测 `src/components/ui/design-tokens.test.ts` 自动执行，`pnpm test` 覆盖，无需单列命令。
 
 ## 3. 外部依赖
 

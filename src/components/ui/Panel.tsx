@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 
 /**
  * 卡片容器（docs/prd/09-dashboard.md MUST 4）：页面上的区块统一用它包一层，
- * 不再各自写 `rounded-lg border border-zinc-200 bg-white`。
+ * 不再各自写 `rounded-lg border border-line bg-panel`。
  *
  * 有 `title` 或 `actions` 时渲染一条带分隔线的标题栏；列表项这类没有标题的卡片
- * 直接用 `children`：卡片自身的外观（圆角、边框、底色）只由这里决定，
+ * 直接用 `children`：卡片自身的外观（圆角 14、边框、底色、唯一的阴影档）只由这里决定，
  * `className` 补外层、`bodyClassName` 补内容层、`padded={false}` 让内容贴边。
  */
 export interface PanelProps {
@@ -29,16 +29,18 @@ export function Panel({
   padded = true,
   children,
 }: PanelProps) {
-  const classes = ["rounded-lg border border-zinc-200 bg-white", className ?? ""].join(" ").trim();
+  const classes = ["rounded-lg border border-line bg-panel shadow-panel", className ?? ""]
+    .join(" ")
+    .trim();
   const hasHeader = Boolean(title || description || actions);
 
   return (
     <div className={classes}>
       {hasHeader ? (
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
           <div className="space-y-0.5">
-            {title ? <h2 className="text-base font-semibold text-zinc-900">{title}</h2> : null}
-            {description ? <p className="text-xs text-zinc-500">{description}</p> : null}
+            {title ? <h2 className="text-heading font-semibold text-ink">{title}</h2> : null}
+            {description ? <p className="text-footnote text-ink-tertiary">{description}</p> : null}
           </div>
           {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
         </div>

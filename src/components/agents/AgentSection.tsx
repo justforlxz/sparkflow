@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { fetchJson } from "@/components/api";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { buttonClass } from "@/components/ui/styles";
 import { LoadingState } from "@/components/ui/LoadingState";
 import type { AgentConfigView, AgentModelCandidate } from "@/modules/agent-config/view";
 import { AgentCard, type AgentGatewayOption } from "./AgentCard";
@@ -91,8 +92,8 @@ export function AgentSection({ initialAgents, gatewayOptions }: AgentSectionProp
     <section aria-label="Agent 配置" className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold text-zinc-900">Agent</h2>
-          <p className="max-w-2xl text-sm text-zinc-600">
+          <h2 className="text-heading font-semibold text-ink">Agent</h2>
+          <p className="max-w-2xl text-body text-ink-secondary">
             两个固定的创作 Agent。图片 Agent 的模型可以留空，表示用网关侧的默认图片模型；文案 Agent
             必须绑定模型。创建任务时按这里的配置固化成快照，之后修改不影响已创建的任务。
           </p>
@@ -101,7 +102,7 @@ export function AgentSection({ initialAgents, gatewayOptions }: AgentSectionProp
           type="button"
           onClick={() => void refreshReferenceData()}
           disabled={refreshing}
-          className="shrink-0 rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700 disabled:text-zinc-400"
+          className={buttonClass({ variant: "secondary" })}
         >
           {refreshing ? "加载中…" : "刷新网关与模型"}
         </button>

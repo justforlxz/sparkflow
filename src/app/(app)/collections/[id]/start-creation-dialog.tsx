@@ -4,6 +4,17 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { fetchJson } from "@/components/api";
+import {
+  buttonClass,
+  dialogClass,
+  DIALOG_TITLE_CLASS,
+  FIELD_CLASS,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  OVERLAY_CLASS,
+  SELECT_CLASS,
+  TEXTAREA_CLASS,
+} from "@/components/ui/styles";
 import { COPY_STYLES } from "@/modules/copy-generation/styles";
 import {
   CREATION_COPY,
@@ -64,40 +75,35 @@ export function StartCreationDialog({
     }
   }
 
-  const buttonClass =
-    variant === "primary"
-      ? "rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-      : "rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100";
+  const triggerClass = buttonClass({ variant: variant === "primary" ? "primary" : "secondary" });
 
   return (
     <>
-      <button type="button" data-testid="start-creation" onClick={() => setOpen(true)} className={buttonClass}>
+      <button type="button" data-testid="start-creation" onClick={() => setOpen(true)} className={triggerClass}>
         {label}
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6">
+        <div className={OVERLAY_CLASS}>
           <div
             role="dialog"
             aria-modal="true"
             aria-label={CREATION_COPY.title}
-            className="w-full max-w-lg space-y-4 rounded-lg bg-white p-6 shadow-xl"
+            className={dialogClass({ width: "lg" })}
           >
             <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-zinc-900">{CREATION_COPY.title}</h2>
-              <p className="text-sm text-zinc-600">{CREATION_COPY.intro}</p>
+              <h2 className={DIALOG_TITLE_CLASS}>{CREATION_COPY.title}</h2>
+              <p className="text-body text-ink-secondary">{CREATION_COPY.intro}</p>
             </div>
 
-            <div className="space-y-3 text-sm">
-              <label className="block space-y-1">
-                <span className="block font-medium text-zinc-900">
-                  {CREATION_COPY.visualStyleLabel}
-                </span>
+            <div className="space-y-3 text-body">
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{CREATION_COPY.visualStyleLabel}</span>
                 <select
                   aria-label={CREATION_COPY.visualStyleLabel}
                   value={visualStyle}
                   onChange={(event) => setVisualStyle(event.target.value)}
-                  className="w-full rounded border border-zinc-300 px-3 py-2"
+                  className={SELECT_CLASS}
                 >
                   {VISUAL_STYLES.map((style) => (
                     <option key={style.value} value={style.value}>
@@ -107,15 +113,13 @@ export function StartCreationDialog({
                 </select>
               </label>
 
-              <label className="block space-y-1">
-                <span className="block font-medium text-zinc-900">
-                  {CREATION_COPY.copyStyleLabel}
-                </span>
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{CREATION_COPY.copyStyleLabel}</span>
                 <select
                   aria-label={CREATION_COPY.copyStyleLabel}
                   value={copyStyle}
                   onChange={(event) => setCopyStyle(event.target.value)}
-                  className="w-full rounded border border-zinc-300 px-3 py-2"
+                  className={SELECT_CLASS}
                 >
                   {COPY_STYLES.map((style) => (
                     <option key={style.value} value={style.value}>
@@ -125,10 +129,8 @@ export function StartCreationDialog({
                 </select>
               </label>
 
-              <label className="block space-y-1">
-                <span className="block font-medium text-zinc-900">
-                  {CREATION_COPY.imageCountLabel}
-                </span>
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{CREATION_COPY.imageCountLabel}</span>
                 <input
                   type="number"
                   aria-label={CREATION_COPY.imageCountLabel}
@@ -136,14 +138,12 @@ export function StartCreationDialog({
                   max={MAX_IMAGE_COUNT}
                   value={imageCount}
                   onChange={(event) => setImageCount(Number(event.target.value))}
-                  className="w-32 rounded border border-zinc-300 px-3 py-2"
+                  className={`${INPUT_CLASS} w-32`}
                 />
               </label>
 
-              <label className="block space-y-1">
-                <span className="block font-medium text-zinc-900">
-                  {CREATION_COPY.extraPromptLabel}
-                </span>
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{CREATION_COPY.extraPromptLabel}</span>
                 <textarea
                   aria-label={CREATION_COPY.extraPromptLabel}
                   maxLength={MAX_EXTRA_PROMPT_LENGTH}
@@ -151,7 +151,7 @@ export function StartCreationDialog({
                   value={extraPrompt}
                   onChange={(event) => setExtraPrompt(event.target.value)}
                   placeholder={CREATION_COPY.extraPromptPlaceholder}
-                  className="w-full rounded border border-zinc-300 px-3 py-2"
+                  className={TEXTAREA_CLASS}
                 />
               </label>
             </div>
@@ -162,7 +162,7 @@ export function StartCreationDialog({
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                className={buttonClass({ variant: "secondary" })}
               >
                 {CREATION_COPY.cancelAction}
               </button>
@@ -171,7 +171,7 @@ export function StartCreationDialog({
                 data-testid="submit-creation"
                 onClick={submit}
                 disabled={submitting}
-                className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-60"
+                className={buttonClass({ variant: "primary" })}
               >
                 {submitting ? "提交中…" : CREATION_COPY.submitAction}
               </button>

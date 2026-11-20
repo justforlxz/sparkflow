@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppNav } from "@/components/shell/AppNav";
 import { SHELL_COPY } from "@/components/shell/navigation";
+import { buttonClass } from "@/components/ui/styles";
 import { ToastProvider } from "@/components/ui/Toast";
 import { PATHNAME_HEADER } from "@/lib/session-cookie";
 import { safeNextPath } from "@/modules/auth/redirect";
@@ -36,19 +37,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <ToastProvider>
-      <div className="min-h-screen bg-zinc-50">
+      <div className="min-h-screen bg-bg">
         <aside
           aria-label="应用侧栏"
-          className="fixed inset-y-0 left-0 z-30 flex w-16 flex-col border-r border-zinc-200 bg-white min-[720px]:w-60"
+          className="fixed inset-y-0 left-0 z-30 flex w-16 flex-col border-r border-line bg-panel min-[720px]:w-60"
         >
           <div className="flex items-center justify-center gap-2 px-3 py-4 min-[720px]:justify-start">
             <span
               aria-hidden
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-zinc-900 text-sm font-semibold text-white"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-strong text-body font-semibold text-on-inverse"
             >
               拾
             </span>
-            <span className="hidden text-sm font-semibold text-zinc-900 min-[720px]:inline">
+            <span className="hidden text-body font-semibold text-ink min-[720px]:inline">
               {SHELL_COPY.brandFull}
             </span>
             <span className="sr-only min-[720px]:hidden">{SHELL_COPY.brandShort}</span>
@@ -56,17 +57,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
           <AppNav counts={counts} />
 
-          <div className="mt-auto space-y-2 border-t border-zinc-200 px-3 py-4 text-sm">
-            <p className="hidden text-xs text-zinc-500 min-[720px]:block">
+          <div className="mt-auto space-y-2 border-t border-line px-3 py-4 text-body">
+            <p className="hidden text-caption text-ink-tertiary min-[720px]:block">
               {SHELL_COPY.currentUserLabel}
             </p>
-            <p className="truncate text-center font-medium text-zinc-900 min-[720px]:text-left">
+            <p className="truncate text-center font-medium text-ink min-[720px]:text-left">
               {user.name}
             </p>
             <form action={logoutAction}>
               <button
                 type="submit"
-                className="w-full rounded border border-zinc-300 px-2 py-1.5 text-zinc-700 hover:bg-zinc-100"
+                className={buttonClass({ variant: "secondary", size: "sm", className: "w-full" })}
               >
                 <span className="hidden min-[720px]:inline">{SHELL_COPY.logout}</span>
                 <span className="min-[720px]:hidden">{SHELL_COPY.logoutShort}</span>

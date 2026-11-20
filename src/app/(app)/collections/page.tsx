@@ -4,6 +4,16 @@ import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { COLLECTION_STATUS_TONE } from "@/components/ui/status-tone";
 import {
+  buttonClass,
+ 
+  FIELD_CLASS,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  PAGE_SUBTITLE_CLASS,
+  PAGE_TITLE_CLASS,
+  SELECT_CLASS,
+} from "@/components/ui/styles";
+import {
   COLLECTION_COPY,
   COLLECTION_STATUSES,
   COLLECTION_STATUS_LABELS,
@@ -39,29 +49,29 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold text-zinc-900">{COLLECTION_COPY.listTitle}</h1>
-          <p className="text-sm text-zinc-600">{COLLECTION_COPY.listSubtitle}</p>
+          <h1 className={PAGE_TITLE_CLASS}>{COLLECTION_COPY.listTitle}</h1>
+          <p className={PAGE_SUBTITLE_CLASS}>{COLLECTION_COPY.listSubtitle}</p>
         </div>
         <CollectionDialog mode="create" />
       </div>
 
-      <form action="/collections" method="get" className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="space-y-1">
-          <span className="block font-medium text-zinc-900">搜索</span>
+      <form action="/collections" method="get" className="flex flex-wrap items-end gap-3 text-body">
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>搜索</span>
           <input
             type="search"
             name="q"
             defaultValue={query.q ?? ""}
             placeholder={COLLECTION_COPY.searchPlaceholder}
-            className="w-full rounded border border-zinc-300 px-3 py-2 sm:w-72"
+            className={`${INPUT_CLASS} sm:w-72`}
           />
         </label>
-        <label className="space-y-1">
-          <span className="block font-medium text-zinc-900">{COLLECTION_COPY.statusFilterLabel}</span>
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>{COLLECTION_COPY.statusFilterLabel}</span>
           <select
             name="status"
             defaultValue={query.status ?? ""}
-            className="max-w-full rounded border border-zinc-300 px-3 py-2"
+            className={`${SELECT_CLASS} sm:w-56`}
           >
             <option value="">{COLLECTION_COPY.allStatuses}</option>
             {COLLECTION_STATUSES.map((status) => (
@@ -73,7 +83,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
         </label>
         <button
           type="submit"
-          className="rounded border border-zinc-300 px-4 py-2 text-zinc-700 hover:bg-zinc-100"
+          className={buttonClass({ variant: "secondary" })}
         >
           {COLLECTION_COPY.searchAction}
         </button>
@@ -86,31 +96,31 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
           {list.items.map((item) => (
             <li key={item.id}>
               <Panel className="overflow-hidden" padded={false}>
-                <Link href={`/collections/${item.id}`} className="block">
+                <Link href={`/collections/${item.id}`} className="group block focus-visible:outline-offset-0">
                   {item.coverUrl ? (
                     // 鉴权路由读取原图缩略图，不走 Next 图片优化器。
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={item.coverUrl}
                       alt={item.name}
-                      className="h-40 w-full object-cover"
+                      className="h-40 w-full object-cover transition-opacity group-hover:opacity-95"
                     />
                   ) : (
-                    <div className="flex h-40 items-center justify-center bg-zinc-100 text-sm text-zinc-500">
+                    <div className="flex h-40 items-center justify-center bg-soft text-footnote text-ink-tertiary">
                       {COLLECTION_COPY.emptyAssets}
                     </div>
                   )}
-                  <div className="space-y-2 p-4 text-sm">
+                  <div className="space-y-2 border-t border-line p-4 text-body">
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-medium text-zinc-900">{item.name}</span>
+                      <span className="font-medium text-ink">{item.name}</span>
                       <Pill tone={COLLECTION_STATUS_TONE[item.status]}>
                         {COLLECTION_STATUS_LABELS[item.status]}
                       </Pill>
                     </div>
-                    <p className="text-zinc-500">
+                    <p className="text-footnote text-ink-tertiary">
                       {item.platform ?? COLLECTION_COPY.notFoundSource} · {item.createdAt.slice(0, 10)}
                     </p>
-                    <p className="text-zinc-500">{item.assetCount} 张原图</p>
+                    <p className="text-footnote text-ink-tertiary">{item.assetCount} 张原图</p>
                   </div>
                 </Link>
               </Panel>
@@ -119,7 +129,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
         </ul>
       )}
 
-      <p className="text-xs text-zinc-500">
+      <p className="text-footnote text-ink-tertiary">
         共 {list.total} 个资源夹 · 第 {list.page} 页 · 每页 {list.pageSize} 个
       </p>
     </section>

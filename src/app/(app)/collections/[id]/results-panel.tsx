@@ -8,6 +8,19 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { useToast } from "@/components/ui/Toast";
+import {
+  buttonClass,
+  dialogClass,
+  DIALOG_TITLE_CLASS,
+  FIELD_CLASS,
+  HINT_CLASS,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  noticeClass,
+  OVERLAY_CLASS,
+  SELECT_CLASS,
+  TEXTAREA_CLASS,
+} from "@/components/ui/styles";
 import { RESULT_COPY } from "@/modules/generation/constants";
 import type { ResultView } from "@/modules/generation/view";
 import { VISUAL_STYLES } from "@/modules/image-generation/styles";
@@ -162,14 +175,14 @@ export function ResultsPanel({
                       target="_blank"
                       rel="noreferrer"
                       title={RESULT_COPY.openLarge}
-                      className="block"
+                      className="block rounded-md"
                     >
                       {/* 鉴权路由读取生成图片缩略图，不走 Next 图片优化器。 */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={asset.thumbnailUrl}
                         alt={asset.fileName}
-                        className="h-32 w-full rounded border border-zinc-200 object-cover"
+                        className="h-32 w-full rounded-md border border-line object-cover transition-opacity hover:opacity-90"
                       />
                     </a>
                   </li>
@@ -179,16 +192,16 @@ export function ResultsPanel({
               {/* 生成图可能带上游模型自带的水印：让用户在交付前自己看见并确认（MKACG-901 MUST 1）。 */}
               <p
                 data-testid="result-watermark-notice"
-                className="break-words rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                className={noticeClass("warning", "text-footnote")}
               >
                 {PUBLISH_COPY.upstreamWatermarkNotice}
               </p>
 
-              <div className="space-y-2 text-sm">
+              <div className="space-y-2 text-body">
                 {/* 失败提示只是附加说明：手动补写过的标题 / 正文 / 标签必须照常显示（docs/prd/07 MUST 1）。 */}
                 {result.copyFailed ? (
-                  <div className="space-y-2 rounded border border-amber-200 bg-amber-50 p-3">
-                    <p data-testid="copy-failed-hint" className="text-amber-800">
+                  <div className={noticeClass("warning", "space-y-2")}>
+                    <p data-testid="copy-failed-hint">
                       {RESULT_COPY.copyFailedHint}
                     </p>
                     <button
@@ -196,7 +209,7 @@ export function ResultsPanel({
                       data-testid="copy-retry-button"
                       onClick={() => retryCopy(result)}
                       disabled={busy}
-                      className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+                      className={buttonClass({ variant: "warning", size: "sm" })}
                     >
                       {RESULT_COPY.retryAction}
                     </button>
@@ -204,25 +217,25 @@ export function ResultsPanel({
                 ) : null}
 
                 {result.title ? (
-                  <h3 data-testid="result-title" className="text-base font-semibold text-zinc-900">
+                  <h3 data-testid="result-title" className="text-heading font-semibold text-ink">
                     {result.title}
                   </h3>
                 ) : null}
                 {result.body ? (
                   <p
                     data-testid="result-body"
-                    className="whitespace-pre-wrap break-words text-zinc-700"
+                    className="whitespace-pre-wrap break-words text-ink-secondary"
                   >
                     {result.body}
                   </p>
                 ) : null}
                 {result.tags.length > 0 ? (
-                  <p data-testid="result-tags" className="text-xs text-zinc-500">
+                  <p data-testid="result-tags" className="text-footnote text-ink-tertiary">
                     {result.tags.map((tag) => `#${tag}`).join(" ")}
                   </p>
                 ) : null}
 
-                <p className="text-xs text-zinc-500">
+                <p className="text-footnote text-ink-tertiary">
                   {result.visualStyleLabel} · {RESULT_COPY.generatedAtLabel}{" "}
                   {result.createdAt.slice(0, 10)} · {RESULT_COPY.imageCountLabel}{" "}
                   {result.assets.length} 张 ·{" "}
@@ -245,7 +258,7 @@ export function ResultsPanel({
                       setPublishing(result);
                       setError(null);
                     }}
-                    className="rounded bg-zinc-900 px-3 py-1.5 text-white hover:bg-zinc-700"
+                    className={buttonClass({ variant: "primary", size: "sm" })}
                   >
                     {PUBLISH_COPY.prepareAction}
                   </button>
@@ -253,7 +266,7 @@ export function ResultsPanel({
                     type="button"
                     data-testid="edit-result"
                     onClick={() => openEdit(result)}
-                    className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700 hover:bg-zinc-100"
+                    className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     {RESULT_COPY.editAction}
                   </button>
@@ -264,7 +277,7 @@ export function ResultsPanel({
                       setDeleting(result);
                       setError(null);
                     }}
-                    className="rounded border border-red-300 px-3 py-1.5 text-red-700 hover:bg-red-50"
+                    className={buttonClass({ variant: "danger", size: "sm" })}
                   >
                     {RESULT_COPY.deleteAction}
                   </button>
@@ -276,54 +289,52 @@ export function ResultsPanel({
       </ul>
 
       {editing && form ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6">
+        <div className={OVERLAY_CLASS}>
           <div
             role="dialog"
             aria-modal="true"
             aria-label={RESULT_COPY.editTitle}
-            className="w-full max-w-lg space-y-4 rounded-lg bg-white p-6 shadow-xl"
+            className={dialogClass({ width: "lg" })}
           >
-            <h2 className="text-lg font-semibold text-zinc-900">{RESULT_COPY.editTitle}</h2>
+            <h2 className={DIALOG_TITLE_CLASS}>{RESULT_COPY.editTitle}</h2>
 
-            <div className="space-y-3 text-sm">
-              <label className="block space-y-1">
-                <span className="block font-medium text-zinc-900">{RESULT_COPY.titleLabel}</span>
+            <div className="space-y-3 text-body">
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{RESULT_COPY.titleLabel}</span>
                 <input
                   aria-label={RESULT_COPY.titleLabel}
                   value={form.title}
                   onChange={(event) => setForm({ ...form, title: event.target.value })}
-                  className="w-full rounded border border-zinc-300 px-3 py-2"
+                  className={INPUT_CLASS}
                 />
               </label>
-              <label className="block space-y-1">
-                <span className="block font-medium text-zinc-900">{RESULT_COPY.bodyLabel}</span>
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{RESULT_COPY.bodyLabel}</span>
                 <textarea
                   aria-label={RESULT_COPY.bodyLabel}
                   rows={6}
                   value={form.body}
                   onChange={(event) => setForm({ ...form, body: event.target.value })}
-                  className="w-full rounded border border-zinc-300 px-3 py-2"
+                  className={TEXTAREA_CLASS}
                 />
               </label>
-              <label className="block space-y-1">
-                <span className="block font-medium text-zinc-900">{RESULT_COPY.tagsLabel}</span>
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{RESULT_COPY.tagsLabel}</span>
                 <input
                   aria-label={RESULT_COPY.tagsLabel}
                   value={form.tags}
                   onChange={(event) => setForm({ ...form, tags: event.target.value })}
-                  className="w-full rounded border border-zinc-300 px-3 py-2"
+                  className={INPUT_CLASS}
                 />
-                <span className="block text-xs text-zinc-500">{RESULT_COPY.tagsHint}</span>
+                <span className={HINT_CLASS}>{RESULT_COPY.tagsHint}</span>
               </label>
-              <label className="block space-y-1">
-                <span className="block font-medium text-zinc-900">
-                  {RESULT_COPY.visualStyleLabel}
-                </span>
+              <label className={FIELD_CLASS}>
+                <span className={LABEL_CLASS}>{RESULT_COPY.visualStyleLabel}</span>
                 <select
                   aria-label={RESULT_COPY.visualStyleLabel}
                   value={form.visualStyle}
                   onChange={(event) => setForm({ ...form, visualStyle: event.target.value })}
-                  className="w-full rounded border border-zinc-300 px-3 py-2"
+                  className={SELECT_CLASS}
                 >
                   {VISUAL_STYLES.map((style) => (
                     <option key={style.value} value={style.value}>
@@ -341,7 +352,7 @@ export function ResultsPanel({
                   setEditing(null);
                   setForm(null);
                 }}
-                className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                className={buttonClass({ variant: "secondary" })}
               >
                 {RESULT_COPY.cancelAction}
               </button>
@@ -350,7 +361,7 @@ export function ResultsPanel({
                 data-testid="edit-save"
                 onClick={saveEdit}
                 disabled={busy || form.title.trim() === "" || form.body.trim() === ""}
-                className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-60"
+                className={buttonClass({ variant: "primary" })}
               >
                 {RESULT_COPY.saveAction}
               </button>

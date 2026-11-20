@@ -3,6 +3,13 @@ import { notFound } from "next/navigation";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { STAGE_STATUS_TONE, TASK_STATUS_TONE } from "@/components/ui/status-tone";
+import {
+  buttonClass,
+  noticeClass,
+  PAGE_SUBTITLE_CLASS,
+  PAGE_TITLE_CLASS,
+  TEXT_LINK_CLASS,
+} from "@/components/ui/styles";
 import { isAppError } from "@/lib/errors";
 import { STAGE_NAMES, TASK_COPY, type StageStatus } from "@/modules/generation/constants";
 import { getTask } from "@/modules/generation/service";
@@ -30,9 +37,9 @@ function formatTime(value: string | null): string {
 
 function ParameterRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-3 border-b border-zinc-100 py-2 last:border-b-0">
-      <dt className="w-24 shrink-0 text-zinc-500">{label}</dt>
-      <dd className="whitespace-pre-wrap break-words text-zinc-900">{value}</dd>
+    <div className="flex gap-3 border-b border-line py-2 last:border-b-0">
+      <dt className="w-24 shrink-0 text-ink-tertiary">{label}</dt>
+      <dd className="whitespace-pre-wrap break-words text-ink">{value}</dd>
     </div>
   );
 }
@@ -44,14 +51,14 @@ export default async function TaskDetailPage({ params }: PageProps) {
 
   return (
     <section className="space-y-6">
-      <Link href="/tasks" className="text-sm text-zinc-500 hover:text-zinc-900">
+      <Link href="/tasks" className={`text-footnote ${TEXT_LINK_CLASS}`}>
         {TASK_COPY.backToList}
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold text-zinc-900">{task.collectionName}</h1>
-          <p className="flex flex-wrap items-center gap-3 text-sm text-zinc-500">
+          <h1 className={PAGE_TITLE_CLASS}>{task.collectionName}</h1>
+          <p className={`flex flex-wrap items-center gap-3 ${PAGE_SUBTITLE_CLASS}`}>
             <Pill tone={TASK_STATUS_TONE[task.status]}>{task.statusLabel}</Pill>
             <span>
               {TASK_COPY.createdAtLabel} {formatTime(task.createdAt)}
@@ -60,7 +67,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
         </div>
         <Link
           href={`/collections/${task.collectionId}?tab=results`}
-          className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100"
+          className={buttonClass({ variant: "secondary" })}
         >
           {TASK_COPY.viewResultAction}
         </Link>
@@ -68,28 +75,28 @@ export default async function TaskDetailPage({ params }: PageProps) {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-3">
-          <h2 className="text-base font-semibold text-zinc-900">{TASK_COPY.stageSection}</h2>
+          <h2 className="text-heading font-semibold text-ink">{TASK_COPY.stageSection}</h2>
           <ul className="space-y-3">
             {STAGE_NAMES.map((name) => {
               const stage = task.stages[name];
               return (
                 <li key={name} data-testid={`stage-${name}-card`}>
-                  <Panel bodyClassName="space-y-1 text-sm">
+                  <Panel bodyClassName="space-y-1 text-body">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-zinc-900">{stage.label}</span>
+                      <span className="font-medium text-ink">{stage.label}</span>
                       <span data-testid={`stage-${name}-status`}>
                         <Pill tone={STAGE_STATUS_TONE[stage.status as StageStatus]}>
                           {stage.statusLabel}
                         </Pill>
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-footnote text-ink-tertiary">
                       {TASK_COPY.stageAttemptsLabel}{" "}
                       <span data-testid={`stage-${name}-attempts`}>{stage.attempts}</span> 次 ·{" "}
                       {TASK_COPY.stageFinishedLabel} {formatTime(stage.finishedAt)}
                     </p>
                     {stage.error ? (
-                      <p data-testid={`stage-${name}-error`} className="text-xs text-red-600">
+                      <p data-testid={`stage-${name}-error`} className="text-footnote text-danger">
                         {TASK_COPY.stageErrorLabel}：{stage.error.message}
                       </p>
                     ) : null}
@@ -103,8 +110,8 @@ export default async function TaskDetailPage({ params }: PageProps) {
               data-testid="retry-hint"
               className={
                 task.retryHint.state === "snapshot-changed"
-                  ? "rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800"
-                  : "text-xs text-zinc-500"
+                  ? noticeClass("warning", "text-footnote")
+                  : "text-footnote text-ink-tertiary"
               }
             >
               {task.retryHint.message}
@@ -113,7 +120,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
         </div>
 
         <Panel title={TASK_COPY.paramsLabel} className="h-fit">
-          <dl className="text-sm">
+          <dl className="text-body">
             <ParameterRow label={TASK_COPY.visualStyleLabel} value={task.visualStyleLabel} />
             <ParameterRow label={TASK_COPY.copyStyleLabel} value={task.copyStyleLabel} />
             <ParameterRow label={TASK_COPY.imageCountLabel} value={`${task.imageCount} 张`} />
@@ -126,14 +133,14 @@ export default async function TaskDetailPage({ params }: PageProps) {
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-base font-semibold text-zinc-900">{TASK_COPY.agentSection}</h2>
+        <h2 className="text-heading font-semibold text-ink">{TASK_COPY.agentSection}</h2>
         <div className="grid gap-4 lg:grid-cols-2">
           {(["image", "copy"] as const).map((type) => (
             <Panel key={type}>
-              <p className="font-medium text-zinc-900">
+              <p className="font-medium text-ink">
                 {type === "image" ? "图片 Agent" : "文案 Agent"}
               </p>
-              <p className="whitespace-pre-wrap break-words text-xs text-zinc-600">
+              <p className="whitespace-pre-wrap break-words text-footnote text-ink-secondary">
                 {task.agents[type].systemPrompt}
               </p>
             </Panel>
@@ -146,13 +153,13 @@ export default async function TaskDetailPage({ params }: PageProps) {
           <Link
             href={`/collections/${task.collectionId}?tab=results`}
             data-testid="result-entry"
-            className="inline-block text-sm text-zinc-700 underline hover:text-zinc-900"
+            className={TEXT_LINK_CLASS}
           >
             {/* 标题为空只说明文案阶段没成功，生图阶段的结果还在，不能说成「没有结果」。 */}
             {task.result.title ?? TASK_COPY.viewImagesAction}
           </Link>
         ) : (
-          <p data-testid="no-result-hint" className="text-sm text-zinc-500">
+          <p data-testid="no-result-hint" className="text-body text-ink-tertiary">
             {TASK_COPY.noResult}
           </p>
         )}

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { noticeClass } from "./styles";
 
 /**
  * 错误提示（docs/prd/09-dashboard.md MUST 4、docs/architecture.md 第 4 节）。
@@ -13,17 +14,10 @@ export interface ErrorStateProps {
 }
 
 export function ErrorState({ message, action, className }: ErrorStateProps) {
-  const classes = [
-    "space-y-2 rounded border border-danger-soft bg-danger-soft px-3 py-2 text-sm text-danger",
-    className ?? "",
-  ]
-    .join(" ")
-    .trim();
-
   return (
-    <div role="alert" className={classes}>
+    <div role="alert" className={noticeClass("danger", className)}>
       <p>{message}</p>
-      {action ? <div className="flex flex-wrap items-center gap-2">{action}</div> : null}
+      {action ? <div className="flex flex-wrap items-center gap-2 pt-2">{action}</div> : null}
     </div>
   );
 }

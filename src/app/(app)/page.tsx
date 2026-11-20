@@ -3,6 +3,12 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { COLLECTION_STATUS_TONE } from "@/components/ui/status-tone";
+import {
+  buttonClass,
+  CARD_LINK_CLASS,
+  PAGE_SUBTITLE_CLASS,
+  PAGE_TITLE_CLASS,
+} from "@/components/ui/styles";
 import { DASHBOARD_COPY } from "@/modules/dashboard/constants";
 import { getDashboardStats } from "@/modules/dashboard/service";
 import { COLLECTION_STATUS_LABELS } from "@/modules/media-collection/constants";
@@ -51,8 +57,8 @@ export default async function DashboardPage() {
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold text-zinc-900">{DASHBOARD_COPY.title}</h1>
-          <p className="max-w-2xl text-sm leading-6 text-zinc-600">{DASHBOARD_COPY.subtitle}</p>
+          <h1 className={PAGE_TITLE_CLASS}>{DASHBOARD_COPY.title}</h1>
+          <p className={`max-w-2xl ${PAGE_SUBTITLE_CLASS}`}>{DASHBOARD_COPY.subtitle}</p>
         </div>
         <CollectionDialog mode="create" />
       </div>
@@ -64,14 +70,14 @@ export default async function DashboardPage() {
         {STAT_CARDS.map((card) => (
           <Panel key={card.key}>
             <div className="space-y-1">
-              <dt className="text-xs text-zinc-500">{card.label}</dt>
+              <dt className="text-footnote text-ink-tertiary">{card.label}</dt>
               <dd
                 data-testid={`stat-${card.key}`}
-                className="text-2xl font-semibold text-zinc-900"
+                className="text-display font-semibold text-ink"
               >
                 {stats[card.key]}
               </dd>
-              <p className="text-xs text-zinc-500">{card.hint}</p>
+              <p className="text-caption text-ink-tertiary">{card.hint}</p>
             </div>
           </Panel>
         ))}
@@ -84,7 +90,7 @@ export default async function DashboardPage() {
             <Link
               href="/collections"
               data-testid="dashboard-view-all"
-              className="text-sm text-zinc-600 underline hover:text-zinc-900"
+              className={buttonClass({ variant: "ghost", size: "sm" })}
             >
               {DASHBOARD_COPY.viewAll}
             </Link>
@@ -100,7 +106,7 @@ export default async function DashboardPage() {
                     href={`/collections/${collection.id}`}
                     data-testid="recent-collection"
                     data-collection-id={collection.id}
-                    className="flex items-center gap-3 rounded border border-zinc-200 p-2 hover:bg-zinc-50"
+                    className={CARD_LINK_CLASS}
                   >
                     {collection.coverUrl ? (
                       // 鉴权路由读取原图缩略图，不走 Next 图片优化器。
@@ -108,18 +114,18 @@ export default async function DashboardPage() {
                       <img
                         src={collection.coverUrl}
                         alt={collection.name}
-                        className="h-12 w-12 shrink-0 rounded object-cover"
+                        className="h-12 w-12 shrink-0 rounded-md border border-line object-cover"
                       />
                     ) : (
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-zinc-100 text-center text-xs text-zinc-500">
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-soft text-center text-caption text-ink-tertiary">
                         {DASHBOARD_COPY.noCover}
                       </span>
                     )}
                     <span className="min-w-0 flex-1 space-y-1">
-                      <span className="block truncate text-sm font-medium text-zinc-900">
+                      <span className="block truncate text-body font-medium text-ink">
                         {collection.name}
                       </span>
-                      <span className="block text-xs text-zinc-500">
+                      <span className="block text-footnote text-ink-tertiary">
                         {collection.assetCount} {DASHBOARD_COPY.assetCountLabel} ·{" "}
                         {formatDate(collection.createdAt)}
                       </span>
@@ -141,7 +147,7 @@ export default async function DashboardPage() {
               action={
                 <Link
                   href="/collections"
-                  className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                  className={buttonClass({ variant: "secondary" })}
                 >
                   {DASHBOARD_COPY.emptyResultsAction}
                 </Link>
@@ -155,7 +161,7 @@ export default async function DashboardPage() {
                     href={`/collections/${result.collectionId}?tab=results`}
                     data-testid="recent-result"
                     data-result-id={result.id}
-                    className="flex items-center gap-3 rounded border border-zinc-200 p-2 hover:bg-zinc-50"
+                    className={CARD_LINK_CLASS}
                   >
                     {result.thumbnailUrl ? (
                       // 鉴权路由读取生成图片缩略图，不走 Next 图片优化器。
@@ -163,16 +169,16 @@ export default async function DashboardPage() {
                       <img
                         src={result.thumbnailUrl}
                         alt={result.title ?? DASHBOARD_COPY.untitledResult}
-                        className="h-12 w-12 shrink-0 rounded object-cover"
+                        className="h-12 w-12 shrink-0 rounded-md border border-line object-cover"
                       />
                     ) : (
-                      <span className="h-12 w-12 shrink-0 rounded bg-zinc-100" />
+                      <span className="h-12 w-12 shrink-0 rounded-md bg-soft" />
                     )}
                     <span className="min-w-0 flex-1 space-y-1">
-                      <span className="block truncate text-sm font-medium text-zinc-900">
+                      <span className="block truncate text-body font-medium text-ink">
                         {result.title ?? DASHBOARD_COPY.untitledResult}
                       </span>
-                      <span className="block truncate text-xs text-zinc-500">
+                      <span className="block truncate text-footnote text-ink-tertiary">
                         {result.collectionName} · {formatDate(result.createdAt)}
                       </span>
                     </span>

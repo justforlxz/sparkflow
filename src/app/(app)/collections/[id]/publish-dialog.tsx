@@ -3,6 +3,19 @@
 import { useState } from "react";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { fetchJson } from "@/components/api";
+import {
+  buttonClass,
+  CHECKBOX_CLASS,
+  dialogClass,
+  DIALOG_TITLE_CLASS,
+  FIELD_CLASS,
+  HINT_CLASS,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  noticeClass,
+  OVERLAY_CLASS,
+  TEXTAREA_CLASS,
+} from "@/components/ui/styles";
 import type { ResultView } from "@/modules/generation/view";
 import { PUBLISH_COPY } from "@/modules/publish/constants";
 import { formatPublishText, parseTagInput } from "@/modules/publish/text";
@@ -89,34 +102,34 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
       : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-6">
+    <div className={OVERLAY_CLASS}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label={PUBLISH_COPY.prepareTitle}
-        className="max-h-full w-full max-w-2xl space-y-4 overflow-y-auto rounded-lg bg-white p-6 shadow-xl"
+        className={dialogClass({ width: "2xl" })}
       >
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold text-zinc-900">{PUBLISH_COPY.prepareTitle}</h2>
-          <p className="text-xs text-zinc-500">{PUBLISH_COPY.prepareIntro}</p>
+          <h2 className={DIALOG_TITLE_CLASS}>{PUBLISH_COPY.prepareTitle}</h2>
+          <p className="text-footnote text-ink-tertiary">{PUBLISH_COPY.prepareIntro}</p>
         </div>
 
         {error ? <ErrorState message={error} /> : null}
         {notice ? (
-          <p role="status" className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <p role="status" className={noticeClass("positive")}>
             {notice}
           </p>
         ) : null}
 
         <section className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-medium text-zinc-900">{PUBLISH_COPY.selectImagesLabel}</h3>
-            <div className="flex gap-2 text-xs">
+            <h3 className="text-body-lg font-semibold text-ink">{PUBLISH_COPY.selectImagesLabel}</h3>
+            <div className="flex gap-2 text-footnote">
               <button
                 type="button"
                 data-testid="publish-select-all"
                 onClick={() => setSelected(result.assets.map((asset) => asset.id))}
-                className="rounded border border-zinc-300 px-2 py-1 text-zinc-600 hover:bg-zinc-100"
+                className={buttonClass({ variant: "secondary", size: "sm" })}
               >
                 {PUBLISH_COPY.selectAllAction}
               </button>
@@ -124,7 +137,7 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
                 type="button"
                 data-testid="publish-select-none"
                 onClick={() => setSelected([])}
-                className="rounded border border-zinc-300 px-2 py-1 text-zinc-600 hover:bg-zinc-100"
+                className={buttonClass({ variant: "secondary", size: "sm" })}
               >
                 {PUBLISH_COPY.selectNoneAction}
               </button>
@@ -134,7 +147,7 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
           {/* 与结果页签同一处提示：发布前让用户自己确认水印（MKACG-901 MUST 1）。 */}
           <p
             data-testid="publish-watermark-notice"
-            className="break-words rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            className={noticeClass("warning", "text-footnote")}
           >
             {PUBLISH_COPY.upstreamWatermarkNotice}
           </p>
@@ -142,7 +155,7 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {result.assets.map((asset) => (
               <li key={asset.id}>
-                <label className="block space-y-1 text-xs text-zinc-600">
+                <label className="block space-y-1 text-caption text-ink-tertiary">
                   {/* 鉴权路由读取生成图片缩略图，不走 Next 图片优化器。 */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -150,13 +163,14 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
                     alt={asset.fileName}
                     className={
                       selected.includes(asset.id)
-                        ? "h-24 w-full rounded border-2 border-zinc-900 object-cover"
-                        : "h-24 w-full rounded border-2 border-transparent object-cover opacity-60"
+                        ? "h-24 w-full rounded-md border-2 border-accent-strong object-cover"
+                        : "h-24 w-full rounded-md border-2 border-transparent object-cover opacity-50 hover:opacity-80"
                     }
                   />
                   <span className="flex items-center gap-1">
                     <input
                       type="checkbox"
+                      className={CHECKBOX_CLASS}
                       data-testid="publish-asset"
                       data-asset-id={asset.id}
                       checked={selected.includes(asset.id)}
@@ -169,13 +183,13 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
             ))}
           </ul>
 
-          <div className="flex flex-wrap items-center gap-3 text-sm">
+          <div className="flex flex-wrap items-center gap-3 text-body">
             {downloadHref ? (
               <a
                 href={downloadHref}
                 download
                 data-testid="publish-download"
-                className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700 hover:bg-zinc-100"
+                className={buttonClass({ variant: "secondary" })}
               >
                 {PUBLISH_COPY.downloadAction}
               </a>
@@ -183,68 +197,68 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
               <span
                 aria-disabled="true"
                 data-testid="publish-download-disabled"
-                className="cursor-not-allowed rounded border border-zinc-200 px-3 py-1.5 text-zinc-400"
+                className="inline-flex min-h-9 cursor-not-allowed items-center justify-center rounded-md border border-line px-3.5 py-1.5 text-body text-ink-tertiary"
               >
                 {PUBLISH_COPY.downloadAction}
               </span>
             )}
-            <span className="text-xs text-zinc-500">{PUBLISH_COPY.downloadZipHint}</span>
+            <span className="text-footnote text-ink-tertiary">{PUBLISH_COPY.downloadZipHint}</span>
           </div>
         </section>
 
-        <section className="space-y-3 text-sm">
-          <label className="block space-y-1">
-            <span className="block font-medium text-zinc-900">{PUBLISH_COPY.titleLabel}</span>
+        <section className="space-y-3 text-body">
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>{PUBLISH_COPY.titleLabel}</span>
             <input
               aria-label={PUBLISH_COPY.titleLabel}
               data-testid="publish-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              className="w-full rounded border border-zinc-300 px-3 py-2"
+              className={INPUT_CLASS}
             />
           </label>
-          <label className="block space-y-1">
-            <span className="block font-medium text-zinc-900">{PUBLISH_COPY.bodyLabel}</span>
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>{PUBLISH_COPY.bodyLabel}</span>
             <textarea
               aria-label={PUBLISH_COPY.bodyLabel}
               data-testid="publish-body"
               rows={6}
               value={body}
               onChange={(event) => setBody(event.target.value)}
-              className="w-full rounded border border-zinc-300 px-3 py-2"
+              className={TEXTAREA_CLASS}
             />
           </label>
-          <label className="block space-y-1">
-            <span className="block font-medium text-zinc-900">{PUBLISH_COPY.tagsLabel}</span>
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>{PUBLISH_COPY.tagsLabel}</span>
             <input
               aria-label={PUBLISH_COPY.tagsLabel}
               data-testid="publish-tags"
               value={tags}
               onChange={(event) => setTags(event.target.value)}
-              className="w-full rounded border border-zinc-300 px-3 py-2"
+              className={INPUT_CLASS}
             />
-            <span className="block text-xs text-zinc-500">{PUBLISH_COPY.tagsHint}</span>
+            <span className={HINT_CLASS}>{PUBLISH_COPY.tagsHint}</span>
           </label>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               data-testid="publish-copy"
               onClick={copyText}
-              className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700 hover:bg-zinc-100"
+              className={buttonClass({ variant: "secondary" })}
             >
               {PUBLISH_COPY.copyAction}
             </button>
           </div>
         </section>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               data-testid="publish-mark"
               onClick={markPublished}
               disabled={busy || selected.length === 0}
-              className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-60"
+              className={buttonClass({ variant: "primary" })}
             >
               {PUBLISH_COPY.markPublishedAction}
             </button>
@@ -254,7 +268,7 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
             type="button"
             data-testid="publish-close"
             onClick={onClose}
-            className="rounded border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+            className={buttonClass({ variant: "secondary" })}
           >
             {PUBLISH_COPY.closeAction}
           </button>

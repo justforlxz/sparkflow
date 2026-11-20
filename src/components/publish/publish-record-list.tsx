@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Panel } from "@/components/ui/Panel";
+import { TEXT_LINK_CLASS } from "@/components/ui/styles";
 import { PUBLISH_COPY } from "@/modules/publish/constants";
 import type { PublishRecordView } from "@/modules/publish/view";
 
@@ -29,7 +30,7 @@ export function PublishRecordList({ records, emptyText }: PublishRecordListProps
           <Panel bodyClassName="flex gap-4">
             <Link
               href={`/collections/${record.collectionId}?tab=results`}
-              className="block h-20 w-20 shrink-0 overflow-hidden rounded border border-zinc-200"
+              className="block h-20 w-20 shrink-0 overflow-hidden rounded-md border border-line focus-visible:outline-offset-0"
             >
               {record.thumbnailUrl ? (
                 // 鉴权路由读取生成图片缩略图，不走 Next 图片优化器。
@@ -40,26 +41,26 @@ export function PublishRecordList({ records, emptyText }: PublishRecordListProps
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <span className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                <span className="flex h-full w-full items-center justify-center text-caption text-ink-tertiary">
                   {PUBLISH_COPY.noTitle}
                 </span>
               )}
             </Link>
 
-            <div className="min-w-0 space-y-1 text-sm">
-              <p data-testid="publish-record-title" className="truncate font-medium text-zinc-900">
+            <div className="min-w-0 space-y-1 text-body">
+              <p data-testid="publish-record-title" className="truncate font-medium text-ink">
                 {record.title || PUBLISH_COPY.noTitle}
               </p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-footnote text-ink-tertiary">
                 {PUBLISH_COPY.publishedAtLabel} {formatTime(record.publishedAt)} ·{" "}
                 {PUBLISH_COPY.imageCountLabel} {record.imageCount} 张 · {PUBLISH_COPY.platformLabel}{" "}
                 {record.platform}
               </p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-footnote text-ink-tertiary">
                 {PUBLISH_COPY.sourceCollectionLabel}{" "}
                 <Link
                   href={`/collections/${record.collectionId}?tab=published`}
-                  className="underline hover:text-zinc-900"
+                  className={TEXT_LINK_CLASS}
                 >
                   {record.collectionName}
                 </Link>

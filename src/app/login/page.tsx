@@ -1,3 +1,4 @@
+import { buttonClass, FIELD_CLASS, INPUT_CLASS, LABEL_CLASS } from "@/components/ui/styles";
 import { safeNextPath } from "@/modules/auth/redirect";
 import { hasAnyUser } from "@/modules/auth/service";
 import { loginAction, registerAction } from "./actions";
@@ -24,14 +25,14 @@ export default async function LoginPage({
   const errorMessage = params.error ? ERROR_MESSAGES[params.error] : undefined;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-50 px-6">
+    <main className="flex min-h-screen items-center justify-center bg-bg px-6 py-10">
       <form
         action={firstRun ? registerAction : loginAction}
-        className="w-full max-w-sm space-y-4 rounded-lg border border-zinc-200 bg-white p-6"
+        className="w-full max-w-sm space-y-5 rounded-lg border border-line bg-panel p-6 shadow-panel"
       >
         <div className="space-y-1">
-          <h1 className="text-lg font-semibold text-zinc-900">拾光 · AI 内容工坊</h1>
-          <p className="text-sm text-zinc-600">
+          <h1 className="text-display font-semibold text-ink">拾光 · AI 内容工坊</h1>
+          <p className="text-body text-ink-secondary">
             {firstRun ? "首次使用：创建第一个账号。" : "登录后继续。"}
           </p>
         </div>
@@ -39,49 +40,49 @@ export default async function LoginPage({
         <input type="hidden" name="next" value={nextPath} />
 
         {firstRun ? (
-          <label className="block space-y-1 text-sm">
-            <span className="font-medium text-zinc-900">姓名</span>
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>姓名</span>
             <input
               name="name"
               type="text"
               autoComplete="name"
               required
-              className="w-full rounded border border-zinc-300 px-3 py-2"
+              className={INPUT_CLASS}
             />
           </label>
         ) : null}
 
-        <label className="block space-y-1 text-sm">
-          <span className="font-medium text-zinc-900">邮箱</span>
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>邮箱</span>
           <input
             name="email"
             type="email"
             autoComplete="username"
             required
-            className="w-full rounded border border-zinc-300 px-3 py-2"
+            className={INPUT_CLASS}
           />
         </label>
 
-        <label className="block space-y-1 text-sm">
-          <span className="font-medium text-zinc-900">密码</span>
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>密码</span>
           <input
             name="password"
             type="password"
             autoComplete={firstRun ? "new-password" : "current-password"}
             required
-            className="w-full rounded border border-zinc-300 px-3 py-2"
+            className={INPUT_CLASS}
           />
         </label>
 
         {errorMessage ? (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-body text-danger">
             {errorMessage}
           </p>
         ) : null}
 
         <button
           type="submit"
-          className="w-full rounded bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+          className={buttonClass({ variant: "primary", className: "w-full" })}
         >
           {firstRun ? "创建账号并进入" : "登录"}
         </button>

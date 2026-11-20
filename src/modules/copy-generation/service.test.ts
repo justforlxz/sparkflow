@@ -27,6 +27,8 @@ vi.mock("@/modules/gateway/service", async () => {
         apiKey: "sk-test-local-do-not-use-1234",
       };
     },
+    // 视觉提取的网关客户端：默认「没有配置理解网关」，需要它的用例自己注入。
+    createVisionClient: vi.fn(async () => null),
   };
 });
 
@@ -43,26 +45,57 @@ const COPY_AGENT: AgentSnapshot = {
   role: "你是一名小红书文案撰写者。",
   systemPrompt: "只依据原始素材写作。",
   outputRequirements: "输出 JSON：title、body、tags。",
+  // 快照记录绑定模型的能力：默认只有文本能力，视觉提取走降级路径（AC-06-8）。
 };
 
 const IMAGE_AGENT: AgentSnapshot = { ...COPY_AGENT, agentType: "image", protocol: "magpie-mcp" };
+
+/** 两张原图；`readSourceImage` 只回报字节，压缩由 `deps.compress` 换成直通。 */
+const ASSETS = [
+  { id: "asset-1", fileName: "a.png", mimeType: "image/png" },
+  { id: "asset-2", fileName: "b.png", mimeType: "image/png" },
+];
 
 function makeContext(copy: Partial<AgentSnapshot> = {}): StageContext {
   return {
     taskId: "task-1",
     attempt: 1,
-    params: { visualStyle: "fresh", copyStyle: "story", imageCount: 4, extraPrompt: "语气轻松" },
+    params: { visualStyle: "fresh", copyStyle: "story", extraPrompt: "语气轻松" },
     agents: { image: IMAGE_AGENT, copy: { ...COPY_AGENT, ...copy } },
     collection: {
       id: "collection-1",
       platform: "小红书",
       sourceTitle: "原始标题",
       sourceBody: "原始文案内容",
-      assetCount: 2,
+      assets: ASSETS,
     },
     resultId: "result-1",
     signal: new AbortController().signal,
+    readSourceImage: async (assetId: string) => ({
+      bytes: Buffer.from(`bytes-of-${assetId}`),
+      mimeType: "image/png",
+    }),
+    reportProgress: async () => {},
   };
+}
+
+/** 单测跳过 sharp：直通压缩（形状仍是 data URL），压缩规则由 image-generation 的压缩单测覆盖。 */
+const passthroughCompress = async (bytes: Buffer): Promise<string> =>
+  `data:image/jpeg;base64,${bytes.toString("base64")}`;
+
+/** 假的图片理解客户端：按次序回描述或抛错，并记录每次入参。 */
+class FakeVision {
+  readonly calls: { image: string; prompt: string }[] = [];
+
+  constructor(private readonly responses: (string | Error)[]) {}
+
+  async analyzeImage(input: { image: string; prompt: string }): Promise<string> {
+    this.calls.push(input);
+    const next = this.responses.shift();
+    if (next === undefined) throw new Error("假理解网关准备的响应不够用");
+    if (next instanceof Error) throw next;
+    return next;
+  }
 }
 
 const okApiKey = async (): Promise<string> => API_KEY;
@@ -91,8 +124,73 @@ describe("文案阶段处理器", () => {
     expect(body.model).toBe("text-model");
     expect(body.messages[0].content).toContain("你是一名小红书文案撰写者。");
     expect(body.messages[1].content).toContain("原始标题");
-    expect(body.messages[1].content).toContain("张数：4");
+    expect(body.messages[1].content).toContain("张数：2");
+    expect(body.messages[1].content).toContain("照片内容：未提供");
+    expect(outcome.meta).toMatchObject({
+      visualExtraction: "skipped-no-vision-gateway",
+      visualDescriptionCount: 0,
+    });
     expect(JSON.stringify(outcome.meta)).not.toContain(API_KEY);
+  });
+
+  it("AC-06-7 理解网关可用时，每张原图各提取一条描述并全部进提示词", async () => {
+    const generator = createMockTextGenerator(MOCK_COPY_TEXT);
+    const vision = new FakeVision(["描述一：绿萝", "描述二：咖啡杯"]);
+    const stage = createCopyStage({
+      generator,
+      loadApiKey: okApiKey,
+      compress: passthroughCompress,
+      vision,
+    });
+
+    const outcome = await stage.run(makeContext());
+
+    // 两张原图各一次识别（data URL 入参），再发一次文案请求。
+    expect(vision.calls).toHaveLength(2);
+    expect(vision.calls.every((call) => call.image.startsWith("data:image/jpeg;base64,"))).toBe(
+      true,
+    );
+    const user = generator.calls[0]?.user ?? "";
+    expect(user).toContain("  1. 描述一：绿萝");
+    expect(user).toContain("  2. 描述二：咖啡杯");
+
+    if (outcome.stage !== "copy") throw new Error("阶段类型不符");
+    expect(outcome.meta).toMatchObject({ visualExtraction: "done", visualDescriptionCount: 2 });
+  });
+
+  it("AC-06-8 没有理解网关时仍可完成，但元信息标注未包含照片内容", async () => {
+    const generator = createMockTextGenerator(MOCK_COPY_TEXT);
+    const stage = createCopyStage({ generator, loadApiKey: okApiKey, vision: null });
+
+    const outcome = await stage.run(makeContext());
+
+    expect(generator.calls).toHaveLength(1);
+    if (outcome.stage !== "copy") throw new Error("阶段类型不符");
+    expect(outcome.copy.title).toBe("按脚本生成的标题");
+    expect(outcome.meta).toMatchObject({
+      visualExtraction: "skipped-no-vision-gateway",
+      visualDescriptionCount: 0,
+    });
+  });
+
+  it("AC-06-8 理解网关识别失败时同样降级，不让文案阶段失败", async () => {
+    const generator = createMockTextGenerator(MOCK_COPY_TEXT);
+    const vision = new FakeVision([new Error("上游 500")]);
+    const stage = createCopyStage({
+      generator,
+      loadApiKey: okApiKey,
+      compress: passthroughCompress,
+      vision,
+    });
+
+    const outcome = await stage.run(makeContext());
+
+    expect(generator.calls[0]?.user).toContain("本次没有获取到照片内容");
+    if (outcome.stage !== "copy") throw new Error("阶段类型不符");
+    expect(outcome.meta).toMatchObject({
+      visualExtraction: "skipped-vision-failed",
+      visualDescriptionCount: 0,
+    });
   });
 
   it("密钥按快照里的 gatewayId 现取，不写进处理器产出", async () => {

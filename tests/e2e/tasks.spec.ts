@@ -50,7 +50,7 @@ interface TaskView {
   statusLabel: string;
   visualStyle: string;
   copyStyle: string;
-  imageCount: number;
+  expectedImageCount: number;
   extraPrompt: string | null;
   createdAt: string;
   stages: { image: StageView; copy: StageView };
@@ -161,7 +161,22 @@ async function ensureGateway(request: APIRequestContext): Promise<string> {
   return gatewayId;
 }
 
-async function createCollectionWithImage(request: APIRequestContext): Promise<string> {
+/** 造一个带 n 张原图的资源夹：成品张数 = 原图张数（ADR 0008）。 */
+async function createCollectionWithImage(
+  request: APIRequestContext,
+  count = 1,
+): Promise<string> {
+  const images = Object.fromEntries(
+    Array.from({ length: count }, (_, index) => [
+      `images-${index}`,
+      {
+        name: `${String.fromCharCode(97 + index)}.png`,
+        mimeType: "image/png",
+        buffer: PNG_ONE_PIXEL,
+      },
+    ]),
+  );
+
   const response = await request.post("/api/collections", {
     multipart: {
       name: uniqueName("e2e-task-collection"),
@@ -169,7 +184,7 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
       sourceUrl: "https://example.com/note/1",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
-      "images-0": { name: "a.png", mimeType: "image/png", buffer: PNG_ONE_PIXEL },
+      ...images,
     },
   });
   expect(response.status()).toBe(201);
@@ -181,13 +196,12 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
 async function createTask(
   request: APIRequestContext,
   collectionId: string,
-  input: { imageCount?: number; extraPrompt?: string | null } = {},
+  input: { extraPrompt?: string | null } = {},
 ): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
     data: {
       visualStyle: "fresh",
       copyStyle: "story",
-      imageCount: input.imageCount ?? 2,
       extraPrompt: input.extraPrompt ?? null,
     },
   });
@@ -267,11 +281,11 @@ test("AC-04-1 创建任务立即返回（< 1s），两阶段初始状态为 queu
   const collectionId = await createCollectionWithImage(request);
 
   // dev server 首次访问这个路由会即时编译；先发一次请求预热，再测量真实响应时间。
-  await createTask(request, collectionId, { imageCount: 1 });
+  await createTask(request, collectionId);
 
   const started = Date.now();
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
-    data: { visualStyle: "fresh", copyStyle: "story", imageCount: 2, extraPrompt: null },
+    data: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
   });
   const elapsed = Date.now() - started;
 
@@ -287,8 +301,8 @@ test("AC-04-1 创建任务立即返回（< 1s），两阶段初始状态为 queu
 });
 
 test("AC-04-2 两个阶段都成功后任务为 succeeded 并关联到结果", async ({ request }) => {
-  const collectionId = await createCollectionWithImage(request);
-  const created = await createTask(request, collectionId, { imageCount: 2 });
+  const collectionId = await createCollectionWithImage(request, 2);
+  const created = await createTask(request, collectionId);
 
   const task = await waitForTerminal(request, created.id, "succeeded");
   expect(task.stages.image.status).toBe("succeeded");
@@ -334,7 +348,7 @@ test("AC-04-4 停用图片 Agent 后创建任务被拒绝（AGENT_NOT_READY）�
   await patchAgent(request, "image", { enabled: false });
 
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
-    data: { visualStyle: "fresh", copyStyle: "story", imageCount: 1, extraPrompt: null },
+    data: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
   });
 
   expect(response.status()).toBe(409);
@@ -352,9 +366,8 @@ test("AC-04-4 停用图片 Agent 后创建任务被拒绝（AGENT_NOT_READY）�
 test("AC-04-6 对 partial 任务重试：只有文案阶段重跑，attempts 变为 2，图片未被替换", async ({
   request,
 }) => {
-  const collectionId = await createCollectionWithImage(request);
+  const collectionId = await createCollectionWithImage(request, 2);
   const created = await createTask(request, collectionId, {
-    imageCount: 2,
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
 
@@ -399,7 +412,6 @@ test("AC-05-12 连续两次重试：第二次因阶段已在跑返回 CONFLICT�
 }) => {
   const collectionId = await createCollectionWithImage(request);
   const created = await createTask(request, collectionId, {
-    imageCount: 1,
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
   await waitForTerminal(request, created.id, "partial");
@@ -432,7 +444,6 @@ test("AC-FIX-1 AC-FIX-2 并发重试：恰好一个 200、一个 409，attempts 
 
   for (let round = 1; round <= 5; round += 1) {
     const created = await createTask(request, collectionId, {
-      imageCount: 1,
       extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
     });
     const partial = await waitForTerminal(request, created.id, "partial");
@@ -460,7 +471,7 @@ test("AC-FIX-1 AC-FIX-2 并发重试：恰好一个 200、一个 409，attempts 
 
 test("AC-03-8 任务创建后修改 Agent 提示词，任务详情里的快照不变", async ({ request }) => {
   const collectionId = await createCollectionWithImage(request);
-  const created = await createTask(request, collectionId, { imageCount: 1 });
+  const created = await createTask(request, collectionId);
   const snapshotPrompt = created.agents?.copy.systemPrompt ?? "";
   expect(snapshotPrompt.length).toBeGreaterThan(0);
 

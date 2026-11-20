@@ -57,6 +57,18 @@ export async function findGateway(id: string): Promise<GatewayRecord | null> {
   return getDb().gateway.findUnique({ where: { id }, select: GATEWAY_SELECT });
 }
 
+/**
+ * 按接口形状找一条网关：同一形状可能配了多条，取最近更新的一条。
+ * 目前只有图片理解（`magpie-vision`）用它——它不绑定到某个 Agent，属平台级能力。
+ */
+export async function findGatewayByProtocol(protocol: string): Promise<GatewayRecord | null> {
+  return getDb().gateway.findFirst({
+    where: { protocol },
+    select: GATEWAY_SELECT,
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
 export async function createGatewayRecord(input: {
   name: string;
   protocol: string;

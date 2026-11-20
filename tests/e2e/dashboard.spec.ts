@@ -206,7 +206,7 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
 
 async function createTask(request: APIRequestContext, collectionId: string): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
-    data: { visualStyle: "fresh", copyStyle: "story", imageCount: 2, extraPrompt: null },
+    data: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
   });
   expect(response.status()).toBe(201);
   return ((await response.json()) as { data: { task: TaskView } }).data.task;

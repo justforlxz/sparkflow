@@ -1,9 +1,12 @@
 /**
- * magpie 图片 MCP（MCP Streamable HTTP，JSON-RPC）。端点 `POST <baseUrl>/mcp/magpie/image`。
+ * magpie 的两条 MCP（Streamable HTTP，JSON-RPC）连接测试：
+ * 图片 `POST <baseUrl>/mcp/magpie/image`、图片理解 `POST <baseUrl>/mcp/magpie/vision`。
  *
- * 连接测试按 docs/prd/02 SHOULD 发两步真实请求：`initialize` 确认端点存在且 key 可用，
- * 再 `tools/list` 确认这个端点上确实挂着 MCP 工具。
- * 这里只做连通性判定，不实现出图调用（属 `docs/prd/05`）。
+ * 连接测试按 docs/prd/02 SHOULD 发真实请求：`initialize` 确认端点存在，再 `tools/list` 确认这个端点上
+ * 确实挂着约定的工具。这里只做连通性判定，不实现出图与识别调用（分别属 `docs/prd/05`、`06`）。
+ *
+ * 线上实测（2026-11-20，MKACG-920）：`initialize`、`tools/list`、`tools/call` 不带 key **全部 401**
+ * （`no API key was sent`），鉴权是全链路要求。这里每个请求都带 key。
  */
 import { sendProbe } from "./http";
 import { ConnectionTestError, type ProbeDeps, type ProbeRequest, type ProbeTarget, type ProtocolAdapter } from "./types";
@@ -13,6 +16,12 @@ export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 /** 图片 MCP 的端点路径：连接测试与出图共用（docs/prd/02、05）。 */
 export const MCP_PATH = "/mcp/magpie/image";
+/** 图片理解 MCP 的端点路径：连接测试与视觉提取共用（docs/prd/02、06）。 */
+export const VISION_MCP_PATH = "/mcp/magpie/vision";
+
+/** 约定的工具名：图片理解只要 `analyze_image`（docs/prd/06「视觉提取」）。 */
+export const VISION_TOOL = "analyze_image";
+
 const CLIENT_NAME = "sparkflow";
 
 function baseHeaders(apiKey: string): Record<string, string> {
@@ -24,9 +33,9 @@ function baseHeaders(apiKey: string): Record<string, string> {
   };
 }
 
-export function buildInitializeRequest(target: ProbeTarget): ProbeRequest {
+function initializeRequest(target: ProbeTarget, path: string): ProbeRequest {
   return {
-    url: `${target.baseUrl}${MCP_PATH}`,
+    url: `${target.baseUrl}${path}`,
     headers: baseHeaders(target.apiKey),
     body: JSON.stringify({
       jsonrpc: "2.0",
@@ -41,15 +50,29 @@ export function buildInitializeRequest(target: ProbeTarget): ProbeRequest {
   };
 }
 
-export function buildToolsListRequest(target: ProbeTarget, sessionId: string | null): ProbeRequest {
+function toolsListRequest(
+  target: ProbeTarget,
+  sessionId: string | null,
+  path: string,
+): ProbeRequest {
   const headers = baseHeaders(target.apiKey);
   if (sessionId) headers["mcp-session-id"] = sessionId;
   headers["mcp-protocol-version"] = MCP_PROTOCOL_VERSION;
   return {
-    url: `${target.baseUrl}${MCP_PATH}`,
+    url: `${target.baseUrl}${path}`,
     headers,
     body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
   };
+}
+
+/** 图片 MCP 的 `initialize` 探测请求（单测直接断言形状）。 */
+export function buildInitializeRequest(target: ProbeTarget): ProbeRequest {
+  return initializeRequest(target, MCP_PATH);
+}
+
+/** 图片 MCP 的 `tools/list` 探测请求（单测直接断言形状）。 */
+export function buildToolsListRequest(target: ProbeTarget, sessionId: string | null): ProbeRequest {
+  return toolsListRequest(target, sessionId, MCP_PATH);
 }
 
 export interface JsonRpcEnvelope {
@@ -88,29 +111,66 @@ export function extractToolNames(envelope: JsonRpcEnvelope): string[] {
     .filter((name): name is string => typeof name === "string");
 }
 
+interface McpProbeSpec {
+  readonly path: string;
+  /** 这个端点必须挂着的工具：缺了就说明地址或部署不对。 */
+  readonly requiredTool: string;
+  /** 失败文案里指代端点的说法。 */
+  readonly label: string;
+}
+
+/** 两步探测：`initialize` 确认端点存在，`tools/list` 确认工具清单里有约定的那一件。 */
+async function probeMcp(
+  target: ProbeTarget,
+  deps: ProbeDeps,
+  spec: McpProbeSpec,
+): Promise<string> {
+  const initialize = await sendProbe(initializeRequest(target, spec.path), deps);
+  const initializeEnvelope = parseJsonRpc(initialize.bodyText);
+  if (!initializeEnvelope || initializeEnvelope.error) {
+    throw ConnectionTestError.config(`MCP 端点没有按 JSON-RPC 回应 initialize，地址可能不对`);
+  }
+
+  const toolsList = await sendProbe(
+    toolsListRequest(target, initialize.header("mcp-session-id"), spec.path),
+    deps,
+  );
+  const toolsEnvelope = parseJsonRpc(toolsList.bodyText);
+  if (!toolsEnvelope || toolsEnvelope.error) {
+    throw ConnectionTestError.config("MCP 端点没有按 JSON-RPC 回应 tools/list");
+  }
+
+  const tools = extractToolNames(toolsEnvelope);
+  if (tools.length === 0) {
+    throw ConnectionTestError.config(`MCP 端点没有返回任何工具，请确认地址是${spec.label}`);
+  }
+  if (!tools.includes(spec.requiredTool)) {
+    throw ConnectionTestError.config(
+      `${spec.label}上没有「${spec.requiredTool}」工具，请确认地址与部署`,
+    );
+  }
+
+  return `MCP 端点可用（${tools.length} 个工具，含 ${spec.requiredTool}）`;
+}
+
 export const magpieMcpAdapter: ProtocolAdapter = {
   protocol: "magpie-mcp",
   async probe(target: ProbeTarget, deps: ProbeDeps = {}): Promise<string> {
-    const initialize = await sendProbe(buildInitializeRequest(target), deps);
-    const initializeEnvelope = parseJsonRpc(initialize.bodyText);
-    if (!initializeEnvelope || initializeEnvelope.error) {
-      throw ConnectionTestError.config("MCP 端点没有按 JSON-RPC 回应 initialize，地址可能不对");
-    }
+    return probeMcp(target, deps, {
+      path: MCP_PATH,
+      requiredTool: "generate_image",
+      label: "图片 MCP",
+    });
+  },
+};
 
-    const toolsList = await sendProbe(
-      buildToolsListRequest(target, initialize.header("mcp-session-id")),
-      deps,
-    );
-    const toolsEnvelope = parseJsonRpc(toolsList.bodyText);
-    if (!toolsEnvelope || toolsEnvelope.error) {
-      throw ConnectionTestError.config("MCP 端点没有按 JSON-RPC 回应 tools/list");
-    }
-
-    const tools = extractToolNames(toolsEnvelope);
-    if (tools.length === 0) {
-      throw ConnectionTestError.config("MCP 端点没有返回任何工具，请确认地址是图片 MCP");
-    }
-
-    return `MCP 端点可用（${tools.length} 个工具）`;
+export const magpieVisionAdapter: ProtocolAdapter = {
+  protocol: "magpie-vision",
+  async probe(target: ProbeTarget, deps: ProbeDeps = {}): Promise<string> {
+    return probeMcp(target, deps, {
+      path: VISION_MCP_PATH,
+      requiredTool: VISION_TOOL,
+      label: "图片理解 MCP",
+    });
   },
 };

@@ -7,9 +7,11 @@ import { createTask, getTask, retryTask } from "@/modules/generation/service";
 import { createStageRegistry } from "@/modules/generation/registry";
 import { taskStore } from "@/modules/generation/repo";
 import { createRunner } from "@/modules/generation/runner";
-import { MOCK_SCRIPT_HINTS, mockCopyStage, mockImageStage } from "@/modules/generation/stages/mock";
+import { MOCK_SCRIPT_HINTS, mockCopyStage } from "@/modules/generation/stages/mock";
 import { resultAssetWriter } from "@/modules/generation/storage";
-import { loadStageCollectionContext } from "@/modules/generation/worker";
+import { loadSourceImage, loadStageCollectionContext } from "@/modules/generation/worker";
+import { MockImageGenerator } from "@/modules/image-generation/adapters/mock";
+import { createImageStage } from "@/modules/image-generation/stage";
 import {
   addCollectionAssets,
   createCollection,
@@ -92,7 +94,10 @@ async function prepareReadyAgents(): Promise<void> {
   });
 }
 
-async function createCollectionWithImage(name: string): Promise<string> {
+/**
+ * 造一个带 n 张原图的资源夹：一图对一图（ADR 0008）下成品张数就等于它。
+ */
+async function createCollectionWithImage(name: string, count = 1): Promise<string> {
   const collection = await createCollection(
     {
       name,
@@ -101,19 +106,26 @@ async function createCollectionWithImage(name: string): Promise<string> {
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
     },
-    [{ fileName: "a.png", bytes: PNG_BYTES }],
+    Array.from({ length: count }, (_, index) => ({
+      fileName: `${String.fromCharCode(97 + index)}.png`,
+      bytes: PNG_BYTES,
+    })),
   );
   createdCollectionIds.push(collection.id);
   return collection.id;
 }
 
-/** 用 mock 处理器直接推进阶段，不启动轮询循环。 */
+/** 用 mock 出图适配器直接推进阶段，不启动轮询循环、不碰真实网关。 */
 function buildRunner() {
   return createRunner({
     store: taskStore,
     files: resultAssetWriter,
-    registry: createStageRegistry([mockImageStage, mockCopyStage]),
+    registry: createStageRegistry([
+      createImageStage({ generator: new MockImageGenerator() }),
+      mockCopyStage,
+    ]),
     loadCollection: loadStageCollectionContext,
+    loadSourceImage,
   });
 }
 
@@ -128,12 +140,11 @@ async function runStages(taskId: string, rounds = 2): Promise<void> {
 
 test("创建任务写两条排队阶段并固化快照，跑完后结果含图片与文案", async () => {
   await prepareReadyAgents();
-  const collectionId = await createCollectionWithImage("集成-任务落库");
+  const collectionId = await createCollectionWithImage("集成-任务落库", 2);
 
   const created = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 2,
     extraPrompt: null,
   });
 
@@ -185,7 +196,6 @@ test("AC-05-11 生图阶段失败时不写 generation_result，文案阶段保�
   const created = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 2,
     extraPrompt: MOCK_SCRIPT_HINTS.failImage,
   });
 
@@ -201,12 +211,11 @@ test("AC-05-11 生图阶段失败时不写 generation_result，文案阶段保�
 
 test("AC-04-6、AC-05-12 重试只重排失败阶段，连续两次重试第二次返回 CONFLICT", async () => {
   await prepareReadyAgents();
-  const collectionId = await createCollectionWithImage("集成-重试文案");
+  const collectionId = await createCollectionWithImage("集成-重试文案", 2);
 
   const created = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 2,
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
 
@@ -251,12 +260,11 @@ test("AC-04-6、AC-05-12 重试只重排失败阶段，连续两次重试第二�
 
 test("生图阶段重跑时复用已有结果行并替换图片（不再撞 task_id 唯一约束）", async () => {
   await prepareReadyAgents();
-  const collectionId = await createCollectionWithImage("集成-结果复用");
+  const collectionId = await createCollectionWithImage("集成-结果复用", 2);
 
   const created = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 2,
     extraPrompt: null,
   });
 
@@ -312,7 +320,6 @@ test("AC-04-8 全部成功后重试返回 CONFLICT 且不产生副作用", async
   const created = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 1,
     extraPrompt: null,
   });
   await runStages(created.id);
@@ -343,7 +350,6 @@ test("删除资源夹级联清掉任务、阶段、结果与生成图片（全�
   const created = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 1,
     extraPrompt: null,
   });
   await runStages(created.id);
@@ -366,7 +372,6 @@ test("AC-02-10 资源夹有运行中任务时禁止改图，列表状态为 gene
   const created = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 1,
     extraPrompt: null,
   });
 
@@ -394,7 +399,6 @@ test("AC-04-10 启动清理：把残留的 running 记为 SERVER_RESTARTED，排
   const crashed = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 1,
     extraPrompt: null,
   });
   const claimed = await taskStore.claimNextStage(new Date());
@@ -404,7 +408,6 @@ test("AC-04-10 启动清理：把残留的 running 记为 SERVER_RESTARTED，排
   const waiting = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 1,
     extraPrompt: null,
   });
 
@@ -429,7 +432,6 @@ test("AC-03-8 任务创建后修改 Agent 提示词，任务详情里的快照�
   const created = await createTask(collectionId, {
     visualStyle: "fresh",
     copyStyle: "story",
-    imageCount: 1,
     extraPrompt: null,
   });
   const snapshotPrompt = created.agents.copy.systemPrompt;

@@ -11,7 +11,12 @@ import { listAgentViews, requireAgentSnapshots } from "@/modules/agent-config/se
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import { listGatewayViews } from "@/modules/gateway/service";
 import type { GatewayView } from "@/modules/gateway/view";
-import { getCollection, getCollectionNames } from "@/modules/media-collection/service";
+import {
+  getCollection,
+  getCollectionAssetCounts,
+  getCollectionNames,
+} from "@/modules/media-collection/service";
+import { requireEnabled } from "@/modules/feature-flags/service";
 import { STAGE_LABELS, STAGE_NAMES, type StageName } from "./constants";
 import {
   planStagesToRetry,
@@ -67,9 +72,10 @@ async function buildDetail(taskId: string): Promise<TaskDetailView> {
   const record = await taskStore.findTask(taskId);
   if (!record) throw AppError.notFound("创作任务不存在");
 
-  const [result, names, gateways] = await Promise.all([
+  const [result, names, assetCounts, gateways] = await Promise.all([
     taskStore.findResultByTask(taskId),
     getCollectionNames([record.task.collectionId]),
+    getCollectionAssetCounts([record.task.collectionId]),
     listGatewayViews(),
   ]);
   // 资源夹被删时任务随外键级联删除，取不到名称说明数据已损坏，不编造占位文案。
@@ -77,7 +83,13 @@ async function buildDetail(taskId: string): Promise<TaskDetailView> {
   if (!collectionName) {
     throw new AppError("INTERNAL", "创作任务所属的资源夹不存在，请检查数据写入路径");
   }
-  return toTaskDetailView(record, result, collectionName, await currentAgentBindings(gateways));
+  return toTaskDetailView(
+    record,
+    result,
+    collectionName,
+    await currentAgentBindings(gateways),
+    assetCounts[record.task.collectionId] ?? 0,
+  );
 }
 
 /**
@@ -88,6 +100,9 @@ export async function createTask(
   collectionId: string,
   input: CreateTaskInput,
 ): Promise<TaskDetailView> {
+  // 创建任务就是「按原图一对一出图」：功能关闭时必须在入口拦下，不产生任何任务记录
+  // （docs/prd/10 MUST 2、AC-10-4）。
+  await requireEnabled("image-to-image");
   const collection = await getCollection(collectionId);
   assertCollectionHasImages(collection.assetCount);
 
@@ -102,19 +117,19 @@ export async function createTask(
     collectionId,
     visualStyle: input.visualStyle,
     copyStyle: input.copyStyle,
-    imageCount: input.imageCount,
     extraPrompt: input.extraPrompt ?? null,
     agentSnapshot: agents,
   });
 
-  return toTaskDetailView(created, null, collection.name, currentAgents);
+  return toTaskDetailView(created, null, collection.name, currentAgents, collection.assetCount);
 }
 
 /** 任务列表：带上资源夹名（列表要显示它），一次批量取，避免逐行查询。 */
 export async function listTasks(): Promise<TaskSummaryView[]> {
   const [records, gateways] = await Promise.all([taskStore.listTasks(), listGatewayViews()]);
-  const [names, currentAgents] = await Promise.all([
+  const [names, assetCounts, currentAgents] = await Promise.all([
     getCollectionNames(records.map((record) => record.task.collectionId)),
+    getCollectionAssetCounts(records.map((record) => record.task.collectionId)),
     currentAgentBindings(gateways),
   ]);
 
@@ -123,7 +138,12 @@ export async function listTasks(): Promise<TaskSummaryView[]> {
     if (!collectionName) {
       throw new AppError("INTERNAL", "创作任务所属的资源夹不存在，请检查数据写入路径");
     }
-    return toTaskSummaryView(record, collectionName, currentAgents);
+    return toTaskSummaryView(
+      record,
+      collectionName,
+      currentAgents,
+      assetCounts[record.task.collectionId] ?? 0,
+    );
   });
 }
 

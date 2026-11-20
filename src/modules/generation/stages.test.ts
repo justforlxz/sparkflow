@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { createStageRegistry } from "./registry";
 import { defaultStageRegistry } from "./stages";
-import { MOCK_SCRIPT_HINTS, mockCopyStage, mockImageStage } from "./stages/mock";
-import { StageError, type StageContext } from "./types";
+import { MOCK_SCRIPT_HINTS, mockCopyStage, mockFailImageAt } from "./stages/mock";
+import type { StageContext } from "./types";
 
 /** 单测不依赖外部环境变量；`@/lib/env` 只在调用时读取。 */
 beforeAll(() => {
@@ -14,7 +14,7 @@ beforeAll(() => {
 const CONTEXT: StageContext = {
   taskId: "task-1",
   attempt: 1,
-  params: { visualStyle: "fresh", copyStyle: "story", imageCount: 3, extraPrompt: null },
+  params: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
   agents: {
     image: {
       agentType: "image",
@@ -46,10 +46,18 @@ const CONTEXT: StageContext = {
     platform: null,
     sourceTitle: null,
     sourceBody: null,
-    assetCount: 2,
+    assets: [
+      { id: "asset-1", fileName: "a.png", mimeType: "image/png" },
+      { id: "asset-2", fileName: "b.png", mimeType: "image/png" },
+    ],
   },
   resultId: "result-1",
   signal: new AbortController().signal,
+  readSourceImage: async (assetId: string) => ({
+    bytes: Buffer.from(`bytes-of-${assetId}`),
+    mimeType: "image/png",
+  }),
+  reportProgress: async () => {},
 };
 
 function withPrompt(prompt: string): StageContext {
@@ -58,15 +66,15 @@ function withPrompt(prompt: string): StageContext {
 
 describe("阶段注册表", () => {
   it("按阶段名取处理器，未注册返回 null", () => {
-    const registry = createStageRegistry([mockImageStage]);
-    expect(registry.get("image")).toBe(mockImageStage);
-    expect(registry.get("copy")).toBeNull();
-    expect(registry.registeredStages()).toEqual(["image"]);
+    const registry = createStageRegistry([mockCopyStage]);
+    expect(registry.get("copy")).toBe(mockCopyStage);
+    expect(registry.get("image")).toBeNull();
+    expect(registry.registeredStages()).toEqual(["copy"]);
   });
 
   it("同一阶段重复注册直接报错，避免两套实现悄悄互相覆盖", () => {
-    const registry = createStageRegistry([mockImageStage]);
-    expect(() => registry.register(mockImageStage)).toThrowError(/已有处理器/);
+    const registry = createStageRegistry([mockCopyStage]);
+    expect(() => registry.register(mockCopyStage)).toThrowError(/已有处理器/);
   });
 
   it("mock 适配器下两个阶段都注册好，真实实现可以按阶段追加", () => {
@@ -75,21 +83,6 @@ describe("阶段注册表", () => {
 });
 
 describe("mock 阶段处理器（GENERATION_ADAPTER=mock）", () => {
-  it("生图阶段按目标张数返回图片，并记录调用摘要", async () => {
-    const outcome = await mockImageStage.run(CONTEXT);
-    expect(outcome.stage).toBe("image");
-    if (outcome.stage !== "image") throw new Error("阶段类型不符");
-    expect(outcome.images).toHaveLength(3);
-    expect(outcome.images.every((image) => image.mimeType === "image/png")).toBe(true);
-    expect(outcome.meta).toMatchObject({ model: "mock-image" });
-  });
-
-  it("按脚本让生图阶段失败（AC-05-11 用）", async () => {
-    await expect(mockImageStage.run(withPrompt(MOCK_SCRIPT_HINTS.failImage))).rejects.toThrowError(
-      StageError,
-    );
-  });
-
   it("文案阶段返回标题、正文与标签", async () => {
     const outcome = await mockCopyStage.run(CONTEXT);
     expect(outcome.stage).toBe("copy");
@@ -105,5 +98,18 @@ describe("mock 阶段处理器（GENERATION_ADAPTER=mock）", () => {
 
     const second = await mockCopyStage.run({ ...scripted, attempt: 2 });
     expect(second.stage).toBe("copy");
+  });
+});
+
+describe("mock 失败脚本的标记解析", () => {
+  it("读到第 n 张原图失败的标记", () => {
+    expect(mockFailImageAt(`要求 ${MOCK_SCRIPT_HINTS.failImageAt}-2`)).toBe(2);
+    expect(mockFailImageAt(`要求 ${MOCK_SCRIPT_HINTS.failImageAt}-11`)).toBe(11);
+  });
+
+  it("整体失败标记与普通提示词都不产生单张失败", () => {
+    expect(mockFailImageAt(MOCK_SCRIPT_HINTS.failImage)).toBeNull();
+    expect(mockFailImageAt("画面干净")).toBeNull();
+    expect(mockFailImageAt(`${MOCK_SCRIPT_HINTS.failImageAt}-0`)).toBeNull();
   });
 });

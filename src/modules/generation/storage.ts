@@ -55,9 +55,11 @@ export async function writeGeneratedImages(
       storageKey,
       fileName: image.fileName?.trim() || `${index + 1}.${path.extname(storageKey).slice(1)}`,
       mimeType: image.mimeType,
-      sortOrder: index,
+      // 一图对一图：编号用原图序号，第 2 张失败时保留 1 与 3（AC-05-5）。
+      sortOrder: image.sortOrder ?? index,
       width: image.width ?? null,
       height: image.height ?? null,
+      sourceAssetId: image.sourceAssetId ?? null,
     });
   }
 

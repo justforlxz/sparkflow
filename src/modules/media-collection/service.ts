@@ -156,6 +156,16 @@ export async function getCollectionNames(
   return repo.findCollectionNames([...new Set(ids)]);
 }
 
+/**
+ * 批量取每个资源夹的原图张数：任务的「预计成品张数 = 原图张数」（ADR 0008），
+ * 列表页一次查完，不逐行查（AGENTS.md 硬性规则 2：只经 service 取别的模块的数据）。
+ */
+export async function getCollectionAssetCounts(
+  ids: readonly string[],
+): Promise<Record<string, number>> {
+  return repo.findAssetCounts([...new Set(ids)]);
+}
+
 /** 只查存在性：创作任务与结果需要判断资源夹是否还在，但不需要它的图片与计数。 */
 export async function collectionExists(id: string): Promise<boolean> {
   return repo.collectionExists(id);

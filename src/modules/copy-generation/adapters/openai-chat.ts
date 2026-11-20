@@ -15,7 +15,6 @@ import {
   type TextRequest,
 } from "./types";
 
-/** 纯函数：请求怎么拼，单测直接断言。 */
 export function buildOpenAiChatRequest(input: TextGenerationInput): TextRequest {
   return {
     url: joinUrl(input.baseUrl, "/chat/completions"),

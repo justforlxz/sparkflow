@@ -9,6 +9,7 @@ import type { GatewayRecord } from "./repo";
 vi.mock("./repo", () => ({
   listGateways: vi.fn(),
   findGateway: vi.fn(),
+  findGatewayByProtocol: vi.fn(),
   createGatewayRecord: vi.fn(),
   updateGatewayRecord: vi.fn(),
   deleteGatewayRecord: vi.fn(),

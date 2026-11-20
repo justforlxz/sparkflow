@@ -5,6 +5,7 @@ import {
   buildToolsListRequest,
   extractToolNames,
   magpieMcpAdapter,
+  magpieVisionAdapter,
 } from "./magpie-mcp";
 import { buildAnthropicMessagesRequest, ANTHROPIC_VERSION } from "./anthropic-messages";
 import { buildOpenAiChatRequest, openAiChatAdapter } from "./openai-chat";
@@ -211,7 +212,7 @@ describe("magpie MCP 请求拼装与探测", () => {
     ]);
 
     await expect(magpieMcpAdapter.probe(imageTarget, { fetchImpl })).resolves.toBe(
-      "MCP 端点可用（2 个工具）",
+      "MCP 端点可用（2 个工具，含 generate_image）",
     );
     expect(calls).toHaveLength(2);
     expect(headersOf(calls[1].init)["mcp-session-id"]).toBe("session-1");
@@ -239,6 +240,45 @@ describe("magpie MCP 请求拼装与探测", () => {
   it("extractToolNames 对异常结构返回空数组", () => {
     expect(extractToolNames({ result: {} })).toEqual([]);
     expect(extractToolNames({ result: { tools: [{ name: "a" }, {}, null] } })).toEqual(["a"]);
+  });
+});
+
+describe("magpie 图片理解 MCP 探测（docs/prd/02 magpie-vision）", () => {
+  const visionTarget: ProbeTarget = {
+    baseUrl: "https://magpie.example.com",
+    apiKey: "sk-test-local-do-not-use-1234",
+    modelId: null,
+  };
+
+  it("打到 /mcp/magpie/vision，并要求工具清单里有 analyze_image", async () => {
+    const { fetchImpl, calls } = fakeFetch([
+      { body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), headers: { "mcp-session-id": "v-1" } },
+      {
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          result: { tools: [{ name: "analyze_image" }] },
+        }),
+      },
+    ]);
+
+    await expect(magpieVisionAdapter.probe(visionTarget, { fetchImpl })).resolves.toBe(
+      "MCP 端点可用（1 个工具，含 analyze_image）",
+    );
+    expect(calls[0].url).toBe("https://magpie.example.com/mcp/magpie/vision");
+    expect(calls[1].url).toBe("https://magpie.example.com/mcp/magpie/vision");
+  });
+
+  it("工具清单里没有 analyze_image 时判定为配置错误", async () => {
+    const { fetchImpl } = fakeFetch([
+      { body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }) },
+      { body: JSON.stringify({ jsonrpc: "2.0", id: 2, result: { tools: [{ name: "generate_image" }] } }) },
+    ]);
+
+    await expect(magpieVisionAdapter.probe(visionTarget, { fetchImpl })).rejects.toMatchObject({
+      kind: "config",
+      message: expect.stringContaining("analyze_image"),
+    });
   });
 });
 

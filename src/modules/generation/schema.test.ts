@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { MAX_TAGS } from "@/modules/copy-generation/constants";
-import { MAX_EXTRA_PROMPT_LENGTH, MAX_IMAGE_COUNT } from "./constants";
+import { MAX_EXTRA_PROMPT_LENGTH } from "./constants";
 import { createTaskSchema, updateResultSchema } from "./schema";
 
 const VALID = {
   visualStyle: "fresh",
   copyStyle: "story",
-  imageCount: 4,
   extraPrompt: "强调自然光",
 };
 
@@ -20,10 +19,10 @@ describe("创建任务的参数校验", () => {
     expect(() => createTaskSchema.parse({ ...VALID, copyStyle: "   " })).toThrow();
   });
 
-  it("目标张数超出 1–上限时拒绝", () => {
-    expect(() => createTaskSchema.parse({ ...VALID, imageCount: 0 })).toThrow();
-    expect(() => createTaskSchema.parse({ ...VALID, imageCount: MAX_IMAGE_COUNT + 1 })).toThrow();
-    expect(() => createTaskSchema.parse({ ...VALID, imageCount: 2.5 })).toThrow();
+  it("不再接收图片数量：多传的 imageCount 被忽略，成品张数由原图决定（ADR 0008）", () => {
+    const parsed = createTaskSchema.parse({ ...VALID, imageCount: 4 });
+    expect(parsed).not.toHaveProperty("imageCount");
+    expect(parsed).toEqual(VALID);
   });
 
   it("补充要求可以为空或省略，空字符串归一成 null", () => {

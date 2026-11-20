@@ -4,7 +4,7 @@
  * 这是 N6 / N7 唯一需要动的接线处 —— runner、状态机与 worker 都不改：
  *
  * - 生图阶段（N6，`src/modules/image-generation/`）：处理器在两种适配器下都是同一个，
- *   差别只在于它内部按 `GENERATION_ADAPTER` 选 `MagpieMcpImageGenerator` 或 `MockImageGenerator`；
+ *   差别只在于它内部按 `GENERATION_ADAPTER` 选 `MagpieImageGenerator` 或 `MockImageGenerator`；
  * - 文案阶段（N7，`src/modules/copy-generation/`）：`real` 下注册真实处理器；
  *   `mock` 下由 `mockCopyStage` 顶替，不调用任何上游（docs/acceptance.md 第 3 节）。
  */

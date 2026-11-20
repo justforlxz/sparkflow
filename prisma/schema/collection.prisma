@@ -34,6 +34,8 @@ model MediaAsset {
   sortOrder    Int             @default(0) @map("sort_order")
   createdAt    DateTime        @default(now()) @map("created_at")
   collection   MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  // 反向关系由创作任务模块（prisma/schema/generation.prisma）声明：成品记录自己对应哪张原图。
+  generatedAssets GeneratedAsset[]
 
   @@index([collectionId, sortOrder])
   @@map("media_asset")

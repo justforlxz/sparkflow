@@ -26,6 +26,7 @@ vi.mock("./repo", () => ({
 vi.mock("@/modules/media-collection/service", () => ({
   getCollection: vi.fn(),
   getCollectionNames: vi.fn(),
+  getCollectionAssetCounts: vi.fn(),
 }));
 
 vi.mock("@/modules/gateway/service", () => ({
@@ -38,7 +39,9 @@ vi.mock("@/modules/agent-config/service", () => ({
 }));
 
 const { taskStore } = await import("./repo");
-const { getCollectionNames } = await import("@/modules/media-collection/service");
+const { getCollectionNames, getCollectionAssetCounts } = await import(
+  "@/modules/media-collection/service"
+);
 const { listAgentViews } = await import("@/modules/agent-config/service");
 const { listGatewayViews } = await import("@/modules/gateway/service");
 const { getTask, retryTask } = await import("./service");
@@ -58,6 +61,7 @@ function stageRecord(
     attempts,
     error: null,
     meta: null,
+    progress: null,
     startedAt: null,
     finishedAt: null,
   };
@@ -95,7 +99,6 @@ function taskWith(stages: StageRecord[]): TaskWithStages {
       collectionId: "collection-1",
       visualStyle: "fresh",
       copyStyle: "story",
-      imageCount: 2,
       extraPrompt: null,
       agentSnapshot: AGENTS,
       createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -111,6 +114,8 @@ beforeEach(() => {
   vi.mocked(taskStore.findResultByTask).mockResolvedValue(null);
   vi.mocked(getCollectionNames).mockReset();
   vi.mocked(getCollectionNames).mockResolvedValue({ "collection-1": "资源夹" });
+  vi.mocked(getCollectionAssetCounts).mockReset();
+  vi.mocked(getCollectionAssetCounts).mockResolvedValue({ "collection-1": 2 });
   vi.mocked(listGatewayViews).mockReset();
   vi.mocked(listGatewayViews).mockResolvedValue([]);
   vi.mocked(listAgentViews).mockReset();

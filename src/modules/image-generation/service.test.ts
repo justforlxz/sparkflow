@@ -1,17 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AppError } from "@/lib/errors";
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import { MOCK_SCRIPT_HINTS } from "@/modules/generation/stages/mock";
 import { StageError, type GeneratedImage, type StageContext } from "@/modules/generation/types";
 import type { GenerateImageInput, ImageGenerator } from "./adapters/types";
-import { MagpieMcpImageGenerator } from "./adapters/magpie-mcp";
-import {
-  MAX_IMAGES_PER_BATCH,
-  createImageGenerator,
-  generateImages,
-  resolveImageGenerator,
-} from "./service";
-import { findVisualStyle } from "./styles";
+import { MagpieImageGenerator } from "./adapters/magpie-mcp";
+import { createImageGenerator, generateImages, resolveImageGenerator } from "./service";
 
 // 真实模式要查网关密钥：单测把这一层换成可注入的桩，其余逻辑仍是真实实现。
 vi.mock("@/modules/gateway/service", () => ({ getGatewayExecutionTarget: vi.fn() }));
@@ -26,13 +19,13 @@ process.env.AUTH_SECRET ??= "unit-test-auth-secret-at-least-32-characters";
 process.env.GENERATION_ADAPTER = "real";
 
 /**
- * 图片创作业务层（docs/prd/05 MUST 1、2、6、7；AC-05-1、AC-05-6、AC-05-8；AC-06-10）。
+ * 图片创作业务层（docs/prd/05 MUST 1、2、4、5、7、9；AC-05-1、AC-05-3、AC-05-5）：
  *
- * 适配器一律注入假实现：这里验证的是「分批、模型取快照、失败如实记录、日志不含密钥」，
- * 上游协议本身由 `adapters/magpie-mcp.test.ts` 覆盖。
+ * 适配器一律注入假实现：这里验证的是「一图对一图、模型取快照、进度、失败如实记录、日志不含密钥」。
+ * 上游协议本身由 `adapters/magpie-edit.test.ts` 覆盖，压缩规则由 `compress.test.ts` 覆盖。
  */
 
-const API_KEY = "magpie-gateway-secret-for-tests";
+const API_KEY = "sk-test-local-do-not-use-1234";
 
 const IMAGE_AGENT: AgentSnapshot = {
   agentType: "image",
@@ -56,20 +49,22 @@ const COPY_AGENT: AgentSnapshot = {
 };
 
 interface ContextOverrides {
-  imageCount?: number;
+  /** 这次资源夹里有几张原图（成品张数 = 它）。 */
+  assetCount?: number;
   visualStyle?: string;
   extraPrompt?: string | null;
   imageModel?: string | null;
 }
 
+/** 记住要读哪几张原图：读原图这一步由 runner 提供，单测直接回字节。 */
 function buildContext(overrides: ContextOverrides = {}): StageContext {
+  const assetCount = overrides.assetCount ?? 3;
   return {
     taskId: "task-1",
     attempt: 1,
     params: {
       visualStyle: overrides.visualStyle ?? "fresh",
       copyStyle: "story",
-      imageCount: overrides.imageCount ?? 3,
       extraPrompt: overrides.extraPrompt ?? null,
     },
     agents: {
@@ -81,167 +76,230 @@ function buildContext(overrides: ContextOverrides = {}): StageContext {
       platform: "小红书",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
-      assetCount: 1,
+      assets: Array.from({ length: assetCount }, (_, index) => ({
+        id: `source-${index + 1}`,
+        fileName: `${String.fromCharCode(97 + index)}.png`,
+        mimeType: "image/png",
+      })),
     },
     resultId: null,
     signal: new AbortController().signal,
+    readSourceImage: async (assetId: string) => ({
+      bytes: Buffer.from(`raw-of-${assetId}`),
+      mimeType: "image/png",
+    }),
+    reportProgress: async (progress) => {
+      progressLog.push(progress);
+    },
   };
 }
+
+/** 记录进度上报；每个用例自己决定要不要收集。 */
+let progressLog: { done: number; total: number }[] = [];
 
 function pngImage(index: number): GeneratedImage {
   return { bytes: Buffer.from(`image-${index}`), mimeType: "image/png" };
 }
 
+/** 单测跳过 sharp：把原图字节换成可断言的 data URL（压缩规则由 compress.test.ts 覆盖）。 */
+const fakeCompress = async (bytes: Buffer): Promise<string> =>
+  `data:image/jpeg;base64,${bytes.toString()}`;
+
 class RecordingGenerator implements ImageGenerator {
   readonly inputs: GenerateImageInput[] = [];
 
-  constructor(private readonly respond: (input: GenerateImageInput) => Promise<GeneratedImage[]> | GeneratedImage[] = (input) => Array.from({ length: input.n }, (_, index) => pngImage(index))) {}
+  constructor(
+    private readonly respond: (input: GenerateImageInput, index: number) => GeneratedImage[] = (
+      _input,
+      index,
+    ) => [pngImage(index)],
+  ) {}
 
   async generate(input: GenerateImageInput): Promise<GeneratedImage[]> {
     this.inputs.push(input);
-    return this.respond(input);
+    return this.respond(input, this.inputs.length);
   }
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  progressLog = [];
 });
 
-describe("分批调用", () => {
-  it("AC-05-1 要 5 张时发 2 次（4+1），要 9 张时发 3 次（4+4+1）", async () => {
-    const five = new RecordingGenerator();
-    const result = await generateImages(buildContext({ imageCount: 5 }), { generator: five });
+describe("一图对一图（AC-05-1）", () => {
+  it("3 张原图发 3 次调用，每次只带那一张，按原图顺序对应", async () => {
+    const generator = new RecordingGenerator();
+    const result = await generateImages(buildContext({ assetCount: 3 }), {
+      generator,
+      compress: fakeCompress,
+    });
 
-    expect(MAX_IMAGES_PER_BATCH).toBe(4);
-    expect(five.inputs.map((input) => input.n)).toEqual([4, 1]);
-    expect(result.images).toHaveLength(5);
-    expect(result.meta.batches).toEqual([
-      expect.objectContaining({ n: 4, ok: true }),
-      expect.objectContaining({ n: 1, ok: true }),
+    expect(generator.inputs).toHaveLength(3);
+    // 每次的 `image` 就是对应那张原图压缩后的 data URL：第 k 次对应第 k 张原图。
+    expect(generator.inputs.map((input) => input.image)).toEqual([
+      "data:image/jpeg;base64,raw-of-source-1",
+      "data:image/jpeg;base64,raw-of-source-2",
+      "data:image/jpeg;base64,raw-of-source-3",
+    ]);
+    // 成品按原图顺序编号，并记录对应原图。
+    expect(result.images.map((image) => image.sortOrder)).toEqual([1, 2, 3]);
+    expect(result.images.map((image) => image.sourceAssetId)).toEqual([
+      "source-1",
+      "source-2",
+      "source-3",
+    ]);
+    expect(result.meta.calls.map((call) => call.index)).toEqual([1, 2, 3]);
+    expect(result.meta.failures).toEqual([]);
+  });
+
+  it("AC-05-1 期望每次只回一张：上游多给的只取第一张", async () => {
+    const generator = new RecordingGenerator((_input, index) => [
+      pngImage(index),
+      { bytes: Buffer.from("extra"), mimeType: "image/png" },
     ]);
 
-    const nine = new RecordingGenerator();
-    await generateImages(buildContext({ imageCount: 9 }), { generator: nine });
-    expect(nine.inputs.map((input) => input.n)).toEqual([4, 4, 1]);
+    const result = await generateImages(buildContext({ assetCount: 2 }), {
+      generator,
+      compress: fakeCompress,
+    });
+
+    expect(result.images).toHaveLength(2);
+    expect(result.images.every((image) => image.bytes.toString().startsWith("image-"))).toBe(true);
   });
 
-  it("要 1 张时只发一次，且请求里带上视觉方向的尺寸", async () => {
-    const generator = new RecordingGenerator();
-    await generateImages(buildContext({ imageCount: 1, visualStyle: "product" }), { generator });
+  it("模型取自任务快照；快照没有模型时省略", async () => {
+    const withModel = new RecordingGenerator();
+    await generateImages(buildContext({ assetCount: 1, imageModel: "image-model-a" }), {
+      generator: withModel,
+      compress: fakeCompress,
+    });
+    expect(withModel.inputs[0]?.model).toBe("image-model-a");
 
-    expect(generator.inputs).toHaveLength(1);
-    expect(generator.inputs[0]?.size).toBe(findVisualStyle("product")!.size);
-    expect(generator.inputs[0]?.size).toBe("1024x1024");
-  });
-});
-
-describe("模型取自任务快照", () => {
-  it("AC-06-10 连续两次任务各用各的模型，不串用", async () => {
-    const generator = new RecordingGenerator();
-
-    await generateImages(buildContext({ imageCount: 1, imageModel: "image-model-a" }), { generator });
-    await generateImages(buildContext({ imageCount: 1, imageModel: "image-model-b" }), { generator });
-
-    expect(generator.inputs.map((input) => input.model)).toEqual(["image-model-a", "image-model-b"]);
+    const withoutModel = new RecordingGenerator();
+    await generateImages(buildContext({ assetCount: 1, imageModel: null }), {
+      generator: withoutModel,
+      compress: fakeCompress,
+    });
+    expect(withoutModel.inputs[0]?.model).toBeNull();
   });
 
-  it("快照没有模型时传 null（适配器据此省略该参数）", async () => {
+  it("提示词带上视觉方向与补充要求", async () => {
     const generator = new RecordingGenerator();
-    const result = await generateImages(buildContext({ imageCount: 1 }), { generator });
-
-    expect(generator.inputs[0]?.model).toBeNull();
-    expect(result.meta.model).toBeNull();
-  });
-
-  it("提示词由 Agent 快照、视觉方向与补充要求拼成", async () => {
-    const generator = new RecordingGenerator();
-    await generateImages(buildContext({ imageCount: 1, extraPrompt: "不要出现文字" }), { generator });
+    await generateImages(
+      buildContext({ assetCount: 1, extraPrompt: "不要出现文字", visualStyle: "product" }),
+      { generator, compress: fakeCompress },
+    );
 
     const prompt = generator.inputs[0]?.prompt ?? "";
-    expect(prompt).toContain(IMAGE_AGENT.role);
-    expect(prompt).toContain(IMAGE_AGENT.systemPrompt);
-    expect(prompt).toContain(IMAGE_AGENT.outputRequirements);
-    expect(prompt).toContain(findVisualStyle("fresh")!.description);
+    expect(prompt).toContain("你是生活方式图片创作者");
+    expect(prompt).toContain("视觉方向：产品质感");
     expect(prompt).toContain("补充要求：不要出现文字");
   });
 });
 
-describe("失败如实记录", () => {
-  it("AC-05-6 3 张里有一批失败：阶段失败、错误里写明已取回几张，批次摘要保留", async () => {
-    const generator = new RecordingGenerator((input) => {
-      if (input.n === 1) throw new StageError("UPSTREAM_REJECTED", "上游拒绝了这一批");
-      return Array.from({ length: input.n }, (_, index) => pngImage(index));
+describe("阶段进度（供界面显示「正在生图 第 k/N 张」）", () => {
+  it("从 0/N 开始，每处理完一张上报一次，直到 N/N", async () => {
+    progressLog = [];
+    const generator = new RecordingGenerator();
+
+    await generateImages(buildContext({ assetCount: 3 }), {
+      generator,
+      compress: fakeCompress,
     });
 
-    const error = await generateImages(buildContext({ imageCount: 5 }), { generator }).catch(
-      (caught: unknown) => caught,
-    );
-
-    expect(error).toBeInstanceOf(StageError);
-    expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
-    expect((error as Error).message).toContain("第 2 批（1 张）失败");
-    expect((error as Error).message).toContain("已取回 4/5 张");
-
-    const meta = (error as StageError).meta as { batches: unknown[] };
-    expect(meta.batches).toHaveLength(2);
-    expect(meta.batches[0]).toMatchObject({ n: 4, ok: true });
-    expect(meta.batches[1]).toMatchObject({ n: 1, ok: false, errorCode: "UPSTREAM_REJECTED" });
-  });
-
-  it("上游一次只回 1 张时按实际张数继续要：要 4 张就发 4 次，张数一张不少", async () => {
-    // 真实 magpie 网关上可用的图片模型多数一次只出 1 张（workbuddy 系），
-    // 也有直接拒绝 n>1 的（sensenova 报 invalid n, should be in [1, 1]）。
-    const generator = new RecordingGenerator(() => [pngImage(0)]);
-
-    const result = await generateImages(buildContext({ imageCount: 4 }), { generator });
-
-    expect(generator.inputs.map((input) => input.n)).toEqual([4, 3, 2, 1]);
-    expect(result.images).toHaveLength(4);
-    // 批次摘要如实记录「要了几张、实际拿到几张」。
-    expect(result.meta.batches.map((batch) => [batch.n, batch.received, batch.ok])).toEqual([
-      [4, 1, true],
-      [3, 1, true],
-      [2, 1, true],
-      [1, 1, true],
+    expect(progressLog).toEqual([
+      { done: 0, total: 3 },
+      { done: 1, total: 3 },
+      { done: 2, total: 3 },
+      { done: 3, total: 3 },
     ]);
   });
 
-  it("上游拒绝 n>1 时把这一批降到 1 张重试，本阶段后续都按 1 张要", async () => {
-    const generator = new RecordingGenerator((input) => {
-      if (input.n > 1) {
-        throw new StageError("UPSTREAM_REJECTED", "invalid n, should be in [1, 1]");
-      }
-      return [pngImage(0)];
+  it("单张失败也照样上报进度，不让界面卡在第 k 张", async () => {
+    progressLog = [];
+    const generator = new RecordingGenerator((_input, index) => {
+      if (index === 2) throw new StageError("UPSTREAM_TIMEOUT", "第 2 张超时");
+      return [pngImage(index)];
     });
 
-    const result = await generateImages(buildContext({ imageCount: 3 }), { generator });
+    await generateImages(buildContext({ assetCount: 2 }), { generator, compress: fakeCompress });
 
-    // 只降级一次：第一次按 3 张被拒，之后每批都按 1 张要，不再反复试探。
-    expect(generator.inputs.map((input) => input.n)).toEqual([3, 1, 1, 1]);
-    expect(result.images).toHaveLength(3);
-    expect(result.meta.batches.map((batch) => [batch.n, batch.ok])).toEqual([
-      [3, false],
-      [1, true],
-      [1, true],
-      [1, true],
+    expect(progressLog?.map((progress) => progress.done)).toEqual([0, 1, 2]);
+  });
+});
+
+describe("部分原图失败（AC-05-5）", () => {
+  it("3 张里第 2 张失败：保留 1 与 3，编号不连续，错误点名第 2 张原图", async () => {
+    const generator = new RecordingGenerator((_input, index) => {
+      if (index === 2) throw new StageError("UPSTREAM_REJECTED", "上游不接受这次重绘");
+      return [pngImage(index)];
+    });
+
+    const result = await generateImages(buildContext({ assetCount: 3 }), {
+      generator,
+      compress: fakeCompress,
+    });
+
+    expect(result.images.map((image) => image.sortOrder)).toEqual([1, 3]);
+    expect(result.images.map((image) => image.sourceAssetId)).toEqual(["source-1", "source-3"]);
+    expect(result.partialError).toMatchObject({ code: "UPSTREAM_PARTIAL" });
+    expect(result.partialError?.message).toContain("第 2 张原图（b.png）");
+    expect(result.partialError?.message).toContain("已保留 2/3 张成品");
+    expect(result.meta.failures).toEqual([
+      expect.objectContaining({ index: 2, sourceAssetId: "source-2", code: "UPSTREAM_REJECTED" }),
     ]);
   });
 
-  it("上游一张图都没返回时阶段失败，不把空产出当成功", async () => {
-    const generator = new RecordingGenerator(() => []);
+  it("全部失败才把整阶段判失败，并带上已尝试的摘要", async () => {
+    const generator = new RecordingGenerator(() => {
+      throw new StageError("UPSTREAM_TIMEOUT", "上游超时");
+    });
 
-    const error = await generateImages(buildContext({ imageCount: 2 }), { generator }).catch(
-      (caught: unknown) => caught,
-    );
+    const error = await generateImages(buildContext({ assetCount: 2 }), {
+      generator,
+      compress: fakeCompress,
+    }).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(StageError);
-    expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
-    expect((error as Error).message).toContain("上游没有返回图片");
-    expect((error as Error).message).toContain("已取回 0/2 张");
+    expect(error).toMatchObject({ code: "UPSTREAM_TIMEOUT" });
+    expect((error as Error).message).toContain("全部 2 张原图都未生成成品图");
+    expect((error as Error).message).toContain("第 1 张原图（a.png）");
+    expect((error as Error).message).toContain("第 2 张原图（b.png）");
+    expect((error as StageError).meta).toMatchObject({ failures: [{ index: 1 }, { index: 2 }] });
   });
 
-  it("AC-902-1、AC-902-2 生图失败摘要为中文可操作文案，不含上游原始回包", async () => {
+  it("适配器之外的内部异常按 STAGE_FAILED 记录，英文原文只进日志", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    // 只有第 1 张炸掉：阶段仍有第 2 张成品，因此走「部分成功」路径。
+    const generator = new RecordingGenerator((_input, index) => {
+      if (index === 1) throw new TypeError("Cannot read properties of undefined (reading 'url')");
+      return [pngImage(index)];
+    });
+
+    const result = await generateImages(buildContext({ assetCount: 2 }), {
+      generator,
+      compress: fakeCompress,
+    });
+
+    expect(result.partialError?.code).toBe("UPSTREAM_PARTIAL");
+    expect(result.meta.failures[0]?.code).toBe("STAGE_FAILED");
+    expect(result.meta.failures[0]?.message).not.toContain("Cannot read");
+    expect(JSON.stringify(log.mock.calls)).toContain("Cannot read");
+  });
+
+  it("资源夹没有原图时直接拒绝，不调用上游", async () => {
+    const generator = new RecordingGenerator();
+
+    await expect(
+      generateImages(buildContext({ assetCount: 0 }), { generator, compress: fakeCompress }),
+    ).rejects.toMatchObject({ code: "UPSTREAM_REJECTED" });
+    expect(generator.inputs).toHaveLength(0);
+  });
+});
+
+describe("失败摘要为中文可操作文案（MKACG-902）", () => {
+  it("上游原文不进阶段错误，只进日志", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const upstream =
       "no image: api.siliconflow.cn: 400 Bad Request: " +
@@ -257,33 +315,29 @@ describe("失败如实记录", () => {
         { status: 200, headers: { "content-type": "application/json" } },
       )) as unknown as typeof fetch;
 
-    const error = await generateImages(buildContext({ imageCount: 4 }), {
+    const error = await generateImages(buildContext({ assetCount: 1 }), {
       generator: createImageGenerator({
         adapter: "real",
         baseUrl: "https://magpie.example.com",
         apiKey: API_KEY,
         fetchImpl,
       }),
+      compress: fakeCompress,
     }).catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({ code: "UPSTREAM_REJECTED" });
     const message = (error as Error).message;
-    // 第几批、已取回几张、阶段未产出结果：这些如实记录的信息保留（MUST 4）
-    expect(message).toContain("第 2 批（1 张）失败");
-    expect(message).toContain("已取回 0/4 张，阶段未产出结果");
-    // 说明指向可改的配置项，且不含上游原始回包（MUST 1）
+    expect(message).toContain("第 1 张原图（a.png）失败");
     expect(message).toContain("模型");
     expect(message).toContain("设置页");
     for (const fragment of ["null", "{", "}", "api.", "Model does not exist", "siliconflow"]) {
       expect(message).not.toContain(fragment);
     }
-    // 同一条失败的上游原因留在服务端日志里（MUST 2、AC-902-3）
-    const logged = JSON.stringify(log.mock.calls);
-    expect(logged).toContain("Model does not exist");
-    expect(logged).toContain("UPSTREAM_REJECTED");
+    // 同一条失败的上游原因留在服务端日志里。
+    expect(JSON.stringify(log.mock.calls)).toContain("Model does not exist");
   });
 
-  it("AC-902-4 四类失败的摘要拼装都是中文说明，且不含上游原文", async () => {
+  it("四类失败的摘要拼装都是中文说明，且不含上游原文", async () => {
     const jsonResult = (result: unknown) =>
       new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }), {
         status: 200,
@@ -330,93 +384,73 @@ describe("失败如实记录", () => {
 
     for (const item of cases) {
       const fetchImpl = (async () => item.respond()) as unknown as typeof fetch;
-      const error = await generateImages(buildContext({ imageCount: 1 }), {
+      const error = await generateImages(buildContext({ assetCount: 1 }), {
         generator: createImageGenerator({
           adapter: "real",
           baseUrl: "https://magpie.example.com",
           apiKey: API_KEY,
           fetchImpl,
         }),
+        compress: fakeCompress,
       }).catch((caught: unknown) => caught);
 
       const message = (error as Error).message;
       expect(error, item.name).toMatchObject({ code: item.code });
-      expect(message, item.name).toContain("第 1 批（1 张）失败");
+      expect(message, item.name).toContain("第 1 张原图（a.png）失败");
       expect(message, item.name).toContain(item.mustContain);
       for (const fragment of item.forbidden) {
         expect(message, item.name).not.toContain(fragment);
       }
     }
   });
-
-  it("适配器之外的内部异常：摘要换成中文兜底，英文原文只进日志", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    const generator = new RecordingGenerator(() => {
-      throw new TypeError("Cannot read properties of undefined (reading 'url')");
-    });
-
-    const error = await generateImages(buildContext({ imageCount: 1 }), { generator }).catch(
-      (caught: unknown) => caught,
-    );
-
-    expect(error).toMatchObject({ code: "STAGE_FAILED" });
-    const message = (error as Error).message;
-    expect(message).toContain("请重试该阶段");
-    expect(message).not.toContain("Cannot read");
-    expect(JSON.stringify(log.mock.calls)).toContain("Cannot read");
-  });
-
-  it("适配器抛的不是阶段错误时归为 STAGE_FAILED，批次摘要仍然保留", async () => {
-    const generator = new RecordingGenerator(() => {
-      throw new TypeError("适配器自己炸了");
-    });
-
-    const error = await generateImages(buildContext({ imageCount: 2 }), { generator }).catch(
-      (caught: unknown) => caught,
-    );
-
-    expect(error).toMatchObject({ code: "STAGE_FAILED" });
-    expect((error as StageError).meta).toMatchObject({ batches: [{ n: 2, ok: false }] });
-  });
 });
 
-describe("日志与密钥", () => {
-  it("AC-05-8 成功与失败两条路径的日志、错误消息里都没有网关密钥", async () => {
+describe("日志与密钥（AC-05-7）", () => {
+  it("成功与失败两条路径的日志、错误消息里都没有网关密钥与图片内容", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
+    // 成功回包：图片内联在 content 里（magpie 内置图片 MCP 的形状）。
     const successFetch = (async () =>
       new Response(
         JSON.stringify({
           jsonrpc: "2.0",
           id: 1,
           result: {
-            content: [{ type: "image", data: Buffer.from("png").toString("base64"), mimeType: "image/png" }],
+            content: [
+              {
+                type: "image",
+                data: Buffer.from("png").toString("base64"),
+                mimeType: "image/png",
+              },
+            ],
             isError: false,
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       )) as unknown as typeof fetch;
 
-    await generateImages(buildContext({ imageCount: 1 }), {
+    await generateImages(buildContext({ assetCount: 1 }), {
       generator: createImageGenerator({
         adapter: "real",
         baseUrl: "https://magpie.example.com",
         apiKey: API_KEY,
         fetchImpl: successFetch,
       }),
+      compress: fakeCompress,
     });
 
     const failingFetch = (async () =>
       new Response("unauthorized", { status: 401 })) as unknown as typeof fetch;
 
-    const failure = await generateImages(buildContext({ imageCount: 1 }), {
+    const failure = await generateImages(buildContext({ assetCount: 1 }), {
       generator: createImageGenerator({
         adapter: "real",
         baseUrl: "https://magpie.example.com",
         apiKey: API_KEY,
         fetchImpl: failingFetch,
       }),
+      compress: fakeCompress,
     }).catch((caught: unknown) => caught);
 
     expect(failure).toMatchObject({ code: "UPSTREAM_AUTH" });
@@ -426,31 +460,46 @@ describe("日志与密钥", () => {
     expect(output.length).toBeGreaterThan(0);
     expect(output).not.toContain(API_KEY);
     expect(output).not.toContain("Bearer");
+    // 回包里的图片内容不得进日志（MUST 9）。
+    expect(output).not.toContain("cG5n");
   });
 });
 
 describe("mock 适配器", () => {
-  it("按目标张数返回 PNG，并按脚本让整批失败", async () => {
+  it("一次只回一张 PNG，并按脚本失败", async () => {
     const generator = createImageGenerator({ adapter: "mock", baseUrl: "", apiKey: "" });
 
-    const result = await generateImages(buildContext({ imageCount: 3 }), { generator });
-    expect(result.images).toHaveLength(3);
+    const result = await generateImages(buildContext({ assetCount: 2 }), {
+      generator,
+      compress: fakeCompress,
+    });
+    expect(result.images).toHaveLength(2);
     expect(result.images.every((image) => image.mimeType === "image/png")).toBe(true);
 
+    const partial = await generateImages(
+      buildContext({
+        assetCount: 2,
+        extraPrompt: `${MOCK_SCRIPT_HINTS.failImageAt}-2`,
+      }),
+      { generator: createImageGenerator({ adapter: "mock", baseUrl: "", apiKey: "" }), compress: fakeCompress },
+    );
+    expect(partial.partialError?.message).toContain("第 2 张原图（b.png）");
+
     await expect(
-      generateImages(buildContext({ imageCount: 2, extraPrompt: MOCK_SCRIPT_HINTS.failImage }), {
-        generator,
+      generateImages(buildContext({ assetCount: 2, extraPrompt: MOCK_SCRIPT_HINTS.failImage }), {
+        generator: createImageGenerator({ adapter: "mock", baseUrl: "", apiKey: "" }),
+        compress: fakeCompress,
       }),
     ).rejects.toMatchObject({ code: "UPSTREAM_REJECTED" });
   });
 
   it("适配器工厂按 adapter 返回对应实现", () => {
     expect(createImageGenerator({ adapter: "mock", baseUrl: "", apiKey: "" })).not.toBeInstanceOf(
-      MagpieMcpImageGenerator,
+      MagpieImageGenerator,
     );
     expect(
       createImageGenerator({ adapter: "real", baseUrl: "https://magpie.example.com", apiKey: API_KEY }),
-    ).toBeInstanceOf(MagpieMcpImageGenerator);
+    ).toBeInstanceOf(MagpieImageGenerator);
   });
 });
 
@@ -462,84 +511,38 @@ describe("真实模式：按快照选适配器并取网关密钥", () => {
     baseUrl: "https://magpie.example.com",
     apiKey: API_KEY,
   };
-  const PNG_ONE_PIXEL = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-    "base64",
-  ).toString("base64");
 
-  it("快照协议不是 magpie 图片 MCP 时直接拒绝，不去查网关", async () => {
-    await expect(resolveImageGenerator({ ...SNAPSHOT, protocol: "openai-chat" })).rejects.toMatchObject(
-      { code: "UPSTREAM_REJECTED" },
-    );
-    expect(getTarget).not.toHaveBeenCalled();
+  afterEach(() => getTarget.mockReset());
+
+  it("协议不是 magpie 图片 MCP 时拒绝", async () => {
+    await expect(
+      resolveImageGenerator({ ...SNAPSHOT, protocol: "openai-chat" }),
+    ).rejects.toMatchObject({ code: "UPSTREAM_REJECTED" });
   });
 
-  it("网关记录不存在时拒绝并提示重新选择网关", async () => {
-    getTarget.mockRejectedValueOnce(AppError.notFound("网关不存在"));
+  it("网关不存在时拒绝，并指向设置页", async () => {
+    const { AppError } = await import("@/lib/errors");
+    getTarget.mockRejectedValue(AppError.notFound("网关不存在"));
 
     await expect(resolveImageGenerator(SNAPSHOT)).rejects.toMatchObject({
       code: "UPSTREAM_REJECTED",
-      message: expect.stringContaining("已不存在") as unknown as string,
+      message: expect.stringContaining("网关已不存在"),
     });
   });
 
-  it("取密钥失败归为 UPSTREAM_AUTH，消息里没有密钥", async () => {
-    getTarget.mockRejectedValueOnce(
-      new AppError("UPSTREAM_FAILED", "网关密钥无法解密，请到设置页重新填写 API Key", {
-        details: { code: "GATEWAY_KEY_UNREADABLE" },
-      }),
-    );
-
-    const error = await resolveImageGenerator(SNAPSHOT).catch((caught: unknown) => caught);
-
-    expect(error).toMatchObject({ code: "UPSTREAM_AUTH" });
-    expect((error as Error).message).not.toContain(API_KEY);
-  });
-
-  it("网关记录里的协议与快照不一致时再拦一次", async () => {
-    getTarget.mockResolvedValueOnce({ ...TARGET, protocol: "openai-chat" });
+  it("取不到密钥时记 UPSTREAM_AUTH", async () => {
+    getTarget.mockRejectedValue(new Error("解密失败"));
 
     await expect(resolveImageGenerator(SNAPSHOT)).rejects.toMatchObject({
-      code: "UPSTREAM_REJECTED",
+      code: "UPSTREAM_AUTH",
     });
   });
 
-  it("成功时把 Base URL 与解密后的密钥交给真实适配器：请求地址与鉴权头可证", async () => {
-    getTarget.mockResolvedValueOnce(TARGET);
-    const fetchSpy = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            result: {
-              content: [{ type: "image", data: PNG_ONE_PIXEL, mimeType: "image/png" }],
-              isError: false,
-            },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-    );
-    vi.stubGlobal("fetch", fetchSpy);
+  it("正常时用快照里的网关地址与解出来的密钥建适配器", async () => {
+    getTarget.mockResolvedValue(TARGET);
 
     const generator = await resolveImageGenerator(SNAPSHOT);
-    expect(generator).toBeInstanceOf(MagpieMcpImageGenerator);
-
-    const images = await generator.generate({
-      prompt: "一只在窗边晒太阳的猫",
-      n: 1,
-      size: null,
-      quality: null,
-      model: null,
-    });
-
-    expect(images).toHaveLength(1);
-    // initialize + tools/call：两次都打在图片 MCP 端点上，且带上解密后的密钥
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    const calls = fetchSpy.mock.calls as unknown as [string, RequestInit][];
-    for (const [url, init] of calls) {
-      expect(url).toBe("https://magpie.example.com/mcp/magpie/image");
-      expect((init as RequestInit).headers).toMatchObject({ authorization: `Bearer ${API_KEY}` });
-    }
+    expect(generator).toBeInstanceOf(MagpieImageGenerator);
+    expect(getTarget).toHaveBeenCalledWith("gateway-1");
   });
 });

@@ -1,16 +1,16 @@
 /**
- * 图片创作业务层（docs/prd/05-image-generation.md）：
- * 提示词拼装、分批调用、适配器选择、失败分类。落盘与写库仍由 generation 模块的 runner 负责。
+ * 图片创作业务层（docs/prd/05-image-generation.md、ADR 0008）：
+ * 提示词拼装、一图对一图的串行调用、进度上报、失败分类。
+ * 落盘与写库仍由 generation 模块的 runner 负责。
  *
  * 三条边界：
- * 1. 批次大小固定 `min(4, 剩余张数)`（MUST 2），不认识上游的一次能画几张以外的任何约定。
- * 2. `model` 只取自任务快照；快照里没有就省略，不自造模型名（MUST 5）。
- * 3. 本版本不接收参考图；图生图入口先过功能开关（MUST NOT + AC-05-7）。
+ * 1. 一次任务里原图有 N 张就调 N 次上游，每次只带那一张（MUST 2）；串行、不留固定 sleep（SHOULD）。
+ * 2. 单张失败不丢弃其它张：有成品就照常交出，失败原因写进阶段 `error`，任务算 `partial`（MUST 7）。
+ * 3. `model` 只取自任务快照；快照里没有就省略，不自造模型名（MUST 5）。
  */
 import { getEnv } from "@/lib/env";
 import { isAppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
-import { requireEnabled } from "@/modules/feature-flags/service";
 import {
   StageError,
   type GeneratedImage,
@@ -22,49 +22,60 @@ import {
   getGatewayExecutionTarget,
   type GatewayExecutionTarget,
 } from "@/modules/gateway/service";
-import { MagpieMcpImageGenerator } from "./adapters/magpie-mcp";
+import { MagpieImageGenerator } from "./adapters/magpie-mcp";
 import { MockImageGenerator } from "./adapters/mock";
 import {
   IMAGE_ERROR_CODES,
   type GenerateImageInput,
   type ImageGenerator,
 } from "./adapters/types";
+import { compressForReferenceImage } from "./compress";
 import { describeStageFailure } from "./failure";
 import { buildImagePrompt } from "./prompt";
 import { DEFAULT_IMAGE_SIZE, findVisualStyle } from "./styles";
 
-/** 上游一次最多画 4 张（docs/prd/05 MUST 2）。 */
-export const MAX_IMAGES_PER_BATCH = 4;
-
-/** 图片 Agent 必须绑在图片 MCP 网关上（docs/prd/02「接口形状」）。 */
+/** 图片 Agent 必须绑在 magpie 的图片 MCP 网关上（docs/prd/02「接口形状」）。 */
 export const MAGPIE_IMAGE_PROTOCOL = "magpie-mcp";
 
-/** 每次上游调用的摘要，写入 `generation_stage.meta`（docs/prd/05「阶段元信息」）。 */
-export interface ImageBatchRecord {
-  /** 这一批**要求**的张数：默认 `min(4, 剩余)`；上游拒绝一次多张之后降为 1。 */
-  n: number;
-  /** 上游这一批**实际**返回并采用的张数；失败的批次为 0。 */
-  received: number;
+/** 一次上游调用的摘要，写入 `generation_stage.meta`（MUST 9：模型名与耗时，不含密钥与图片内容）。 */
+export interface ImageCallRecord {
+  /** 第几张原图（从 1 开始）。 */
+  index: number;
+  sourceAssetId: string;
   ms: number;
   ok: boolean;
   errorCode?: string;
 }
 
+/** 一张原图失败的原因：同时进 `meta.failures` 与阶段 `error` 的消息里（AC-05-5）。 */
+export interface ImageFailure {
+  index: number;
+  sourceAssetId: string;
+  fileName: string;
+  code: string;
+  message: string;
+}
+
 export interface ImageGenerationMeta {
   model: string | null;
-  batches: ImageBatchRecord[];
+  calls: ImageCallRecord[];
+  failures: ImageFailure[];
   totalMs: number;
 }
 
 export interface ImageGenerationResult {
   images: GeneratedImage[];
   meta: ImageGenerationMeta;
+  /** 部分原图失败：阶段仍有产出，但原因要留在阶段 `error` 上（docs/prd/05 MUST 7）。 */
+  partialError?: { code: string; message: string };
 }
 
 export interface ImageGenerationDeps {
   /** 单测注入：跳过网关密钥查询与真实上游。 */
   generator?: ImageGenerator;
   now?: () => number;
+  /** 单测注入：跳过 sharp，直接把原图字节当成 base64 用。 */
+  compress?: (bytes: Buffer) => Promise<string>;
 }
 
 export interface ImageGeneratorConfig {
@@ -74,11 +85,11 @@ export interface ImageGeneratorConfig {
   fetchImpl?: typeof fetch;
 }
 
-/** 适配器选择只在这里：`service.ts` 与 `stages/index.ts` 之外没有第二处。 */
+/** 适配器选择只在这里：`service.ts` 之外没有第二处。 */
 export function createImageGenerator(config: ImageGeneratorConfig): ImageGenerator {
   if (config.adapter === "mock") return new MockImageGenerator();
 
-  return new MagpieMcpImageGenerator({
+  return new MagpieImageGenerator({
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
     ...(config.fetchImpl ? { fetchImpl: config.fetchImpl } : {}),
@@ -137,154 +148,154 @@ function errorCodeOf(error: unknown): string {
   return error instanceof StageError ? error.code : STAGE_ERROR_CODES.stageFailed;
 }
 
+/** 「第 2 张原图（b.png）失败：原因」——界面据此点名缺的是哪一张，不回显上游原文。 */
+function describeFailure(failure: ImageFailure): string {
+  return `第 ${failure.index} 张原图（${failure.fileName}）失败：${failure.message}`;
+}
+
+/** 部分成功时的阶段错误消息：点名失败的原图，并说明保留了几张（AC-05-5）。 */
+export function describePartialFailure(
+  failures: readonly ImageFailure[],
+  total: number,
+  kept: number,
+): string {
+  return `${failures.map(describeFailure).join("；")}。已保留 ${kept}/${total} 张成品`;
+}
+
 /**
- * 按批次出图（MUST 2、MUST 7）：
+ * 一图对一图（MUST 2、MUST 7）：
  *
- * - 每批 `n = min(4, 剩余张数)`，要 9 张就是 4 + 4 + 1 三次；
- * - 上游一次给不满 n 张时，按**实际拿到的张数**继续要剩余的（真实网关的图片模型多数一次只出 1 张）；
- *   上游明确拒绝 n > 1 时，本阶段降到每批 1 张，不把「一次画不了 4 张」当成业务失败；
- * - 一张都没返回、或上游报错（超时 / 鉴权 / 格式 / 其它拒绝），整个阶段按失败处理
- *   （docs/prd/04 MUST 3：生图失败不创建结果），消息与 `meta` 如实写明已取回几张、第几批出了什么问题；
- * - 成功时返回全部图片与调用摘要，落盘由 runner 完成。
+ * - 按原图顺序逐张调用，每次只带那一张，期望回一张；
+ * - 每处理完一张写一次进度（`{ done, total }`），界面据此显示「正在生图 第 k/N 张」；
+ * - 单张失败只记下来，继续下一张；一张都没成功才把整阶段判失败（docs/prd/04 MUST 3）；
+ * - `sort_order` 用原图序号，第 2 张失败时保留 1 与 3（AC-05-5）。
  */
 export async function generateImages(
   context: StageContext,
   deps: ImageGenerationDeps = {},
 ): Promise<ImageGenerationResult> {
   const snapshot = context.agents.image;
-  const requested = context.params.imageCount;
+  const assets = context.collection.assets;
   const now = deps.now ?? Date.now;
+  const compress = deps.compress ?? compressForReferenceImage;
+
+  if (assets.length === 0) {
+    throw new StageError(IMAGE_ERROR_CODES.rejected, "资源夹里没有原始图片，无法生成成品图");
+  }
 
   const generator = deps.generator ?? (await resolveImageGenerator(snapshot));
 
-  const style = findVisualStyle(context.params.visualStyle);
   const prompt = buildImagePrompt({
     agents: snapshot,
     visualStyle: context.params.visualStyle,
     extraPrompt: context.params.extraPrompt,
   });
-  const baseInput = {
-    prompt,
-    size: style?.size ?? DEFAULT_IMAGE_SIZE,
-    quality: null,
-    model: snapshot.modelId ?? null,
-  } satisfies Omit<GenerateImageInput, "n">;
+  // 尺寸取自视觉方向的登记表（docs/prd/05 SHOULD）；上游可选，省缺就用它的默认。
+  const size = findVisualStyle(context.params.visualStyle)?.size ?? DEFAULT_IMAGE_SIZE;
+  const model = snapshot.modelId ?? null;
+  const total = assets.length;
 
   const startedAt = now();
-  const batches: ImageBatchRecord[] = [];
+  const calls: ImageCallRecord[] = [];
+  const failures: ImageFailure[] = [];
   const images: GeneratedImage[] = [];
-  let remaining = requested;
-  // 本阶段实际可用的批次大小：默认 4；上游明确拒绝一次多张时降到 1，之后不再回升。
-  let batchSize = MAX_IMAGES_PER_BATCH;
 
   const buildMeta = (): ImageGenerationMeta => ({
-    model: baseInput.model,
-    batches,
+    model,
+    calls,
+    failures,
     totalMs: now() - startedAt,
   });
 
-  /**
-   * 发一次上游请求并记账。三种结果：
-   * - 返回图片（可能不足 n 张）：照单收下，由调用方按实际张数继续要；
-   * - 上游拒绝 n > 1：返回 "retry-with-single"，调用方把这一批降到 1 张再要一次；
-   * - 其他失败，或一张都没返回：直接抛阶段错误（docs/prd/04 MUST 3）。
-   */
-  const callBatch = async (n: number): Promise<GeneratedImage[] | "retry-with-single"> => {
-    const batchStartedAt = now();
+  await context.reportProgress({ done: 0, total });
 
-    try {
-      const batch = await generator.generate({ ...baseInput, n }, { signal: context.signal });
-      const ms = now() - batchStartedAt;
-      const kept = batch.slice(0, n);
-      const record: ImageBatchRecord = { n, received: kept.length, ms, ok: kept.length > 0 };
-      if (kept.length === 0) record.errorCode = IMAGE_ERROR_CODES.rejected;
-      batches.push(record);
+  for (const [offset, asset] of assets.entries()) {
+    const index = offset + 1;
 
-      if (kept.length === 0) {
-        throw new StageError(
-          IMAGE_ERROR_CODES.rejected,
-          `第 ${batches.length} 批（${n} 张）上游没有返回图片。` +
-            `已取回 ${images.length}/${requested} 张，阶段未产出结果`,
-          { meta: { ...buildMeta() } },
-        );
-      }
-
-      return kept;
-    } catch (error) {
-      // 上面那条「一张都没返回」已经带 meta，原样上抛，不再重复记一批。
-      if (error instanceof StageError && error.meta) throw error;
-
-      const ms = now() - batchStartedAt;
-      const errorCode = errorCodeOf(error);
-      batches.push({ n, received: 0, ms, ok: false, errorCode });
-      // 这一批的原始原因只写日志（MUST 2）：适配器已记上游原文，这里补上非 StageError 的内部异常，
-      // 界面上则只用 `describeStageFailure` 给出的中文说明。
-      logger.warn("生图批次失败", {
-        batch: batches.length,
-        code: errorCode,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-
-      // 真实网关的图片模型多数一次只出 1 张，有的还直接拒绝 n > 1（400 invalid n）：
-      // 这是上游的出图粒度不同，不是业务失败，把这一批降到 1 张再要一次。
-      if (n > 1 && errorCode === IMAGE_ERROR_CODES.rejected) return "retry-with-single";
-
-      throw new StageError(
-        errorCode,
-        `第 ${batches.length} 批（${n} 张）失败：${describeStageFailure(error)}。` +
-          `已取回 ${images.length}/${requested} 张，阶段未产出结果`,
-        { meta: { ...buildMeta() }, cause: error },
-      );
-    }
-  };
-
-  while (remaining > 0) {
-    let outcome = await callBatch(Math.min(batchSize, remaining));
-
-    if (outcome === "retry-with-single") {
-      batchSize = 1;
-      outcome = await callBatch(1);
-    }
-
-    if (outcome === "retry-with-single") {
-      // n = 1 不会再走降级分支；留一处兜底，避免把「没降级」当成产出。
-      throw new StageError(STAGE_ERROR_CODES.stageFailed, "生图阶段无法确定批次结果", {
+    // 阶段被中止（超时、服务停止）时不再继续下一张：否则要等 N 次上游超时。
+    if (context.signal.aborted) {
+      throw new StageError(STAGE_ERROR_CODES.timeout, "阶段已中止，停止继续重绘", {
         meta: { ...buildMeta() },
       });
     }
 
-    images.push(...outcome);
-    remaining -= outcome.length;
+    const callStartedAt = now();
+    try {
+      const source = await context.readSourceImage(asset.id);
+      const image = await compress(source.bytes);
+      const generated = await generator.generate(
+        { prompt, image, size, model } satisfies GenerateImageInput,
+        { signal: context.signal },
+      );
+
+      const first = generated[0];
+      if (!first) {
+        throw new StageError(
+          IMAGE_ERROR_CODES.rejected,
+          `上游没有返回第 ${index} 张原图的成品图`,
+        );
+      }
+
+      images.push({ ...first, sortOrder: index, sourceAssetId: asset.id });
+      calls.push({ index, sourceAssetId: asset.id, ms: now() - callStartedAt, ok: true });
+    } catch (error) {
+      if (context.signal.aborted) {
+        throw new StageError(STAGE_ERROR_CODES.timeout, "阶段已中止，停止继续重绘", {
+          meta: { ...buildMeta() },
+        });
+      }
+
+      const code = errorCodeOf(error);
+      const message = describeStageFailure(error);
+      failures.push({ index, sourceAssetId: asset.id, fileName: asset.fileName, code, message });
+      calls.push({
+        index,
+        sourceAssetId: asset.id,
+        ms: now() - callStartedAt,
+        ok: false,
+        errorCode: code,
+      });
+      // 上游原文已在适配器记过日志；这里补「哪一张、哪个码」与这条异常的原始说明（脱敏由 logger 负责），
+      // 绝不记 base64 与密钥（MUST 9）。内部异常（TypeError 等）的英文原文只在这一行出现。
+      logger.warn("原图重绘失败", {
+        index,
+        sourceAssetId: asset.id,
+        code,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    await context.reportProgress({ done: index, total });
   }
 
-  const meta: ImageGenerationMeta = {
-    model: baseInput.model,
-    batches,
-    totalMs: now() - startedAt,
+  const meta = buildMeta();
+
+  if (images.length === 0) {
+    throw new StageError(
+      failures[0]?.code ?? IMAGE_ERROR_CODES.rejected,
+      `全部 ${total} 张原图都未生成成品图：${failures.map(describeFailure).join("；")}，阶段未产出结果`,
+      { meta: { ...meta } },
+    );
+  }
+
+  // 调用摘要进日志（MUST 9）：只有模型名、张数与耗时，没有密钥与图片内容。
+  logger.info("生图阶段上游调用完成", {
+    model,
+    total,
+    succeeded: images.length,
+    failed: failures.length,
+    totalMs: meta.totalMs,
+  });
+
+  if (failures.length === 0) return { images, meta };
+
+  return {
+    images,
+    meta,
+    partialError: {
+      code: IMAGE_ERROR_CODES.partial,
+      message: describePartialFailure(failures, total, images.length),
+    },
   };
-  // 调用摘要进日志（MUST 8）：只有模型名、张数与耗时，没有密钥与请求头。
-  logger.info("生图阶段上游调用完成", meta);
-
-  return { images, meta };
 }
 
-export interface ReferenceImageInput {
-  /** 按原图重绘的说明文字。 */
-  prompt: string;
-  n: number;
-  /** 参考图（本版本一律不接收）。 */
-  referenceImages: string[];
-}
-
-/**
- * 图生图入口（docs/prd/05「本版本的范围边界」、AC-05-7）：
- * 先过功能开关，再明确拒绝。参考图永远不会交给出图适配器 —— 本版本的适配器也不接收参考图。
- */
-export async function generateWithReferenceImages(input: ReferenceImageInput): Promise<never> {
-  await requireEnabled("image-to-image");
-
-  throw new StageError(
-    IMAGE_ERROR_CODES.featureDisabled,
-    `图生图在本版本未实现（收到 ${input.referenceImages.length} 张参考图）`,
-  );
-}

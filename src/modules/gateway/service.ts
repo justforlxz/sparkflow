@@ -22,6 +22,7 @@ import {
   deleteGatewayRecord,
   deleteModelRecord,
   findGateway,
+  findGatewayByProtocol,
   findModelRecord,
   listGateways,
   listModelsByCapability,
@@ -36,6 +37,7 @@ import type {
   UpdateGatewayInput,
 } from "./schema";
 import { toGatewayView, type GatewayView } from "./view";
+import { MagpieVisionClient } from "./vision";
 
 function requireProtocol(protocol: string): GatewayProtocol {
   const definition = findProtocol(protocol);
@@ -244,4 +246,34 @@ export async function getGatewayExecutionTarget(gatewayId: string): Promise<Gate
     baseUrl: record.baseUrl,
     apiKey: decryptGatewayKey(record),
   };
+}
+
+/** 图片理解网关的接口形状（docs/prd/02）：它不绑定到某个 Agent，属平台级能力。 */
+export const VISION_PROTOCOL = "magpie-vision";
+
+/**
+ * 为视觉提取创建客户端（docs/prd/06「视觉提取」）：取最近更新的一条 `magpie-vision` 网关。
+ *
+ * 没有配置、或密钥读不出来时返回 `null`：调用方按「未包含照片内容」降级，
+ * 不得改用文案模型猜图，也不得让整个文案阶段失败。
+ */
+export async function createVisionClient(
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<MagpieVisionClient | null> {
+  const record = await findGatewayByProtocol(VISION_PROTOCOL);
+  if (!record) return null;
+
+  let apiKey: string;
+  try {
+    apiKey = decryptGatewayKey(record);
+  } catch {
+    // 已由 decryptGatewayKey 记过日志；这里按「没有可用的理解网关」处理。
+    return null;
+  }
+
+  return new MagpieVisionClient({
+    baseUrl: record.baseUrl,
+    apiKey,
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+  });
 }

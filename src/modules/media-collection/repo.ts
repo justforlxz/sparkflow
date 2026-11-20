@@ -208,6 +208,20 @@ export async function findAsset(collectionId: string, assetId: string): Promise<
   });
 }
 
+/** 批量取每个资源夹的原图张数（创作任务要显示「预计成品张数 = 原图张数」）。 */
+export async function findAssetCounts(
+  ids: readonly string[],
+): Promise<Record<string, number>> {
+  if (ids.length === 0) return {};
+
+  const rows = await getDb().mediaAsset.groupBy({
+    by: ["collectionId"],
+    where: { collectionId: { in: [...ids] } },
+    _count: { _all: true },
+  });
+  return Object.fromEntries(rows.map((row) => [row.collectionId, row._count._all]));
+}
+
 /** 追加图片接在当前最大排序值之后，保持「按上传顺序」。 */
 export async function appendAssets(collectionId: string, assets: NewAsset[]): Promise<void> {
   const last = await getDb().mediaAsset.findFirst({

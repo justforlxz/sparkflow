@@ -15,7 +15,7 @@ const COLLECTION: CollectionContext = {
   platform: null,
   sourceTitle: null,
   sourceBody: null,
-  assetCount: 1,
+  assets: [{ id: "asset-1", fileName: "1.png", mimeType: "image/png" }],
 };
 
 const files: ResultAssetWriter = { write: async () => [] };

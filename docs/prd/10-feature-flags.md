@@ -80,7 +80,7 @@
 | --- | --- | --- |
 | AC-10-1 | `GET /api/features` 返回两个注册项，状态与数据库一致 | `tests/e2e/features.spec.ts` |
 | AC-10-2 | 对未实现项调用 `PATCH` 开启，返回 `FEATURE_NOT_IMPLEMENTED`，数据库值不变 | 同上 |
-| AC-10-3 | 直接把数据库里 `image-to-image.enabled` 改成 true 后，相关接口仍返回 `FEATURE_DISABLED` | 单测（绕过 UI 直接改库） |
+| AC-10-3 | 直接把数据库里仍未实现的 `share-to-xiaohongshu.enabled` 改成 true 后，相关接口仍返回 `FEATURE_DISABLED`（`implemented = false` 的功能永远不可用） | 单测（绕过 UI 直接改库） |
 | AC-10-4 | 图生图开启后，界面入口可用；把开关关掉时入口回到禁用态且不发起请求（双向验证） | e2e（监听 request） |
 | AC-10-5 | 分享关闭时，点击「分享到小红书」出现「分享功能不可用」，且没有新窗口、没有网络请求 | e2e |
 | AC-10-6 | 设置页的功能开关区块能显示两项、显示「本版本未实现」，且开关不可操作 | e2e |

@@ -5,8 +5,8 @@
 import { z } from "zod";
 import { MAX_TAGS } from "@/modules/copy-generation/constants";
 import {
-  MAX_IMAGE_COUNT,
   MAX_RESULT_BODY_LENGTH,
+  MAX_SELECTED_ASSET_IDS,
   MAX_RESULT_TAG_LENGTH,
   MAX_RESULT_TITLE_LENGTH,
 } from "@/modules/generation/constants";
@@ -33,7 +33,7 @@ export const markPublishedSchema = z.object({
   selectedAssetIds: z
     .array(z.string().trim().min(1))
     .min(1, "至少选择一张图片")
-    .max(MAX_IMAGE_COUNT),
+    .max(MAX_SELECTED_ASSET_IDS),
 });
 
 export type MarkPublishedInput = z.infer<typeof markPublishedSchema>;

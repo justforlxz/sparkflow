@@ -14,8 +14,14 @@ export function createImageStage(deps: ImageGenerationDeps = {}): StageHandler {
   return {
     stage: "image",
     async run(context: StageContext): Promise<StageOutcome> {
-      const { images, meta } = await generateImages(context, deps);
-      return { stage: "image", images, meta: { ...meta } };
+      const { images, meta, partialError } = await generateImages(context, deps);
+      // 部分原图失败时把原因一起交出去：runner 写进阶段 `error`，任务因此判为 partial（AC-05-5）。
+      return {
+        stage: "image",
+        images,
+        meta: { ...meta },
+        ...(partialError ? { partialError } : {}),
+      };
     },
   };
 }

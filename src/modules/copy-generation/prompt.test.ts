@@ -13,12 +13,38 @@ const INPUT: CopyPromptInput = {
     sourceTitle: "原始标题在这里",
     sourceBody: "原始文案在这里",
   },
-  images: { count: 4, visualStyle: "fresh" },
+  images: {
+    generatedCount: 4,
+    descriptions: ["阳台上的绿萝，逆光", "桌上的手冲咖啡杯，木色桌面"],
+    visualStyle: "fresh",
+  },
   copyStyle: "story",
   extraPrompt: "语气再轻松一点",
 };
 
 describe("提示词拼装（docs/prd/06「输入拼装」）", () => {
+  it("AC-06-7 每张原图的视觉描述按编号都进提示词，且与编号对齐", () => {
+    const { user } = buildCopyPrompt(INPUT);
+
+    for (const [index, description] of INPUT.images.descriptions.entries()) {
+      expect(user).toContain(`  ${index + 1}. ${description}`);
+    }
+    expect(user).toContain("按原图编号");
+  });
+
+  it("没有视觉描述时明说未提供，不假装看过图（AC-06-8 的降级路径）", () => {
+    const { user } = buildCopyPrompt({
+      ...INPUT,
+      images: { ...INPUT.images, descriptions: [] },
+    });
+
+    expect(user).toContain("照片内容：未提供");
+    expect(user).toContain("本次没有获取到照片内容");
+  });
+});
+
+describe("提示词拼装（docs/prd/06「输入拼装」）", () => {
+
   it("第一部分：Agent 快照的 role、systemPrompt、outputRequirements 都进 system", () => {
     const { system } = buildCopyPrompt(INPUT);
 

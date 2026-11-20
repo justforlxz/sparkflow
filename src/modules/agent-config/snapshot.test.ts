@@ -72,6 +72,7 @@ describe("创建任务用的配置快照（MUST 6）", () => {
     expect(snapshotOf(record({ type: "image", gatewayModelId: null })).modelId).toBeNull();
   });
 
+
   it("文案 Agent 的快照带上绑定的模型名", () => {
     expect(
       snapshotOf(record({ type: "copy", gatewayModelId: "gpt-4o-mini" })).modelId,

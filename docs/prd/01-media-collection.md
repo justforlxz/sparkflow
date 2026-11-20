@@ -4,7 +4,7 @@
 
 ## 目标
 
-把「一次素材收集」归档成媒体资源夹：名称、来源平台、来源链接、原始标题、原始文案，以及一组原始图片。
+把「一次素材收集」归档成媒体资源夹：名称、来源平台、来源链接、原始标题、原始文案、**提取目标**，以及一组原始图片。
 后续所有创作都基于资源夹进行，因此这里的文件生命周期必须可靠。
 
 ## 范围
@@ -63,7 +63,7 @@
 | POST | `/api/collections` | 创建（字段 + 至少一张图片，multipart 或先上传后关联） |
 | GET | `/api/collections/[id]` | 详情（含资产列表、任务数、结果数、状态） |
 | PATCH | `/api/collections/[id]` | 编辑来源信息 |
-| POST | `/api/collections/[id]/save` | 编辑保存：来源信息与图片变更一次提交（multipart） |
+| POST | `/api/collections/[id]/save` | 编辑保存：来源信息、**提取目标**与图片变更一次提交（multipart） |
 | DELETE | `/api/collections/[id]` | 删除，级联清理 |
 | POST | `/api/collections/[id]/assets` | 追加图片（multipart，可多张） |
 | DELETE | `/api/collections/[id]/assets/[assetId]` | 解除关联 |
@@ -75,6 +75,10 @@
 更新顺序；事务失败会补偿删除本次新写的文件，库与磁盘都回到保存前的状态。
 `PATCH /api/collections/[id]`、`POST · DELETE /api/collections/[id]/assets` 保留给其它入口与独立验收，
 编辑弹窗不再调用它们。
+
+资源夹字段新增 `extract_target`（提取目标，文本，可空）：描述要从这批素材里取出什么，
+例如「桌垫的织物纹理」。同一批素材通常服务同一个产品，所以放在资源夹上而不是每次创作重填
+（ADR 0009）；发起创作时该字段必须非空。
 
 资源夹状态（列表筛选用的派生值，不落库）：
 `draft`（无结果且无任务）／`generating`（有运行中任务）／`has_results`（有结果未发布）／`published`（已发布）。
@@ -91,6 +95,7 @@
 | AC-01-6 | 删除资源夹后，其任务、结果、发布记录在数据库与界面中都不再出现 | 同上 |
 | AC-01-7 | 图片字节通过 `/api/files/...` 返回，`content-type` 正确；未登录（启用口令时）返回 302 或 401 | 同上 |
 | AC-01-8 | 0 张图的资源夹调用 `POST /api/collections/[id]/tasks` 返回 `VALIDATION_FAILED`，不建任务 | 同上 |
+| AC-01-9 | 提取目标可保存、可编辑、可在详情页看到；空提取目标时发起创作被拒绝（`VALIDATION_FAILED`） | 同上 |
 
 ## 验证方式
 

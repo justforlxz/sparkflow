@@ -1,11 +1,14 @@
-# 05 图片创作（一图对一图，走 magpie 的图片编辑 MCP）
+# 05 图片提取（从场景里取出目标，一图对一图，走 magpie 图片 MCP）
 
 > 依赖：02 网关、03 Agent 配置、04 任务编排、10 功能开关 ｜ 对端：magpie 插件 `magpie-image-edit`
 
 ## 目标
 
-把资源夹里的**每一张原始图片**变成一张对应的成品图：原图作为参考交给模型重绘，
-一张原图出一张成品图，顺序与原图一致。
+把资源夹里的**每一张原始图片**里指定的目标取出来，做成一张可以直接使用的素材图：
+一条原图出一张提取图，顺序与原图一致。
+
+「提取」不是「重绘」：重绘乐于改变与美化，提取要求**不改结构、只搬运**——
+忠实保留目标自身的纹理、材质、图案与颜色，把与目标无关的场景元素全部去掉。
 
 **本项目不实现图片生成模型，也不实现图生图逻辑**：全部经由 magpie 的 MCP 工具完成
 （插件仓库 `github.com/justforlxz/magpie-image-edit`）。
@@ -67,6 +70,25 @@ sensenova 默认模型（`sensenova-token-plan/sensenova-u1.5-lite`）出图右�
 
 ## 设计契约
 
+### 提取目标与提取要求
+
+- **提取目标**来自资源夹的 `extract_target`（ADR 0009），例如「桌垫的织物纹理」。创建任务时写进快照。
+- **提取要求**替代原来的「视觉方向」，三选一：
+
+| key | 中文 | 交给模型的描述 |
+| --- | --- | --- |
+| `faithful` | 忠实还原 | 不改颜色与结构，只把目标拉平、去透视，保留原本的纹理走向与细微瑕疵 |
+| `flatten` | 平整化 | 压平褶皱、折痕与光照不均，让纹理均匀铺满画面，可直接当材质使用 |
+| `dereflect` | 去反光 | 去掉高光、反光与边缘阴影，还原目标真实的颜色与明暗 |
+
+### 输出形态
+
+固定为**去透视的平铺素材图**：
+
+- 画面里只有目标本身，没有桌面、道具、背景或场景阴影；
+- 目标拉平成正面视角、四边完整、铺满画面；
+- 不添加原图里没有的文字、水印或标识。
+
 ### MUST
 
 1. 适配器接口 `ImageGenerator.generate(input) => Promise<GeneratedImage[]>`；
@@ -89,9 +111,9 @@ sensenova 默认模型（`sensenova-token-plan/sensenova-u1.5-lite`）出图右�
 
 ### SHOULD
 
-- 提示词 = Agent 快照的 role / systemPrompt / outputRequirements + 视觉方向描述 + 补充要求；
+- 提示词 = Agent 快照的 role / systemPrompt / outputRequirements + **提取目标** + 提取要求描述 + 补充要求；
   拼装函数单独成函数并有单测。
-- 视觉方向描述取自 `src/modules/image-generation/styles.ts` 的登记表。
+- 提取要求的描述取自 `src/modules/image-generation/styles.ts` 的登记表（键名从「视觉方向」改成「提取要求」）。
 - 一次任务里的 N 次调用串行执行（避免并发打满上游限流），每次之间不留固定 sleep。
 
 ### MAY

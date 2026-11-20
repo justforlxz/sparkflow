@@ -60,7 +60,7 @@ tests/e2e/          # 端到端验收
 ### 配置与密钥
 
 - 只有「这台机器怎么跑」进环境变量（`src/lib/env.ts` 唯一入口）。
-- 业务配置（网关、模型、提示词、视觉方向、平台选项）在数据库或模块常量文件里，不散落在组件里。
+- 业务配置（网关、模型、提示词、提取要求、平台选项）在数据库或模块常量文件里，不散落在组件里。
 - 网关 API Key 加密入库，密钥由 `AUTH_SECRET` 派生（HKDF），不复用会话签名密钥。
 - 日志统一走 `src/lib/logger.ts`，对 `key|token|secret|password|authorization|cookie` 字段与
   `sk-…`、`Bearer …` 形态脱敏。
@@ -92,7 +92,7 @@ tests/e2e/          # 端到端验收
 | --- | --- |
 | 新的接口形状（协议） | `src/modules/gateway/adapters/` 加文件 + 注册 + 枚举加值 |
 | 新的功能开关 | `feature-flags/registry.ts` 加一项（必要时加一条迁移） |
-| 新的视觉方向 / 文案风格 | 对应模块的 `styles.ts` |
+| 新的提取要求 / 文案风格 | 对应模块的 `styles.ts` |
 | 新的执行阶段 | `generation_stage.stage` 枚举 + 派生状态表 + worker 分支 |
 | 新的页面 | `src/app/<路由>/page.tsx`，只组合模块与通用组件 |
 

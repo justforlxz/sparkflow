@@ -1,12 +1,14 @@
 /**
  * 资源夹的业务校验规则（纯函数，抛 `AppError`）。
  * 规则集中在这里，service 只负责编排；单测直接对着这些函数断言。
+ *
+ * 这里**没有**「至少 1 张图片」这条规则：资源夹允许没有图片，用户常先建夹后收集素材
+ * （docs/prd/01-media-collection.md MUST 1）。「至少要有一张原图」只在发起创作时校验，
+ * 落在 `src/modules/generation/rules.ts`（AC-01-8）。
  */
 import { AppError } from "@/lib/errors";
 
 export const COLLECTION_ERROR_MESSAGES = {
-  imageRequired: "资源夹至少需要 1 张原始图片",
-  lastImage: "资源夹至少需要保留 1 张原始图片；如需清空图片，请直接删除资源夹",
   busy: "资源夹有运行中的任务，请等任务结束后再修改图片或删除",
   emptyFile: (fileName: string) => `「${fileName}」是空文件`,
   unsupportedType: (fileName: string) =>
@@ -29,16 +31,6 @@ export function formatBytes(bytes: number): string {
   const kib = 1024;
   if (bytes >= kib) return `${Math.round(bytes / kib)} KiB`;
   return `${bytes} 字节`;
-}
-
-/** MUST 1：服务端校验「资源夹至少有 1 张原始图片」，不依赖前端拦截。 */
-export function assertHasImage(imageCount: number): void {
-  if (imageCount < 1) throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.imageRequired);
-}
-
-/** 解除关联不能让资源夹变成 0 张图片（MUST 1 在编辑路径上的表现）。 */
-export function assertCanRemoveImage(remaining: number): void {
-  if (remaining < 1) throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.lastImage);
 }
 
 /**

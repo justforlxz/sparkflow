@@ -43,7 +43,9 @@ export const COLLECTION_COPY = {
   listSubtitle: "把一次素材收集归档成资源夹，后续所有创作都基于它进行。",
   emptyList: "还没有媒体资源夹。先建一个，把收集到的图片和来源信息存进来。",
   emptySearch: "没有匹配的资源夹。换个关键词或清空筛选试试。",
+  /** 0 张图时的引导态：说明「先建夹后收集素材」是正常路径，并指出下一步做什么（AC-01-2）。 */
   emptyAssets: "这个资源夹还没有原始图片。",
+  emptyAssetsHint: "先点「编辑」把收集到的图片上传进来，之后再开始 AI 创作。",
   createAction: "新建媒体资源夹",
   editAction: "编辑",
   deleteAction: "删除",

@@ -27,9 +27,14 @@ import { VISUAL_STYLES } from "@/modules/image-generation/styles";
 /**
  * 「开始 AI 创作」：把任务参数交给 `POST /api/collections/[id]/tasks`，只写库就返回，
  * 两个阶段由 worker 推进。可选值来自各模块的登记表，界面不自己写死枚举（AGENTS.md 硬性规则 1）。
+ *
+ * 资源夹允许没有图片，但发起创作要求至少一张原图（docs/prd/01 MUST 1、docs/prd/04）。
+ * 0 张时按钮置灰成不可用状态，点击只提示「先上传原始素材」，不发请求（AC-01-2）。
  */
 interface StartCreationDialogProps {
   collectionId: string;
+  /** 资源夹当前的原始图片张数，决定按钮是否可用。 */
+  imageCount: number;
   /** 主按钮用于页头，次按钮用于结果页签的空状态。 */
   variant?: "primary" | "secondary";
   label?: string;
@@ -41,17 +46,31 @@ interface TaskEnvelope {
 
 export function StartCreationDialog({
   collectionId,
+  imageCount,
   variant = "primary",
   label = CREATION_COPY.action,
 }: StartCreationDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
   const [visualStyle, setVisualStyle] = useState<string>(VISUAL_STYLES[0].value);
   const [copyStyle, setCopyStyle] = useState<string>(COPY_STYLES[0].value);
-  const [imageCount, setImageCount] = useState<number>(4);
+  const [dialogImageCount, setDialogImageCount] = useState<number>(4);
   const [extraPrompt, setExtraPrompt] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // 没有原始素材就不让进创作弹窗：任务创建接口会拒绝，界面上先挡住并说明原因。
+  const blocked = imageCount < 1;
+
+  function openDialog() {
+    if (blocked) {
+      setHint(CREATION_COPY.needsImages);
+      return;
+    }
+    setHint(null);
+    setOpen(true);
+  }
 
   async function submit() {
     setSubmitting(true);
@@ -62,7 +81,7 @@ export function StartCreationDialog({
         body: JSON.stringify({
           visualStyle,
           copyStyle,
-          imageCount,
+          imageCount: dialogImageCount,
           extraPrompt: extraPrompt.trim() === "" ? null : extraPrompt,
         }),
       });
@@ -76,12 +95,26 @@ export function StartCreationDialog({
   }
 
   const triggerClass = buttonClass({ variant: variant === "primary" ? "primary" : "secondary" });
+  // 置灰的样式来自通用按钮类的 `aria-disabled:` 变体，这里只负责状态与提示语。
 
   return (
     <>
-      <button type="button" data-testid="start-creation" onClick={() => setOpen(true)} className={triggerClass}>
-        {label}
-      </button>
+      <div className="space-y-1">
+        <button
+          type="button"
+          data-testid="start-creation"
+          aria-disabled={blocked || undefined}
+          onClick={openDialog}
+          className={triggerClass}
+        >
+          {label}
+        </button>
+        {hint ? (
+          <p role="status" className="text-footnote text-warning">
+            {hint}
+          </p>
+        ) : null}
+      </div>
 
       {open ? (
         <div className={OVERLAY_CLASS}>
@@ -136,8 +169,8 @@ export function StartCreationDialog({
                   aria-label={CREATION_COPY.imageCountLabel}
                   min={MIN_IMAGE_COUNT}
                   max={MAX_IMAGE_COUNT}
-                  value={imageCount}
-                  onChange={(event) => setImageCount(Number(event.target.value))}
+                  value={dialogImageCount}
+                  onChange={(event) => setDialogImageCount(Number(event.target.value))}
                   className={`${INPUT_CLASS} w-32`}
                 />
               </label>

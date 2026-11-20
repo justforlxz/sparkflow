@@ -172,7 +172,7 @@ test("AC-01-1 创建资源夹并上传 2 张图片后，列表与详情都能看
   expect(found.data.total).toBe(1);
 });
 
-test("AC-01-2 没有图片时保存被拒绝，返回 VALIDATION_FAILED，页面显示可理解的提示", async ({
+test("AC-01-2 没有图片也能保存成功；详情显示引导态，「开始 AI 创作」置灰且不发起请求", async ({
   page,
   request,
 }) => {
@@ -183,22 +183,60 @@ test("AC-01-2 没有图片时保存被拒绝，返回 VALIDATION_FAILED，页面
   await page.goto("/collections");
   await page.getByRole("button", { name: "新建媒体资源夹" }).click();
 
+  // 用户常先建夹、后收集素材：不带图片保存必须成功。
   const dialog = page.getByRole("dialog", { name: "新建媒体资源夹" });
   await dialog.getByLabel("名称").fill(name);
   await dialog.getByRole("button", { name: "保存" }).click();
-  await expect(dialog.getByRole("alert").filter({ hasText: "至少需要 1 张原始图片" })).toBeVisible();
+  await expect(dialog).toBeHidden();
 
-  // 服务端同样是判据：不带图片的 multipart 直接 400。
-  const response = await request.post("/api/collections", {
-    multipart: { name: uniqueName("AC-01-2-api"), platform: "小红书" },
+  const found = await findByName(request, name);
+  createdIds.push(...found.data.items.map((item) => item.id));
+  expect(found.data.total).toBe(1);
+
+  const matched = found.data.items.filter((item) => item.name === name);
+  expect(matched).toHaveLength(1);
+  const created = await getDetail(request, matched[0].id);
+  expect(created.assetCount).toBe(0);
+  expect(created.assets).toEqual([]);
+
+  // 详情页：0 张图是引导态，不是空网格。
+  await page.goto(`/collections/${created.id}`);
+  await expect(page.getByText("这个资源夹还没有原始图片。")).toBeVisible();
+  await expect(page.getByText("先点「编辑」把收集到的图片上传进来", { exact: false })).toBeVisible();
+  await expect(page.locator("img[alt]")).toHaveCount(0);
+
+  // 「开始 AI 创作」置灰：点击只给提示，不发请求，也不弹创作弹窗。
+  const taskRequests: string[] = [];
+  page.on("request", (sent) => {
+    if (sent.method() === "POST" && sent.url().includes("/tasks")) taskRequests.push(sent.url());
+  });
+
+  const startButton = page.getByTestId("start-creation");
+  await expect(startButton).toHaveAttribute("aria-disabled", "true");
+  // 真实浏览器不会拦下 aria-disabled 上的点击：这里绕过 Playwright 的可操作性检查。
+  await startButton.click({ force: true });
+  await expect(page.getByRole("status")).toHaveText("先上传原始素材");
+  await expect(page.getByTestId("submit-creation")).toHaveCount(0);
+  expect(taskRequests).toEqual([]);
+});
+
+test("AC-01-8 0 张图的资源夹发起创作返回 VALIDATION_FAILED，不建任务", async ({ request }) => {
+  await ensureAccount(request);
+  const created = await createCollection(request, uniqueName("AC-01-8"), []);
+  expect(created.assetCount).toBe(0);
+
+  const response = await request.post(`/api/collections/${created.id}/tasks`, {
+    data: { visualStyle: "fresh", copyStyle: "story", imageCount: 1, extraPrompt: null },
   });
   expect(response.status()).toBe(400);
   const body = (await response.json()) as ErrorBody;
   expect(body.error.code).toBe("VALIDATION_FAILED");
-  expect(body.error.message).toContain("至少需要 1 张原始图片");
+  expect(body.error.message).toContain("没有原始图片");
 
-  const found = await findByName(request, name);
-  expect(found.data.total).toBe(0);
+  // 没有落下任务记录：任务列表里查不到这个资源夹的任务。
+  const tasks = await request.get("/api/tasks");
+  expect(tasks.status()).toBe(200);
+  expect(JSON.stringify(await tasks.json())).not.toContain(created.id);
 });
 
 test("AC-01-3 上传 .txt 被拒绝，错误信息说明原因", async ({ page, request }) => {

@@ -106,7 +106,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <StartCreationDialog collectionId={collection.id} />
+          <StartCreationDialog collectionId={collection.id} imageCount={collection.assetCount} />
           <CollectionDialog
             mode="edit"
             collection={{
@@ -154,7 +154,10 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           <div className="min-w-0 space-y-3">
             <h2 className="text-heading font-semibold text-ink">{COLLECTION_COPY.imagesSection}</h2>
             {collection.assets.length === 0 ? (
-              <EmptyState message={COLLECTION_COPY.emptyAssets} />
+              <EmptyState
+                message={COLLECTION_COPY.emptyAssets}
+                hint={COLLECTION_COPY.emptyAssetsHint}
+              />
             ) : (
               <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {collection.assets.map((asset) => (
@@ -214,6 +217,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
           action={
             <StartCreationDialog
               collectionId={collection.id}
+              imageCount={collection.assetCount}
               variant="secondary"
               label={RESULT_COPY.emptyListAction}
             />

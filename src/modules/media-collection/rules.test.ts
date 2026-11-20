@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isAppError } from "@/lib/errors";
-import {
-  assertCanRemoveImage,
-  assertCollectionMutable,
-  assertHasImage,
-  COLLECTION_ERROR_MESSAGES,
-  formatBytes,
-} from "./rules";
+import { assertCollectionMutable, COLLECTION_ERROR_MESSAGES, formatBytes } from "./rules";
 
 function catchAppError(run: () => void) {
   try {
@@ -18,30 +12,11 @@ function catchAppError(run: () => void) {
   throw new Error("预期抛出 AppError，但没有抛出");
 }
 
-describe("至少一张原始图片（MUST 1、AC-01-2）", () => {
-  it("0 张图片时返回 VALIDATION_FAILED", () => {
-    const error = catchAppError(() => assertHasImage(0));
-    expect(error.code).toBe("VALIDATION_FAILED");
-    expect(error.message).toBe(COLLECTION_ERROR_MESSAGES.imageRequired);
-  });
-
-  it("至少 1 张时通过", () => {
-    expect(() => assertHasImage(1)).not.toThrow();
-    expect(() => assertHasImage(3)).not.toThrow();
-  });
-});
-
-describe("解除关联后不能变成 0 张（AC-01-5）", () => {
-  it("会剩下 0 张时拒绝，并指出去删资源夹", () => {
-    const error = catchAppError(() => assertCanRemoveImage(0));
-    expect(error.code).toBe("VALIDATION_FAILED");
-    expect(error.message).toContain("1 张");
-  });
-
-  it("至少还剩 1 张时通过", () => {
-    expect(() => assertCanRemoveImage(1)).not.toThrow();
-  });
-});
+/**
+ * 资源夹允许没有图片（MUST 1、AC-01-2）：保存路径没有「至少 1 张」这条规则，
+ * 建夹、整组保存、解除关联都不校验图片数量；「至少要有一张原图」只在发起创作时校验
+ * （见 `src/modules/generation/rules.ts`，AC-01-8）。这里只留运行中任务与文案的用例。
+ */
 
 describe("运行中任务时禁止改图与删除（AC-02-10 判定点）", () => {
   it("有运行中任务时返回 CONFLICT 并带业务子码", () => {

@@ -2,9 +2,9 @@
 import { AppError } from "@/lib/errors";
 
 /**
- * 资源夹必须有至少一张原始图片（docs/prd/00-overview.md 全局规则 1）。
- * 正常情况下资源夹模块已经保证（建夹需图片、不允许删到 0 张），这里再挡一次，
- * 避免绕过接口改库后创建出没有素材的任务。
+ * 「至少要有一张原图」只在发起创作时校验（docs/prd/00-overview.md 全局规则 1、
+ * docs/prd/04-generation-task.md）。资源夹本身允许 0 张图片（docs/prd/01 MUST 1），
+ * 所以这条判据属于任务创建路径，保存路径上没有对应规则（AC-01-2、AC-01-8）。
  */
 export function assertCollectionHasImages(assetCount: number): void {
   if (assetCount < 1) {

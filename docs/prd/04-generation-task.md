@@ -64,12 +64,14 @@ MUST：
 2. 进程内 worker（ADR 0002）轮询 `queued` 阶段，一次执行一个任务。
 3. 服务启动时：`running` 阶段 → `failed`（`code = SERVER_RESTARTED`），`queued` 阶段保留待跑。
 4. 每个任务保存 `agent_snapshot`（见 03），运行时只读快照 + 按 `gateway_id` 取密钥。
+4b. **任务不接收图片数量参数**：成品张数 = 该资源夹本次的原图张数（一图对一图，见 05）。
+   `generation_task.image_count` 字段废弃，只保留历史数据。
 5. 失败写入可诊断信息：`code`、`message`（已脱敏）、发生时间。
 6. 同一资源夹可连续创建多个任务，任务间数据互不共享。
 
 SHOULD：
 
-- 单任务总超时默认 15 分钟，超时把当前阶段置 `failed`（`code = TIMEOUT`）。
+- 单任务总超时默认 45 分钟（一图对一图后生图次数显著变多），超时把当前阶段置 `failed`（`code = TIMEOUT`）。
 - worker 轮询间隔 1–2 秒。
 
 MUST NOT：
@@ -90,7 +92,7 @@ agent_snapshot（jsonb）、created_at
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/collections/[id]/tasks` | 创建任务（= 重新生成的能力） |
+| POST | `/api/collections/[id]/tasks` | 创建任务（= 重新生成的能力）；不再接受 `imageCount` |
 | GET | `/api/tasks` | 列表（含派生状态、阶段摘要） |
 | GET | `/api/tasks/[id]` | 详情（两阶段状态、快照、错误、结果 id） |
 | POST | `/api/tasks/[id]/retry` | 只重试失败阶段 |

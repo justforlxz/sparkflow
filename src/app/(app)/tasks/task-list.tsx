@@ -9,14 +9,26 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { STAGE_STATUS_TONE, TASK_STATUS_TONE } from "@/components/ui/status-tone";
-import { buttonClass, noticeClass, TEXT_LINK_CLASS } from "@/components/ui/styles";
+import {
+  buttonClass,
+  FIELD_CLASS,
+  LABEL_CLASS,
+  noticeClass,
+  SELECT_CLASS,
+  TEXT_LINK_CLASS,
+} from "@/components/ui/styles";
 import {
   STAGE_NAMES,
   STAGE_POLL_INTERVAL_MS,
   TASK_COPY,
   type StageStatus,
 } from "@/modules/generation/constants";
+import {
+  defaultRegenerateRequirement,
+  isKnownExtractRequirement,
+} from "@/modules/generation/regenerate";
 import type { TaskSummaryView } from "@/modules/generation/view";
+import { EXTRACT_REQUIREMENTS } from "@/modules/image-generation/styles";
 
 /**
  * 任务列表（docs/prd/07「任务列表」）：
@@ -61,6 +73,10 @@ export function TaskList({ initialTasks }: TaskListProps) {
   /** 正在重试 / 重新生成的任务 id，用来禁用按钮，避免重复提交。 */
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<TaskSummaryView | null>(null);
+  /** 重新生成要用的提取要求：旧任务的 key 已不在登记表里，必须让用户在这里重选（ADR 0009）。 */
+  const [regenerateRequirement, setRegenerateRequirement] = useState<string>(
+    EXTRACT_REQUIREMENTS[0].value,
+  );
   const polling = needsPolling(tasks);
 
   useEffect(() => {
@@ -110,7 +126,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
       const data = await fetchJson<TaskEnvelope>(`/api/collections/${task.collectionId}/tasks`, {
         method: "POST",
         body: JSON.stringify({
-          visualStyle: task.visualStyle,
+          extractRequirement: regenerateRequirement,
           copyStyle: task.copyStyle,
           extraPrompt: task.extraPrompt,
         }),
@@ -164,7 +180,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
                       {task.collectionName}
                     </Link>
                     <p className="text-footnote text-ink-tertiary">
-                      {formatTime(task.createdAt)} · {task.visualStyleLabel} · {task.copyStyleLabel} ·{" "}
+                      {formatTime(task.createdAt)} · {task.extractRequirementLabel} · {task.copyStyleLabel} ·{" "}
                       {TASK_COPY.expectedImageCountLabel} {task.expectedImageCount} 张
                     </p>
                   </div>
@@ -241,7 +257,10 @@ export function TaskList({ initialTasks }: TaskListProps) {
                   <button
                     type="button"
                     data-testid="regenerate-button"
-                    onClick={() => setConfirming(task)}
+                    onClick={() => {
+                      setConfirming(task);
+                      setRegenerateRequirement(defaultRegenerateRequirement(task.extractRequirement));
+                    }}
                     disabled={busyId === task.id}
                     className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
@@ -257,7 +276,36 @@ export function TaskList({ initialTasks }: TaskListProps) {
       <ConfirmDialog
         open={confirming !== null}
         title={TASK_COPY.regenerateConfirmTitle}
-        body={TASK_COPY.regenerateConfirmBody}
+        body={
+          <div className="space-y-3">
+            <p>{TASK_COPY.regenerateConfirmBody}</p>
+            <label className={FIELD_CLASS}>
+              <span className={LABEL_CLASS}>{TASK_COPY.extractRequirementLabel}</span>
+              <select
+                aria-label={TASK_COPY.extractRequirementLabel}
+                data-testid="regenerate-requirement"
+                value={regenerateRequirement}
+                onChange={(event) => setRegenerateRequirement(event.target.value)}
+                className={SELECT_CLASS}
+              >
+                {EXTRACT_REQUIREMENTS.map((requirement) => (
+                  <option key={requirement.value} value={requirement.value}>
+                    {requirement.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {/* 旧任务存的是已删除的视觉方向 key：说明为什么必须重选，并指出提取目标去哪补。 */}
+            {confirming && !isKnownExtractRequirement(confirming.extractRequirement) ? (
+              <p
+                data-testid="regenerate-legacy-note"
+                className="text-footnote text-ink-tertiary"
+              >
+                {TASK_COPY.regenerateLegacyRequirementNote}
+              </p>
+            ) : null}
+          </div>
+        }
         confirmLabel={TASK_COPY.confirmAction}
         cancelLabel={TASK_COPY.cancelAction}
         busy={confirming !== null && busyId === confirming.id}

@@ -76,6 +76,7 @@ async function createCollectionWithImage(name: string, count = 2): Promise<strin
       sourceUrl: null,
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
+      extractTarget: "桌垫的织物纹理",
     },
     Array.from({ length: count }, (_, index) => ({
       fileName: `${String.fromCharCode(97 + index)}.png`,
@@ -114,7 +115,7 @@ async function createFinishedResult(
   extraPrompt: string | null = null,
 ): Promise<string> {
   const task = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt,
   });

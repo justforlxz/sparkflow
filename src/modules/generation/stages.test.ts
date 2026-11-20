@@ -14,12 +14,12 @@ beforeAll(() => {
 const CONTEXT: StageContext = {
   taskId: "task-1",
   attempt: 1,
-  params: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
+  params: { extractRequirement: "faithful", copyStyle: "story", extraPrompt: null },
   agents: {
     image: {
       agentType: "image",
       enabled: true,
-      name: "图片创作 Agent",
+      name: "图片提取 Agent",
       gatewayId: "gateway-1",
       protocol: "magpie-mcp",
       baseUrl: "https://magpie.example.com",
@@ -40,12 +40,14 @@ const CONTEXT: StageContext = {
       systemPrompt: "系统提示词",
       outputRequirements: "输出要求",
     },
+    extractTarget: "桌垫的织物纹理",
   },
   collection: {
     id: "collection-1",
     platform: null,
     sourceTitle: null,
     sourceBody: null,
+    extractTarget: "桌垫的织物纹理",
     assets: [
       { id: "asset-1", fileName: "a.png", mimeType: "image/png" },
       { id: "asset-2", fileName: "b.png", mimeType: "image/png" },

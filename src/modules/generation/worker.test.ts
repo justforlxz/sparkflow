@@ -15,6 +15,7 @@ const COLLECTION: CollectionContext = {
   platform: null,
   sourceTitle: null,
   sourceBody: null,
+  extractTarget: "桌垫的织物纹理",
   assets: [{ id: "asset-1", fileName: "1.png", mimeType: "image/png" }],
 };
 

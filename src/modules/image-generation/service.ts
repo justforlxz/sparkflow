@@ -1,7 +1,9 @@
 /**
- * 图片创作业务层（docs/prd/05-image-generation.md、ADR 0008）：
+ * 图片提取业务层（docs/prd/05-image-generation.md、ADR 0009）：
  * 提示词拼装、一图对一图的串行调用、进度上报、失败分类。
  * 落盘与写库仍由 generation 模块的 runner 负责。
+ *
+ * 「提取」不是「重绘」：提示词只搬运指定目标，不改结构、不美化（ADR 0009）。
  *
  * 三条边界：
  * 1. 一次任务里原图有 N 张就调 N 次上游，每次只带那一张（MUST 2）；串行、不留固定 sleep（SHOULD）。
@@ -32,7 +34,7 @@ import {
 import { compressForReferenceImage } from "./compress";
 import { describeStageFailure } from "./failure";
 import { buildImagePrompt } from "./prompt";
-import { DEFAULT_IMAGE_SIZE, findVisualStyle } from "./styles";
+import { DEFAULT_IMAGE_SIZE, findExtractRequirement } from "./styles";
 
 /** 图片 Agent 必须绑在 magpie 的图片 MCP 网关上（docs/prd/02「接口形状」）。 */
 export const MAGPIE_IMAGE_PROTOCOL = "magpie-mcp";
@@ -180,18 +182,29 @@ export async function generateImages(
   const compress = deps.compress ?? compressForReferenceImage;
 
   if (assets.length === 0) {
-    throw new StageError(IMAGE_ERROR_CODES.rejected, "资源夹里没有原始图片，无法生成成品图");
+    throw new StageError(IMAGE_ERROR_CODES.rejected, "资源夹里没有原始图片，无法提取素材图");
+  }
+
+  // 提取目标在创建任务时就固化进快照；这里读快照，不读资源夹的当前值（全局规则 3）。
+  // ADR 0009 之前的旧任务没有这一项：如实拒绝并指向「重新生成」，不拿空目标去调上游。
+  const extractTarget = context.agents.extractTarget?.trim();
+  if (!extractTarget) {
+    throw new StageError(
+      IMAGE_ERROR_CODES.rejected,
+      "该任务创建时没有提取目标，无法提取；请先在资源夹里填写「提取目标」，再用「重新生成」重新发起",
+    );
   }
 
   const generator = deps.generator ?? (await resolveImageGenerator(snapshot));
 
   const prompt = buildImagePrompt({
     agents: snapshot,
-    visualStyle: context.params.visualStyle,
+    extractTarget,
+    extractRequirement: context.params.extractRequirement,
     extraPrompt: context.params.extraPrompt,
   });
-  // 尺寸取自视觉方向的登记表（docs/prd/05 SHOULD）；上游可选，省缺就用它的默认。
-  const size = findVisualStyle(context.params.visualStyle)?.size ?? DEFAULT_IMAGE_SIZE;
+  // 尺寸取自提取要求的登记表（docs/prd/05 SHOULD）；上游可选，省缺就用它的默认。
+  const size = findExtractRequirement(context.params.extractRequirement)?.size ?? DEFAULT_IMAGE_SIZE;
   const model = snapshot.modelId ?? null;
   const total = assets.length;
 
@@ -214,7 +227,7 @@ export async function generateImages(
 
     // 阶段被中止（超时、服务停止）时不再继续下一张：否则要等 N 次上游超时。
     if (context.signal.aborted) {
-      throw new StageError(STAGE_ERROR_CODES.timeout, "阶段已中止，停止继续重绘", {
+      throw new StageError(STAGE_ERROR_CODES.timeout, "阶段已中止，停止继续提取", {
         meta: { ...buildMeta() },
       });
     }
@@ -232,7 +245,7 @@ export async function generateImages(
       if (!first) {
         throw new StageError(
           IMAGE_ERROR_CODES.rejected,
-          `上游没有返回第 ${index} 张原图的成品图`,
+          `上游没有返回第 ${index} 张原图的提取图`,
         );
       }
 
@@ -240,7 +253,7 @@ export async function generateImages(
       calls.push({ index, sourceAssetId: asset.id, ms: now() - callStartedAt, ok: true });
     } catch (error) {
       if (context.signal.aborted) {
-        throw new StageError(STAGE_ERROR_CODES.timeout, "阶段已中止，停止继续重绘", {
+        throw new StageError(STAGE_ERROR_CODES.timeout, "阶段已中止，停止继续提取", {
           meta: { ...buildMeta() },
         });
       }
@@ -257,7 +270,7 @@ export async function generateImages(
       });
       // 上游原文已在适配器记过日志；这里补「哪一张、哪个码」与这条异常的原始说明（脱敏由 logger 负责），
       // 绝不记 base64 与密钥（MUST 9）。内部异常（TypeError 等）的英文原文只在这一行出现。
-      logger.warn("原图重绘失败", {
+      logger.warn("原图提取失败", {
         index,
         sourceAssetId: asset.id,
         code,
@@ -273,7 +286,7 @@ export async function generateImages(
   if (images.length === 0) {
     throw new StageError(
       failures[0]?.code ?? IMAGE_ERROR_CODES.rejected,
-      `全部 ${total} 张原图都未生成成品图：${failures.map(describeFailure).join("；")}，阶段未产出结果`,
+      `全部 ${total} 张原图都未提取出素材图：${failures.map(describeFailure).join("；")}，阶段未产出结果`,
       { meta: { ...meta } },
     );
   }

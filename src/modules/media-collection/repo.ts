@@ -11,6 +11,7 @@ export interface CollectionRow {
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
+  extractTarget: string | null;
   createdAt: Date;
   updatedAt: Date;
   assetCount: number;
@@ -33,6 +34,7 @@ export interface CollectionFields {
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
+  extractTarget: string | null;
 }
 
 export interface NewAsset {
@@ -74,6 +76,7 @@ const COLLECTION_SELECT = {
   sourceUrl: true,
   sourceTitle: true,
   sourceBody: true,
+  extractTarget: true,
   createdAt: true,
   updatedAt: true,
   assets: { select: { id: true }, orderBy: { sortOrder: "asc" }, take: 1 },
@@ -87,6 +90,7 @@ type RawCollectionRow = {
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
+  extractTarget: string | null;
   createdAt: Date;
   updatedAt: Date;
   assets: { id: string }[];
@@ -101,6 +105,7 @@ function toCollectionRow(row: RawCollectionRow): CollectionRow {
     sourceUrl: row.sourceUrl,
     sourceTitle: row.sourceTitle,
     sourceBody: row.sourceBody,
+    extractTarget: row.extractTarget,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     assetCount: row._count.assets,

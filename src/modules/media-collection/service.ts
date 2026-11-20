@@ -41,6 +41,8 @@ export interface CollectionSummaryView {
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
+  /** 提取目标原文；未填写为 null（ADR 0009）。 */
+  extractTarget: string | null;
   createdAt: string;
   updatedAt: string;
   status: CollectionStatus;
@@ -102,6 +104,7 @@ function toSummary(row: repo.CollectionRow, counts: CollectionCounts): Collectio
     sourceUrl: row.sourceUrl,
     sourceTitle: row.sourceTitle,
     sourceBody: row.sourceBody,
+    extractTarget: row.extractTarget,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     status: deriveCollectionStatus(counts),

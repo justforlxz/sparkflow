@@ -47,7 +47,7 @@ afterEach(async () => {
 
 test("AC-01-1 两张图片落库后按上传顺序返回，文件写在 media-assets/<collectionId>/ 下", async () => {
   const created = await createCollection(
-    { name: "集成-两张图", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    { name: "集成-两张图", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
     [pngFile("a.png"), pngFile("b.png")],
   );
   createdIds.push(created.id);
@@ -70,7 +70,7 @@ test("AC-01-1 两张图片落库后按上传顺序返回，文件写在 media-as
 
 test("AC-01-2 不带图片也能建夹：没有图片记录，也不写磁盘", async () => {
   const created = await createCollection(
-    { name: "集成-先建夹", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    { name: "集成-先建夹", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
     [],
   );
   createdIds.push(created.id);
@@ -83,7 +83,7 @@ test("AC-01-2 不带图片也能建夹：没有图片记录，也不写磁盘", 
 
 test("AC-01-4 只改来源信息时图片数量与内容不变", async () => {
   const created = await createCollection(
-    { name: "集成-改来源", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    { name: "集成-改来源", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
     [pngFile("a.png"), pngFile("b.png")],
   );
   createdIds.push(created.id);
@@ -94,6 +94,7 @@ test("AC-01-4 只改来源信息时图片数量与内容不变", async () => {
     sourceUrl: "https://example.com/note/1",
     sourceTitle: "原始标题",
     sourceBody: "原始文案",
+    extractTarget: "桌垫的织物纹理",
   });
 
   expect(updated.name).toBe("集成-改来源-新名字");
@@ -103,7 +104,7 @@ test("AC-01-4 只改来源信息时图片数量与内容不变", async () => {
 
 test("AC-01-5 解除关联只删记录，磁盘文件仍在，其余图片不受影响", async () => {
   const created = await createCollection(
-    { name: "集成-解除关联", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    { name: "集成-解除关联", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
     [pngFile("a.png"), pngFile("b.png")],
   );
   createdIds.push(created.id);
@@ -124,7 +125,7 @@ test("AC-01-5 解除关联只删记录，磁盘文件仍在，其余图片不受
 
 test("AC-01-6 删除资源夹后图片记录级联消失，磁盘目录被清理", async () => {
   const created = await createCollection(
-    { name: "集成-删除", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    { name: "集成-删除", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
     [pngFile("a.png"), pngFile("b.png")],
   );
   createdIds.push(created.id);
@@ -146,7 +147,7 @@ test("AC-01-6 删除资源夹后图片记录级联消失，磁盘目录被清理
 
 test("追加图片接在现有顺序之后，排序不重叠", async () => {
   const created = await createCollection(
-    { name: "集成-追加", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    { name: "集成-追加", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
     [pngFile("a.png")],
   );
   createdIds.push(created.id);
@@ -159,7 +160,7 @@ test("追加图片接在现有顺序之后，排序不重叠", async () => {
 
 test("最后一张图片可以解除关联，资源夹变成 0 张（AC-01-2）", async () => {
   const created = await createCollection(
-    { name: "集成-零张", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
+    { name: "集成-零张", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
     [pngFile("only.png")],
   );
   createdIds.push(created.id);
@@ -181,6 +182,7 @@ const EDIT_FIELDS = {
   sourceUrl: "https://example.com/note/1",
   sourceTitle: "原始标题",
   sourceBody: "原始文案",
+  extractTarget: "桌垫的织物纹理",
 };
 
 /** 资源夹目录下的文件名清单：用来断言「磁盘没有新增文件」与「被移除的原图仍留在磁盘」。 */

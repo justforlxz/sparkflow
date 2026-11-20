@@ -79,7 +79,7 @@ async function prepareReadyAgents(): Promise<void> {
 /** 造一个带 n 张原图的资源夹：成品张数就等于它（ADR 0008）。 */
 async function createCollectionWithImages(name: string, count: number): Promise<string> {
   const collection = await createCollection(
-    { name, platform: "小红书", sourceUrl: null, sourceTitle: "原始标题", sourceBody: "原始文案" },
+    { name, platform: "小红书", sourceUrl: null, sourceTitle: "原始标题", sourceBody: "原始文案", extractTarget: "桌垫的织物纹理" },
     Array.from({ length: count }, (_, index) => ({
       fileName: `${String.fromCharCode(97 + index)}.png`,
       bytes: PNG_BYTES,
@@ -121,7 +121,7 @@ test("AC-05-2、AC-05-6 两张原图各落一张成品，source_asset_id 一一�
   const collectionId = await createCollectionWithImages("集成-图片落盘", 2);
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -176,7 +176,7 @@ test("AC-05-5 三张原图里第 2 张失败：保留 2 张成品、sort_order �
   const collectionId = await createCollectionWithImages("集成-部分失败", 3);
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -220,7 +220,7 @@ test("AC-FN-1、AC-FN-3 三张原图里第 2 张失败：文件名与 sort_order
   const collectionId = await createCollectionWithImages("集成-文件名跳号", 3);
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -267,7 +267,7 @@ test("AC-FN-2 三张原图全部成功：文件名与 sort_order 同为 1、2、
   const collectionId = await createCollectionWithImages("集成-文件名连续", 3);
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -300,7 +300,7 @@ test("功能关闭时创建任务被拦下，不产生任务记录（docs/prd/10
   await setFeatureEnabled("image-to-image", false);
 
   const error = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   }).catch((caught: unknown) => caught);
@@ -317,7 +317,7 @@ test("生图阶段执行中把进度写进 generation_stage.progress", async () 
   const collectionId = await createCollectionWithImages("集成-进度", 2);
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });

@@ -33,8 +33,8 @@ export interface AgentTypeDefinition {
 export const AGENT_TYPES = [
   {
     value: "image",
-    label: "图片创作 Agent",
-    description: "把原始素材与视觉方向变成成品图。模型可以留空，表示用网关侧的默认图片模型。",
+    label: "图片提取 Agent",
+    description: "从原始素材里把指定目标提取成可直接使用的素材图。模型可以留空，表示用网关侧的默认图片模型。",
     capabilities: ["image"],
     modelRequired: false,
     emptyModelLabel: "使用网关默认图片模型",

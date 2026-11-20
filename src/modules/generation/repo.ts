@@ -91,14 +91,20 @@ function toStageRecord(row: RawStageRow): StageRecord {
   };
 }
 
+/** 快照里的提取目标是 ADR 0009 之后才写入的：老任务读不到这一项时按 null 处理。 */
+function toTaskSnapshot(raw: unknown): TaskAgentSnapshots {
+  const snapshot = raw as TaskAgentSnapshots;
+  return { ...snapshot, extractTarget: snapshot.extractTarget ?? null };
+}
+
 function toTaskRecord(row: RawTaskRow): TaskRecord {
   return {
     id: row.id,
     collectionId: row.collectionId,
-    visualStyle: row.visualStyle,
+    extractRequirement: row.visualStyle,
     copyStyle: row.copyStyle,
     extraPrompt: row.extraPrompt,
-    agentSnapshot: row.agentSnapshot as TaskAgentSnapshots,
+    agentSnapshot: toTaskSnapshot(row.agentSnapshot),
     createdAt: row.createdAt,
   };
 }
@@ -122,7 +128,7 @@ export async function createTask(input: NewTaskInput): Promise<TaskWithStages> {
   const task: TaskRecord = {
     id: randomUUID(),
     collectionId: input.collectionId,
-    visualStyle: input.visualStyle,
+    extractRequirement: input.extractRequirement,
     copyStyle: input.copyStyle,
     extraPrompt: input.extraPrompt,
     agentSnapshot: input.agentSnapshot,
@@ -146,7 +152,7 @@ export async function createTask(input: NewTaskInput): Promise<TaskWithStages> {
     data: {
       id: task.id,
       collectionId: task.collectionId,
-      visualStyle: task.visualStyle,
+      visualStyle: task.extractRequirement,
       copyStyle: task.copyStyle,
       extraPrompt: task.extraPrompt,
       agentSnapshot: task.agentSnapshot as unknown as Prisma.InputJsonValue,
@@ -467,23 +473,32 @@ export async function countCollectionUsage(collectionId: string): Promise<Collec
 
 /* ---------- 结果页签的查询与写入（docs/prd/07-results.md） ---------- */
 
-/** 结果连任务的两条阶段一起取：文案是否失败、能否重试都由阶段状态派生（AC-08-11）。 */
+/**
+ * 结果连任务的阶段与任务快照一起取：文案是否失败、能否重试由阶段状态派生（AC-08-11），
+ * 结果摘要里的提取目标来自任务快照（ADR 0009：历史结果没有这一项，显示为空）。
+ */
 const RESULT_WITH_STAGES = {
   ...RESULT_SELECT,
-  task: { select: { stages: { select: STAGE_FIELDS } } },
+  task: { select: { stages: { select: STAGE_FIELDS }, agentSnapshot: true } },
 } as const;
 
 interface RawResultWithStagesRow extends RawResultRow {
-  task: { stages: RawStageRow[] };
+  task: { stages: RawStageRow[]; agentSnapshot: unknown };
 }
 
 export interface ResultWithStages {
   result: ResultRecord;
   stages: StageRecord[];
+  /** 结果所属任务创建时固化的提取目标；历史结果为 null。 */
+  extractTarget: string | null;
 }
 
 function toResultWithStages(row: RawResultWithStagesRow): ResultWithStages {
-  return { result: toResultRecord(row), stages: row.task.stages.map(toStageRecord) };
+  return {
+    result: toResultRecord(row),
+    stages: row.task.stages.map(toStageRecord),
+    extractTarget: toTaskSnapshot(row.task.agentSnapshot).extractTarget,
+  };
 }
 
 /** 结果按资源夹隔离查询（docs/prd/07 MUST 6），按创建时间倒序（MUST 1）。 */

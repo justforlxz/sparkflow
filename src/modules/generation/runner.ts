@@ -156,7 +156,7 @@ export function createRunner(options: RunnerOptions): TaskRunner {
           id: resultId,
           taskId: task.id,
           collectionId: task.collectionId,
-          visualStyle: task.visualStyle,
+          visualStyle: task.extractRequirement,
           assets,
         });
       }
@@ -222,7 +222,7 @@ export function createRunner(options: RunnerOptions): TaskRunner {
       taskId: task.id,
       attempt: stage.attempts,
       params: {
-        visualStyle: task.visualStyle,
+        extractRequirement: task.extractRequirement,
         copyStyle: task.copyStyle,
         extraPrompt: task.extraPrompt,
       },

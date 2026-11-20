@@ -179,10 +179,11 @@ describe("创建任务前的就绪校验（MUST 8、AC-03-7）", () => {
       status: 409,
       details: {
         code: "AGENT_NOT_READY",
-        agents: [{ type: "image", name: "图片创作 Agent", issues: ["Agent 已停用"] }],
+        // 界面名字来自登记表（AGENT_TYPES.label），与库里的 name 字段无关。
+        agents: [{ type: "image", name: "图片提取 Agent", issues: ["Agent 已停用"] }],
       },
     });
-    expect((error as AppError).message).toContain("图片创作 Agent");
+    expect((error as AppError).message).toContain("图片提取 Agent");
   });
 
   it("文案 Agent 缺模型时也被拦下", async () => {

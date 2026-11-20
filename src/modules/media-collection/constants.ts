@@ -54,6 +54,12 @@ export const COLLECTION_COPY = {
   addImagesLabel: "添加图片",
   assetTab: "原始素材",
   sourceSection: "来源信息",
+  /** 提取目标（ADR 0009）：资源夹表单必填，发起创作时也要求非空（AC-01-9）。 */
+  extractTargetLabel: "提取目标",
+  extractTargetPlaceholder: "例如：桌垫的织物纹理",
+  extractTargetHint: "必填：写清要从这批素材里取出什么，例如「桌垫的织物纹理」",
+  /** 表单里没填提取目标时的提示（与任务创建接口的 VALIDATION_FAILED 同一件事）。 */
+  extractTargetRequired: "请填写提取目标",
   imagesSection: "原始图片",
   deleteConfirmTitle: "删除这个资源夹？",
   deleteConfirmAction: "确认删除",

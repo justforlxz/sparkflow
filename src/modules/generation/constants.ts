@@ -123,12 +123,20 @@ export const TASK_COPY = {
     "该任务的快照用的模型或网关与当前 Agent 配置不同：重试仍会沿用创建时的配置，改好配置后请用「重新生成」。",
   regenerateConfirmTitle: "重新生成？",
   regenerateConfirmBody: "将重新执行生图与文案两个阶段并产生新结果，旧任务与旧结果会保留。",
+  /**
+   * 重新生成弹窗里的提取要求选择与旧任务说明（ADR 0009）。
+   * 旧任务存的是已删除的视觉方向 key，原样回传必然 VALIDATION_FAILED，所以必须让用户重选。
+   */
+  regenerateLegacyRequirementNote:
+    "该任务创建时选的是旧的视觉方向，已经不再使用，请重新选择提取要求；提取目标取自资源夹，缺失时请先到资源夹里填写。",
   confirmAction: "确认重新生成",
   cancelAction: "取消",
   createdAtLabel: "创建时间",
   paramsLabel: "创作参数",
-  expectedImageCountLabel: "预计成品张数",
-  visualStyleLabel: "视觉方向",
+  extractTargetLabel: "提取目标",
+  expectedImageCountLabel: "预计提取图张数",
+  /** 提取要求取代原来的「视觉方向」（ADR 0009）。 */
+  extractRequirementLabel: "提取要求",
   copyStyleLabel: "文案风格",
   extraPromptLabel: "补充要求",
   stageSection: "执行阶段",
@@ -166,7 +174,9 @@ export const RESULT_COPY = {
   tagsHint: "用逗号或换行分隔",
   visualStyleLabel: "视觉风格",
   generatedAtLabel: "生成日期",
-  generatedImageCountLabel: "图片",
+  generatedImageCountLabel: "提取图",
+  /** 结果所属任务创建时固化的提取目标（ADR 0009）。 */
+  extractTargetLabel: "提取目标",
   /**
    * 视觉提取降级的两种原因（docs/prd/06「视觉提取」）：文案照常生成，但没拿到照片内容时必须标注。
    * 两句都要说清下一步去哪改，不能把原因归到文案模型上（它已经不参与判定）。
@@ -199,6 +209,8 @@ export const CREATION_SECTION_COPY = {
   noSourceAssetLabel: "原图已解除关联",
   summaryGeneratedAt: "生成于",
   summaryImageCountLabel: "张",
+  /** 折叠摘要里的提取目标（ADR 0009）：历史结果没有这一项，不显示。 */
+  extractTargetLabel: "提取目标",
   copyFailedLabel: "文案阶段失败",
   retryQueued: "已重新排队，完成后这里会自动刷新。",
   pollFailed: "刷新创作进度失败，稍后会自动重试。",
@@ -210,12 +222,15 @@ export const CREATION_SECTION_COPY = {
 export const CREATION_COPY = {
   action: "开始 AI 创作",
   title: "开始 AI 创作",
-  intro: "两个 Agent 都已就绪时才能开始；每张原图各生成一张成品图，生图与文案会各跑一个阶段。",
-  visualStyleLabel: "视觉方向",
+  intro: "两个 Agent 都已就绪时才能开始；每张原图各提取一张素材图，提取与文案会各跑一个阶段。",
+  /** 提取目标只读显示：它在资源夹上维护，发起创作时必填（ADR 0009）。 */
+  extractTargetLabel: "提取目标",
+  /** 提取要求取代原来的「视觉方向」（ADR 0009）。 */
+  extractRequirementLabel: "提取要求",
   copyStyleLabel: "文案风格",
-  expectedImageCountLabel: "预计成品张数",
+  expectedImageCountLabel: "预计提取图张数",
   /** 张数由原图决定，界面只显示结果、不给输入框（ADR 0008）。 */
-  expectedImageCountHint: "每张原图各生成一张成品图，张数取自原始素材",
+  expectedImageCountHint: "每张原图各提取一张素材图，张数取自原始素材",
   extraPromptLabel: "补充要求",
   extraPromptPlaceholder: "想强调的角度、必须出现的元素等，可留空",
   submitAction: "开始创作",

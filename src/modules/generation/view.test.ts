@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import type { ResultRecord, StageRecord, TaskWithStages } from "./types";
-import { toResultView, toTaskSummaryView } from "./view";
+import { toResultView as toResultViewWithTarget, toTaskSummaryView } from "./view";
 
 /**
  * 任务与结果的对外形状（docs/prd/07「任务列表」「结果页签」）：
@@ -47,14 +47,22 @@ function taskWithStages(stages: StageRecord[]): TaskWithStages {
     task: {
       id: "task-1",
       collectionId: "collection-1",
-      visualStyle: "fresh",
+      extractRequirement: "faithful",
       copyStyle: "story",
       extraPrompt: null,
-      agentSnapshot: { image: SNAPSHOT, copy: SNAPSHOT },
+      agentSnapshot: { image: SNAPSHOT, copy: SNAPSHOT, extractTarget: "桌垫的织物纹理" },
       createdAt: new Date("2026-11-18T02:00:00.000Z"),
     },
     stages,
   };
+}
+
+/**
+ * 结果视图的第三个入参是任务快照里的提取目标：这些用例不关心它，统一传 null。
+ * 需要断言提取目标透传的用例直接调 `toResultViewWithTarget`。
+ */
+function toResultView(result: ResultRecord, stages: readonly StageRecord[]) {
+  return toResultViewWithTarget(result, stages, null);
 }
 
 function result(overrides: Partial<ResultRecord> = {}): ResultRecord {
@@ -99,19 +107,20 @@ describe("任务列表视图", () => {
     expect(view.collectionName).toBe("我的资源夹");
     expect(view.status).toBe("partial");
     expect(view.statusLabel).toBe("部分完成");
-    expect(view.visualStyleLabel).toBe("清新生活感");
+    expect(view.extractRequirementLabel).toBe("忠实还原");
+    expect(view.extractTarget).toBe("桌垫的织物纹理");
     expect(view.copyStyleLabel).toBe("故事分享");
     expect(view.stages.image).toMatchObject({ label: "生图阶段", statusLabel: "已完成" });
     expect(view.stages.copy).toMatchObject({ label: "文案阶段", statusLabel: "失败" });
   });
 
-  it("认不出的风格 key 原样显示，不编造中文名", () => {
+  it("认不出的提取要求 key 原样显示，不编造中文名", () => {
     const record = taskWithStages([stage("image", "queued"), stage("copy", "queued")]);
-    record.task = { ...record.task, visualStyle: "unknown", copyStyle: "unknown" };
+    record.task = { ...record.task, extractRequirement: "unknown", copyStyle: "unknown" };
 
     const view = toTaskSummaryView(record, "资源夹", CURRENT_AGENTS, 2);
 
-    expect(view.visualStyleLabel).toBe("unknown");
+    expect(view.extractRequirementLabel).toBe("unknown");
     expect(view.copyStyleLabel).toBe("unknown");
   });
 
@@ -205,8 +214,24 @@ describe("结果视图", () => {
     expect(view.title).toBe("标题");
     expect(view.body).toBe("正文");
     expect(view.tags).toEqual(["咖啡"]);
+    // 历史结果存的是旧的视觉方向 key（fresh）：不做数据迁移，仍显示当时的中文名。
     expect(view.visualStyleLabel).toBe("清新生活感");
     expect(view.taskId).toBe("task-1");
+  });
+
+  it("AC-EX-4 结果摘要带上任务快照的提取目标，新结果的视觉风格显示新登记表的中文名", () => {
+    const stages = [stage("image", "succeeded"), stage("copy", "succeeded")];
+    const view = toResultViewWithTarget(
+      result({ visualStyle: "flatten" }),
+      stages,
+      "桌垫的织物纹理",
+    );
+
+    expect(view.extractTarget).toBe("桌垫的织物纹理");
+    expect(view.visualStyleLabel).toBe("平整化");
+
+    // 历史结果没有提取目标（ADR 0009 之前的任务快照没有这一项）：如实给 null，界面显示占位。
+    expect(toResultViewWithTarget(result(), stages, null).extractTarget).toBeNull();
   });
 
   it("生成图片给出原图与缩略图两个鉴权地址，缩略图统一 400 宽", () => {

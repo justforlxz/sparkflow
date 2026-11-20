@@ -3,9 +3,9 @@
  * 状态是派生值（`derive.ts`），这里连同中文标签一起给出，界面不再自己判断。
  */
 import { AppError } from "@/lib/errors";
-// 视觉方向与文案风格的中文名只从各自模块的登记表取，界面与本文件都不再写一份枚举。
+// 提取要求与文案风格的中文名只从各自模块的登记表取，界面与本文件都不再写一份枚举。
 import { findCopyStyle } from "@/modules/copy-generation/styles";
-import { visualStyleLabel } from "@/modules/image-generation/styles";
+import { describeResultStyle, extractRequirementLabel } from "@/modules/image-generation/styles";
 import { DEFAULT_THUMBNAIL_WIDTH } from "@/modules/media-collection/constants";
 import {
   RESULT_COPY,
@@ -68,6 +68,8 @@ export interface ResultView {
   tags: string[];
   visualStyle: string;
   visualStyleLabel: string;
+  /** 结果所属任务创建时固化的提取目标；历史结果为 null（ADR 0009 不做数据迁移）。 */
+  extractTarget: string | null;
   createdAt: string;
   assets: ResultAssetView[];
   /** 文案阶段失败：文案区域显示附加提示与重试入口，有内容时照常展示（AC-08-11）。 */
@@ -96,8 +98,11 @@ export interface TaskSummaryView {
   collectionName: string;
   status: TaskStatus;
   statusLabel: string;
-  visualStyle: string;
-  visualStyleLabel: string;
+  /** 提取要求 key（原「视觉方向」，ADR 0009）；对外字段名统一为 extractRequirement。 */
+  extractRequirement: string;
+  extractRequirementLabel: string;
+  /** 创建任务时固化的提取目标原文；ADR 0009 之前的旧任务为 null。 */
+  extractTarget: string | null;
   copyStyle: string;
   copyStyleLabel: string;
   /** 预计成品张数 = 这次的原图张数（ADR 0008）：任务不再接收图片数量参数。 */
@@ -180,8 +185,9 @@ function toSummary(
     collectionName,
     status,
     statusLabel: TASK_STATUS_LABELS[status],
-    visualStyle: task.visualStyle,
-    visualStyleLabel: visualStyleLabel(task.visualStyle),
+    extractRequirement: task.extractRequirement,
+    extractRequirementLabel: extractRequirementLabel(task.extractRequirement),
+    extractTarget: task.agentSnapshot.extractTarget,
     copyStyle: task.copyStyle,
     copyStyleLabel: findCopyStyle(task.copyStyle)?.label ?? task.copyStyle,
     expectedImageCount,
@@ -201,10 +207,14 @@ export function toTaskSummaryView(
   return toSummary(record, collectionName, currentAgents, expectedImageCount);
 }
 
-/** 结果视图要带上任务的两条阶段：文案是否失败、能否重试都由它派生。 */
+/**
+ * 结果视图要带上任务的两条阶段：文案是否失败、能否重试都由它派生。
+ * `extractTarget` 来自结果所属任务的快照（ADR 0009）：历史结果没有这一项，传 null。
+ */
 export function toResultView(
   result: ResultRecord,
   stages: readonly StageRecord[],
+  extractTarget: string | null,
 ): ResultView {
   const copyFailed = stages.some((stage) => stage.stage === "copy" && stage.status === "failed");
   // 视觉提取被降级时必须显式标注，不得静默降级（docs/prd/06 AC-06-8）。
@@ -224,7 +234,9 @@ export function toResultView(
     body: result.body,
     tags: result.tags,
     visualStyle: result.visualStyle,
-    visualStyleLabel: visualStyleLabel(result.visualStyle),
+    // 新结果是提取要求 key，历史结果是旧视觉方向 key：两种都要显示（不做数据迁移）。
+    visualStyleLabel: describeResultStyle(result.visualStyle),
+    extractTarget,
     createdAt: result.createdAt.toISOString(),
     copyFailed,
     copyVisualDegraded,
@@ -252,6 +264,8 @@ export function toTaskDetailView(
     ...toSummary(record, collectionName, currentAgents, expectedImageCount),
     agents: record.task.agentSnapshot,
     resultId: result?.id ?? null,
-    result: result ? toResultView(result, record.stages) : null,
+    result: result
+      ? toResultView(result, record.stages, record.task.agentSnapshot.extractTarget)
+      : null,
   };
 }

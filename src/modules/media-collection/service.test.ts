@@ -50,6 +50,7 @@ const FIELDS = {
   sourceUrl: null,
   sourceTitle: null,
   sourceBody: null,
+  extractTarget: "桌垫的织物纹理",
 };
 
 function assetRow(id: string, sortOrder: number): AssetRow {
@@ -75,6 +76,7 @@ function collectionRow(assets: AssetRow[]): CollectionRow {
     sourceUrl: null,
     sourceTitle: null,
     sourceBody: null,
+    extractTarget: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
     assetCount: assets.length,

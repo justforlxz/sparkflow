@@ -17,6 +17,7 @@ function collection(index: number): CollectionSummaryView {
     sourceUrl: null,
     sourceTitle: null,
     sourceBody: null,
+    extractTarget: null,
     createdAt: "2026-11-18T00:00:00.000Z",
     updatedAt: "2026-11-18T00:00:00.000Z",
     status: "draft" as CollectionStatus,

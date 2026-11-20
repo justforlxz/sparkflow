@@ -1,8 +1,8 @@
 /**
  * 创作任务业务层：接口与页面只调用这里的函数（docs/prd/04-generation-task.md、ADR 0005）。
  *
- * 边界：
- * 1. 创建任务前依次校验「资源夹存在且有图片」与「两个 Agent 就绪」；任一不满足都不写任务记录。
+ * 1. 创建任务前依次校验「资源夹存在、有原图、填了提取目标」「提取要求合法」与「两个 Agent 就绪」；
+ *    任一不满足都不写任务记录。
  * 2. 快照只从 agent-config 模块取（MUST 6），本模块不拼提示词、不读网关密钥。
  * 3. 重试只重置失败阶段，判定在 `derive.ts` 的 `planStagesToRetry`。
  */
@@ -24,7 +24,11 @@ import {
   type AgentBindingState,
 } from "./derive";
 import { taskStore } from "./repo";
-import { assertCollectionHasImages } from "./rules";
+import {
+  assertCollectionHasImages,
+  assertValidExtractRequirement,
+  requireCollectionExtractTarget,
+} from "./rules";
 import type { CreateTaskInput } from "./schema";
 import type { TaskAgentSnapshots } from "./types";
 import {
@@ -34,14 +38,20 @@ import {
   type TaskSummaryView,
 } from "./view";
 
-/** 就绪校验保证两份都在；缺一份说明 agent-config 的返回形状变了。 */
-function toAgentSnapshots(snapshots: readonly AgentSnapshot[]): TaskAgentSnapshots {
+/**
+ * 就绪校验保证两份 Agent 配置都在；缺一份说明 agent-config 的返回形状变了。
+ * 提取目标一并固化进快照（docs/prd/04 4c）：之后改资源夹的提取目标不影响已创建的任务。
+ */
+function toAgentSnapshots(
+  snapshots: readonly AgentSnapshot[],
+  extractTarget: string,
+): TaskAgentSnapshots {
   const image = snapshots.find((snapshot) => snapshot.agentType === "image");
   const copy = snapshots.find((snapshot) => snapshot.agentType === "copy");
   if (!image || !copy) {
     throw new AppError("INTERNAL", "Agent 配置快照缺失：需要图片与文案两份");
   }
-  return { image, copy };
+  return { image, copy, extractTarget };
 }
 
 /**
@@ -104,18 +114,23 @@ export async function createTask(
   // （docs/prd/10 MUST 2、AC-10-4）。
   await requireEnabled("image-to-image");
   const collection = await getCollection(collectionId);
+  // 缺哪一项就点名哪一项：原图与提取目标都是提取的前提（AC-01-8、AC-01-9）。
   assertCollectionHasImages(collection.assetCount);
+  const extractTarget = requireCollectionExtractTarget(collection.extractTarget);
+  // 旧的三项视觉方向已删除，取值必须在登记表里（AC-EX-3）。
+  assertValidExtractRequirement(input.extractRequirement);
 
   const gateways = await listGatewayViews();
   const [snapshots, currentAgents] = await Promise.all([
     requireAgentSnapshots(gateways),
     currentAgentBindings(gateways),
   ]);
-  const agents = toAgentSnapshots(snapshots);
+  // 提取目标已在上面校验过非空，这里交给快照固化（docs/prd/04 4c）。
+  const agents = toAgentSnapshots(snapshots, extractTarget);
 
   const created = await taskStore.createTask({
     collectionId,
-    visualStyle: input.visualStyle,
+    extractRequirement: input.extractRequirement,
     copyStyle: input.copyStyle,
     extraPrompt: input.extraPrompt ?? null,
     agentSnapshot: agents,

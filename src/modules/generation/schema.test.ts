@@ -4,7 +4,7 @@ import { MAX_EXTRA_PROMPT_LENGTH } from "./constants";
 import { createTaskSchema, updateResultSchema } from "./schema";
 
 const VALID = {
-  visualStyle: "fresh",
+  extractRequirement: "faithful",
   copyStyle: "story",
   extraPrompt: "强调自然光",
 };
@@ -14,12 +14,12 @@ describe("创建任务的参数校验", () => {
     expect(createTaskSchema.parse(VALID)).toEqual(VALID);
   });
 
-  it("缺少视觉方向或文案风格时拒绝", () => {
-    expect(() => createTaskSchema.parse({ ...VALID, visualStyle: "" })).toThrow();
+  it("缺少提取要求或文案风格时拒绝", () => {
+    expect(() => createTaskSchema.parse({ ...VALID, extractRequirement: "" })).toThrow();
     expect(() => createTaskSchema.parse({ ...VALID, copyStyle: "   " })).toThrow();
   });
 
-  it("不再接收图片数量：多传的 imageCount 被忽略，成品张数由原图决定（ADR 0008）", () => {
+  it("不再接收图片数量：多传的 imageCount 被忽略，提取图张数由原图决定（ADR 0008）", () => {
     const parsed = createTaskSchema.parse({ ...VALID, imageCount: 4 });
     expect(parsed).not.toHaveProperty("imageCount");
     expect(parsed).toEqual(VALID);

@@ -1,6 +1,7 @@
 /**
  * 视觉提取（docs/prd/06-copy-generation.md「视觉提取」）：
- * 生成文案前，对**每一张原始图片**各做一次读图，得到一条中文描述，按原图顺序编号。
+ * 生成文案前，对**每一张原始图片**各做一次读图，按原图顺序编号得到一条中文描述。
+ * 描述只围绕提取目标本身的材质、纹理、图案与颜色（docs/prd/06，ADR 0009），不写场景。
  *
  * 边界：
  * 1. 读图走**独立的图片理解网关**（`protocol = magpie-vision`，工具 `analyze_image`），
@@ -13,9 +14,17 @@ import { logger } from "@/lib/logger";
 import type { SourceAssetRef, SourceImageBytes } from "@/modules/generation/types";
 import { compressForReferenceImage } from "@/modules/image-generation/compress";
 
-/** 每张原图的一条指令；与 PRD 06 的措辞一致，改这里就等于改提取口径。 */
-export const VISUAL_EXTRACTION_INSTRUCTION =
-  "用中文写出这张照片的主体、场景、颜色与风格，两句话以内。";
+/**
+ * 每张原图的一条指令：聚焦提取目标本身的特征（docs/prd/06「视觉提取」，ADR 0009）。
+ * 提取目标来自资源夹，改这里就等于改提取口径；不认识目标的描述对文案没用。
+ */
+export function buildVisualExtractionInstruction(extractTarget: string): string {
+  const target = extractTarget.trim();
+  // 旧任务没有提取目标时退回「主体目标」，不拿空书名号去问模型。
+  return target
+    ? `用中文写出照片里「${target}」的材质、纹理、图案与颜色，两句话以内。`
+    : "用中文写出这张照片里主体目标的材质、纹理、图案与颜色，两句话以内。";
+}
 
 /** 单条描述的长度上限：只防超长输出，不改变语义。 */
 export const MAX_VISUAL_DESCRIPTION_LENGTH = 500;
@@ -55,6 +64,8 @@ export interface VisualExtractionInput {
   analyzer: VisionAnalyzer;
   assets: readonly SourceAssetRef[];
   readSourceImage(assetId: string): Promise<SourceImageBytes>;
+  /** 资源夹的提取目标原文：读图指令围绕它提问（ADR 0009）。 */
+  extractTarget: string;
   /** 单测注入：跳过 sharp（与出图阶段的压缩注入同一个形状）。 */
   compress?: (bytes: Buffer) => Promise<string>;
   signal?: AbortSignal;
@@ -76,6 +87,7 @@ export async function extractVisualDescriptions(
   input: VisualExtractionInput,
 ): Promise<VisualExtractionResult> {
   const compress = input.compress ?? compressForReferenceImage;
+  const instruction = buildVisualExtractionInstruction(input.extractTarget);
   const descriptions: string[] = [];
 
   for (const asset of input.assets) {
@@ -83,7 +95,7 @@ export async function extractVisualDescriptions(
       const source = await input.readSourceImage(asset.id);
       const image = await compress(source.bytes);
       const text = await input.analyzer.analyzeImage(
-        { image, prompt: VISUAL_EXTRACTION_INSTRUCTION },
+        { image, prompt: instruction },
         input.signal ? { signal: input.signal } : {},
       );
       const description = parseVisualDescription(text);

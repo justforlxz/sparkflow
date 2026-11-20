@@ -53,18 +53,26 @@ describe("两份固定 Agent（MUST 1）", () => {
   });
 });
 
-describe("图片 Agent 的默认输出要求（AC-WM-1）", () => {
-  const text = AGENT_DEFAULTS.image.outputRequirements;
+describe("图片 Agent 的默认四项（AC-EX-4、ADR 0009）", () => {
+  const image = AGENT_DEFAULTS.image;
 
-  it("不再要求「按目标张数」与「不要加水印」", () => {
-    expect(text).not.toContain("目标张数");
-    expect(text).not.toContain("不要加水印");
+  it("四项与 ADR 0009 的定稿逐字一致", () => {
+    expect(image).toEqual({
+      name: "图片提取 Agent",
+      role: "你是一名素材提取师：从原始照片里把指定目标（纹理、材质、图案或主体形象）单独提取出来，做成可以直接使用的素材图。",
+      systemPrompt:
+        "只做提取，不做重绘：忠实保留目标自身的纹理、材质、图案与颜色，不美化、不改变结构、不添加原图里没有的元素；去掉与目标无关的场景元素（桌面、道具、背景、反光、边缘阴影），把目标拉平成正面视角，四边完整、不带透视畸变；不要添加原图里没有的文字、水印或标识。",
+      outputRequirements:
+        "每张原图各输出一张提取图，画面里只包含提取目标本身；目标居中并铺满画面，边缘干净；不拼接、不加边框、不加文字。",
+    });
   });
 
-  it("保留「完整可用」与「不要拼接」，并说明每张原图各生成一张成品图", () => {
-    expect(text).toContain("完整可用");
-    expect(text).toContain("不要拼接");
-    expect(text).toContain("每张原图各生成一张");
+  it("不再出现重绘语义的旧措辞", () => {
+    for (const text of Object.values(image)) {
+      expect(text).not.toContain("视觉方向");
+      expect(text).not.toContain("目标张数");
+      expect(text).not.toContain("不要加水印");
+    }
   });
 });
 

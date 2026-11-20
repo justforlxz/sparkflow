@@ -11,6 +11,9 @@ model MediaCollection {
   sourceUrl   String?  @map("source_url")
   sourceTitle String?  @map("source_title")
   sourceBody  String?  @map("source_body")
+  // 提取目标：要从这批素材里取出什么（ADR 0009、docs/prd/01「数据与接口」）。
+  // 可空表示还没填；发起创作时必须有值，判定在任务创建路径上，不在保存路径上。
+  extractTarget String? @map("extract_target")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   assets      MediaAsset[]

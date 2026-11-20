@@ -105,6 +105,7 @@ async function createCollectionWithImage(name: string, count = 1): Promise<strin
       sourceUrl: null,
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
+      extractTarget: "桌垫的织物纹理",
     },
     Array.from({ length: count }, (_, index) => ({
       fileName: `${String.fromCharCode(97 + index)}.png`,
@@ -143,7 +144,7 @@ test("创建任务写两条排队阶段并固化快照，跑完后结果含图�
   const collectionId = await createCollectionWithImage("集成-任务落库", 2);
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -152,6 +153,11 @@ test("创建任务写两条排队阶段并固化快照，跑完后结果含图�
   expect(created.stages.image).toMatchObject({ status: "queued", attempts: 1 });
   expect(created.stages.copy).toMatchObject({ status: "queued", attempts: 1 });
   expect(created.resultId).toBeNull();
+  // AC-EX-2：提取要求进任务字段，提取目标原文进任务快照。
+  expect(created.extractRequirement).toBe("faithful");
+  expect(created.extractRequirementLabel).toBe("忠实还原");
+  expect(created.extractTarget).toBe("桌垫的织物纹理");
+  expect(created.agents.extractTarget).toBe("桌垫的织物纹理");
 
   const row = await getDb().generationTask.findUnique({
     where: { id: created.id },
@@ -161,6 +167,8 @@ test("创建任务写两条排队阶段并固化快照，跑完后结果含图�
   const snapshotText = JSON.stringify(row?.agentSnapshot);
   expect(snapshotText).toContain("systemPrompt");
   expect(snapshotText).not.toContain("apiKey");
+  // AC-EX-2：快照里存着提取目标原文，之后改资源夹也不影响这个任务。
+  expect(snapshotText).toContain('"extractTarget":"桌垫的织物纹理"');
 
   await runStages(created.id);
 
@@ -194,7 +202,7 @@ test("AC-05-11 生图阶段失败时不写 generation_result，文案阶段保�
   const collectionId = await createCollectionWithImage("集成-生图失败");
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: MOCK_SCRIPT_HINTS.failImage,
   });
@@ -214,7 +222,7 @@ test("AC-04-6、AC-05-12 重试只重排失败阶段，连续两次重试第二�
   const collectionId = await createCollectionWithImage("集成-重试文案", 2);
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: MOCK_SCRIPT_HINTS.failCopyOnce,
   });
@@ -263,7 +271,7 @@ test("生图阶段重跑时复用已有结果行并替换图片（不再撞 task
   const collectionId = await createCollectionWithImage("集成-结果复用", 2);
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -318,7 +326,7 @@ test("AC-04-8 全部成功后重试返回 CONFLICT 且不产生副作用", async
   const collectionId = await createCollectionWithImage("集成-全部成功后重试");
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -348,7 +356,7 @@ test("删除资源夹级联清掉任务、阶段、结果与生成图片（全�
   const collectionId = await createCollectionWithImage("集成-级联删除");
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -370,7 +378,7 @@ test("AC-02-10 资源夹有运行中任务时禁止改图，列表状态为 gene
   const collectionId = await createCollectionWithImage("集成-资源夹状态");
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -397,7 +405,7 @@ test("AC-04-10 启动清理：把残留的 running 记为 SERVER_RESTARTED，排
 
   // 模拟服务在生图阶段执行中被杀：阶段行停在 running。
   const crashed = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -406,7 +414,7 @@ test("AC-04-10 启动清理：把残留的 running 记为 SERVER_RESTARTED，排
   expect(claimed?.stage.stage).toBe("image");
 
   const waiting = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });
@@ -430,7 +438,7 @@ test("AC-03-8 任务创建后修改 Agent 提示词，任务详情里的快照�
   const collectionId = await createCollectionWithImage("集成-快照不变");
 
   const created = await createTask(collectionId, {
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt: null,
   });

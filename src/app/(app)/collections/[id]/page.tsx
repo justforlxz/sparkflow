@@ -115,7 +115,11 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
               不发请求；这也是 AC-10-4 双向断言的一半。
               资源夹允许 0 张原图，但发起创作要求至少一张：弹窗里按 `assetCount` 挡住。 */}
           <FeatureGate feature="image-to-image" label={CREATION_COPY.action}>
-            <StartCreationDialog collectionId={collection.id} assetCount={collection.assetCount} />
+            <StartCreationDialog
+              collectionId={collection.id}
+              assetCount={collection.assetCount}
+              extractTarget={collection.extractTarget}
+            />
           </FeatureGate>
           <CollectionDialog
             mode="edit"
@@ -127,6 +131,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
                 sourceUrl: collection.sourceUrl ?? "",
                 sourceTitle: collection.sourceTitle ?? "",
                 sourceBody: collection.sourceBody ?? "",
+                extractTarget: collection.extractTarget ?? "",
               },
               assets: collection.assets,
             }}
@@ -200,6 +205,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
               <SourceRow label="来源链接" value={collection.sourceUrl} />
               <SourceRow label="原始标题" value={collection.sourceTitle} />
               <SourceRow label="原始文案" value={collection.sourceBody} />
+              <SourceRow label={COLLECTION_COPY.extractTargetLabel} value={collection.extractTarget} />
             </dl>
           </Panel>
         </div>
@@ -226,6 +232,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
               <StartCreationDialog
                 collectionId={collection.id}
                 assetCount={collection.assetCount}
+                extractTarget={collection.extractTarget}
                 variant="secondary"
                 label={RESULT_COPY.emptyListAction}
               />

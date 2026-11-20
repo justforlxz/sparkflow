@@ -37,11 +37,11 @@ describe("上游拒绝出图时的中文说明", () => {
     expectNoUpstreamText(message);
   });
 
-  it("原文没说模型时，说明指向提示词、尺寸与视觉方向", () => {
+  it("原文没说模型时，说明指向提示词、尺寸与提取要求", () => {
     const message = describeImageRejection("no image: invalid n, should be in [1, 1]");
 
     expect(message).toBe(IMAGE_REJECTION_COPY.request);
-    expect(message).toContain("视觉方向");
+    expect(message).toContain("提取要求");
     expect(message).not.toContain("invalid n");
   });
 

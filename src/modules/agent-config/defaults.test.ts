@@ -1,14 +1,29 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AGENT_TYPES } from "./constants";
 import { AGENT_DEFAULTS } from "./defaults";
 
-const MIGRATION_FILE = "prisma/migrations/20261118010000_agent_config/migration.sql";
+const MIGRATIONS_DIR = "prisma/migrations";
 
 /** 迁移里的 SQL 字符串转义（默认文案里没有单引号，这里只是兜底）。 */
 function sqlLiteral(value: string): string {
   return value.replace(/'/g, "''");
+}
+
+/**
+ * 预置文案写在迁移里。已应用过的迁移不改写，文案变更由后续迁移覆盖预置行，
+ * 所以把所有迁移按顺序拼起来比对：每一项默认文案都必须能在其中找到。
+ */
+function presetSql(): string {
+  return readdirSync(path.join(process.cwd(), MIGRATIONS_DIR), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) =>
+      readFileSync(path.join(process.cwd(), MIGRATIONS_DIR, name, "migration.sql"), "utf8"),
+    )
+    .join("\n");
 }
 
 describe("两份固定 Agent（MUST 1）", () => {
@@ -38,8 +53,23 @@ describe("两份固定 Agent（MUST 1）", () => {
   });
 });
 
+describe("图片 Agent 的默认输出要求（AC-WM-1）", () => {
+  const text = AGENT_DEFAULTS.image.outputRequirements;
+
+  it("不再要求「按目标张数」与「不要加水印」", () => {
+    expect(text).not.toContain("目标张数");
+    expect(text).not.toContain("不要加水印");
+  });
+
+  it("保留「完整可用」与「不要拼接」，并说明每张原图各生成一张成品图", () => {
+    expect(text).toContain("完整可用");
+    expect(text).toContain("不要拼接");
+    expect(text).toContain("每张原图各生成一张");
+  });
+});
+
 describe("迁移预置的默认文案与 defaults.ts 一致（防止两处漂移）", () => {
-  const sql = readFileSync(path.join(process.cwd(), MIGRATION_FILE), "utf8");
+  const sql = presetSql();
 
   it.each(Object.entries(AGENT_DEFAULTS))("%s 的每一项默认文案都在迁移里", (type, defaults) => {
     expect(sql).toContain(`'${type}'`);

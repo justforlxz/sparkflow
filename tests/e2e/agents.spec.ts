@@ -289,7 +289,7 @@ test("AC-03-5 选择不属于该网关的模型、或已删除的网关时，保
   }
 });
 
-test("AC-03-6 恢复默认需确认，确认后提示词回默认值、模型绑定不变", async ({ page, request }) => {
+test("AC-03-6 / AC-WM-5 恢复默认需确认，确认后提示词与输出要求回默认值、模型绑定不变", async ({ page, request }) => {
   const gateway = await createGateway(request, {
     name: uniqueName("e2e-agent-reset"),
     models: [{ modelId: "gpt-image-1", capability: "image" }],
@@ -300,12 +300,14 @@ test("AC-03-6 恢复默认需确认，确认后提示词回默认值、模型绑
       gatewayId: gateway.id,
       gatewayModelId: "gpt-image-1",
       systemPrompt: "临时提示词",
+      outputRequirements: "临时输出要求",
     });
 
     await useApiSession(page, request);
     await page.goto("/settings");
     const card = agentCard(page, "image");
     await expect(card.getByLabel("系统提示词")).toHaveValue("临时提示词");
+    await expect(card.getByLabel("输出要求")).toHaveValue("临时输出要求");
 
     await card.getByRole("button", { name: "恢复默认" }).click();
     await expect(card.getByText("恢复默认会重置")).toBeVisible();
@@ -315,9 +317,11 @@ test("AC-03-6 恢复默认需确认，确认后提示词回默认值、模型绑
     await card.getByRole("button", { name: "确认恢复" }).click();
     await expect(card.getByRole("status")).toContainText("已恢复默认");
     await expect(card.getByLabel("系统提示词")).toHaveValue(AGENT_DEFAULTS.image.systemPrompt);
+    await expect(card.getByLabel("输出要求")).toHaveValue(AGENT_DEFAULTS.image.outputRequirements);
 
     const image = await getAgent(request, "image");
     expect(image.systemPrompt).toBe(AGENT_DEFAULTS.image.systemPrompt);
+    expect(image.outputRequirements).toBe(AGENT_DEFAULTS.image.outputRequirements);
     expect(image.gatewayId).toBe(gateway.id);
     expect(image.gatewayModelId).toBe("gpt-image-1");
   } finally {

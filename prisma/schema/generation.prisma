@@ -10,6 +10,8 @@
 model GenerationTask {
   id            String            @id @default(uuid())
   collectionId  String            @map("collection_id")
+  // 提取要求（原「视觉方向」）：faithful / flatten / dereflect 三选一（ADR 0009、docs/prd/05）。
+  // 列名沿用 visual_style：改名要拆两个版本（AGENTS.md 硬性规则 3），对外字段一律叫 extractRequirement。
   visualStyle   String            @map("visual_style")
   copyStyle     String            @map("copy_style")
   // 已废弃：成品张数 = 本次的原图张数（ADR 0008）。列与历史数据保留，新任务不再写入。
@@ -58,6 +60,8 @@ model GenerationResult {
   title        String?
   body         String?
   tags         String[]         @default([])
+  // 结果上的「视觉风格」：新结果是任务所选提取要求的 key，历史结果是旧的视觉方向 key
+  // （已有结果按旧语义展示，不做数据迁移；两种 key 的中文名都能显示，见 image-generation/styles.ts）。
   visualStyle  String           @map("visual_style")
   createdAt    DateTime         @default(now()) @map("created_at")
   collection   MediaCollection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)

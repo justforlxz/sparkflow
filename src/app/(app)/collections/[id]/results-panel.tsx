@@ -174,7 +174,12 @@ export function ResultsPanel({
                 ) : null}
 
                 <p className="text-footnote text-ink-tertiary">
-                  {result.visualStyleLabel} · {RESULT_COPY.generatedAtLabel}{" "}
+                  {/* 提取目标来自任务快照（ADR 0009）：老结果没有这一项时显示占位。 */}
+                  <span data-testid="result-extract-target">
+                    {RESULT_COPY.extractTargetLabel}：
+                    {result.extractTarget?.trim() ? result.extractTarget : "—"}
+                  </span>{" "}
+                  · {result.visualStyleLabel} · {RESULT_COPY.generatedAtLabel}{" "}
                   {result.createdAt.slice(0, 10)} · {RESULT_COPY.generatedImageCountLabel}{" "}
                   {result.assets.length} 张 ·{" "}
                   {/* 发布状态由服务端查到的记录决定，前端不推断（docs/prd/07 MUST NOT）。 */}

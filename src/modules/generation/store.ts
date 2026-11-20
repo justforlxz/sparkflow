@@ -19,7 +19,8 @@ import type {
 
 export interface NewTaskInput {
   collectionId: string;
-  visualStyle: string;
+  /** 提取要求 key（原「视觉方向」，ADR 0009）；落库写 visual_style 列。 */
+  extractRequirement: string;
   copyStyle: string;
   // 不写 imageCount：成品张数 = 原图张数（ADR 0008），旧列只保留历史数据。
   extraPrompt: string | null;

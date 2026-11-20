@@ -7,17 +7,25 @@
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import type { StageName, StageStatus } from "./constants";
 
-/** 两份 Agent 配置快照，按类型存进 `generation_task.agent_snapshot`（jsonb）。 */
+/**
+ * 任务快照，存进 `generation_task.agent_snapshot`（jsonb）。
+ *
+ * 两份 Agent 配置之外，创建任务时还把资源夹的提取目标原文固化进来（docs/prd/04 4c、ADR 0009）：
+ * 之后改资源夹的提取目标不影响已经创建的任务（全局规则 3）。
+ */
 export interface TaskAgentSnapshots {
   image: AgentSnapshot;
   copy: AgentSnapshot;
+  /** 提取目标原文；旧任务没有这一项，读取时统一归一为 null。 */
+  extractTarget: string | null;
 }
 
 /** 任务参数：创建时固化，执行时只读（docs/prd/00-overview.md 全局规则 3）。 */
 export interface TaskParams {
-  visualStyle: string;
+  /** 提取要求 key（原「视觉方向」，ADR 0009）：登记表在 `image-generation/styles.ts`。 */
+  extractRequirement: string;
   copyStyle: string;
-  /** 成品张数不再由任务参数决定：它等于这次的原图张数（ADR 0008）。 */
+  /** 提取图张数不再由任务参数决定：它等于这次的原图张数（ADR 0008）。 */
   extraPrompt: string | null;
 }
 
@@ -46,6 +54,8 @@ export interface CollectionContext {
   platform: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
+  /** 资源夹的提取目标原文；未填写为 null（ADR 0009）。 */
+  extractTarget: string | null;
   /** 本次要一对一出图的原图，顺序即成品顺序。 */
   assets: readonly SourceAssetRef[];
 }
@@ -149,7 +159,8 @@ export interface StageRecord {
 export interface TaskRecord {
   id: string;
   collectionId: string;
-  visualStyle: string;
+  /** 提取要求 key；落库列名仍是 visual_style（ADR 0009）。 */
+  extractRequirement: string;
   copyStyle: string;
   /** 成品张数 = 原图张数，不落库（ADR 0008）。 */
   extraPrompt: string | null;

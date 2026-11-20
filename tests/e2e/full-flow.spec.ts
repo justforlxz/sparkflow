@@ -422,6 +422,8 @@ test("第 2 步 新建资源夹，上传 2 张图片并填写来源信息", asyn
   await page.getByRole("button", { name: "新建媒体资源夹" }).click();
   const dialog = page.getByRole("dialog", { name: "新建媒体资源夹" });
   await dialog.getByLabel("名称").fill(name);
+  // 提取目标是发起创作的前提（ADR 0009、AC-01-9）：表单必填。
+  await dialog.getByLabel("提取目标").fill("桌垫的织物纹理");
   await dialog.getByLabel("来源平台").fill("小红书");
   await dialog.getByLabel("来源链接").fill("https://example.com/note/full-flow");
   await dialog.getByLabel("原始标题").fill("巷子里的咖啡店");
@@ -481,9 +483,11 @@ test("第 4 步 发起创作（3 张原图 → 3 张成品），两个阶段进�
 
   await page.getByTestId("start-creation").click();
   const dialog = page.getByRole("dialog", { name: "开始 AI 创作" });
-  await dialog.getByLabel("视觉方向").selectOption("fresh");
+  // 弹窗只读显示提取目标，并给出提取要求三项（ADR 0009）。
+  await expect(dialog.getByTestId("creation-extract-target")).toHaveText("桌垫的织物纹理");
+  await dialog.getByLabel("提取要求").selectOption("faithful");
   await dialog.getByLabel("文案风格").selectOption("story");
-  // 张数不再可选：弹窗只显示「预计成品张数 = 原图张数」（ADR 0008）。
+  // 张数不再可选：弹窗只显示「预计提取图张数 = 原图张数」（ADR 0008）。
   await expect(dialog.getByTestId("expected-image-count")).toHaveText("3 张");
   await dialog.getByTestId("submit-creation").click();
   // 提交后停在资源夹详情页，创作区就地显示两个阶段（MKACG-916 AC-C-1）。

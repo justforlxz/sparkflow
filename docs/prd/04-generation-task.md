@@ -66,7 +66,8 @@ MUST：
 4. 每个任务保存 `agent_snapshot`（见 03），运行时只读快照 + 按 `gateway_id` 取密钥。
 4b. **任务不接收图片数量参数**：成品张数 = 该资源夹本次的原图张数（一图对一图，见 05）。
 4c. **提取目标来自资源夹**：创建任务时把 `extract_target` 一并写进任务快照；资源夹没有提取目标时拒绝创建任务。
-4d. 任务的「视觉方向」已改名为「提取要求」（`extract_requirement`），取值见 `docs/prd/05`。
+4d. 任务的「视觉方向」已改名为「提取要求」：对外字段是 `extractRequirement`，落库列沿用 `visual_style`
+   （改名要拆两个版本的迁移，见 AGENTS.md 硬性规则 3）；取值见 `docs/prd/05`。
    `generation_task.image_count` 字段废弃，只保留历史数据。
 5. 失败写入可诊断信息：`code`、`message`（已脱敏）、发生时间。
 6. 同一资源夹可连续创建多个任务，任务间数据互不共享。
@@ -84,7 +85,7 @@ MUST NOT：
 
 ## 数据与接口
 
-`generation_task`：id、collection_id、**extract_requirement**（原 visual_style）、copy_style、extra_prompt、
+`generation_task`：id、collection_id、**extract_requirement**（对外字段名；落库列沿用 `visual_style`）、copy_style、extra_prompt、
 agent_snapshot（jsonb）、created_at
 
 `generation_task` 没有 `result_id` 列。「一个任务最多一个结果」由 `generation_result.task_id` 的

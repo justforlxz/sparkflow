@@ -88,9 +88,11 @@ export function createCopyStage(deps: CopyStageDeps = {}): StageHandler {
       }
       const apiKey = await revealApiKey(loadApiKey, agent.gatewayId);
 
-      // 文案要「把照片内容写出来」：先逐张读图拿到中文描述（docs/prd/06「视觉提取」）。
+      // 文案要围绕提取目标来写：先逐张读图拿到目标特征的中文描述（docs/prd/06「视觉提取」）。
       // 读图走独立的 `magpie-vision` 网关，不要求文案模型自己具备 image_input；
       // 没有可用的理解网关、或识别失败时继续生成文案，但必须标注「未包含照片内容」。
+      // 提取目标在创建任务时已固化进快照；ADR 0009 之前的旧任务没有这一项，退回资源夹的当前值。
+      const extractTarget = context.agents.extractTarget ?? context.collection.extractTarget ?? "";
       const vision =
         deps.vision !== undefined
           ? deps.vision
@@ -104,6 +106,7 @@ export function createCopyStage(deps: CopyStageDeps = {}): StageHandler {
           analyzer: vision,
           assets: context.collection.assets,
           readSourceImage: context.readSourceImage,
+          extractTarget,
           ...(deps.compress ? { compress: deps.compress } : {}),
           signal: context.signal,
         });
@@ -121,11 +124,12 @@ export function createCopyStage(deps: CopyStageDeps = {}): StageHandler {
           platform: context.collection.platform,
           sourceTitle: context.collection.sourceTitle,
           sourceBody: context.collection.sourceBody,
+          extractTarget,
         },
         images: {
-          generatedCount: context.collection.assets.length,
+          extractedCount: context.collection.assets.length,
           descriptions,
-          visualStyle: context.params.visualStyle,
+          extractRequirement: context.params.extractRequirement,
         },
         copyStyle: context.params.copyStyle,
         extraPrompt: context.params.extraPrompt,

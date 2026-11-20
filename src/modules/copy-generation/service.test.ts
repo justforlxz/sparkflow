@@ -60,13 +60,18 @@ function makeContext(copy: Partial<AgentSnapshot> = {}): StageContext {
   return {
     taskId: "task-1",
     attempt: 1,
-    params: { visualStyle: "fresh", copyStyle: "story", extraPrompt: "语气轻松" },
-    agents: { image: IMAGE_AGENT, copy: { ...COPY_AGENT, ...copy } },
+    params: { extractRequirement: "faithful", copyStyle: "story", extraPrompt: "语气轻松" },
+    agents: {
+      image: IMAGE_AGENT,
+      copy: { ...COPY_AGENT, ...copy },
+      extractTarget: "桌垫的织物纹理",
+    },
     collection: {
       id: "collection-1",
       platform: "小红书",
       sourceTitle: "原始标题",
       sourceBody: "原始文案内容",
+      extractTarget: "桌垫的织物纹理",
       assets: ASSETS,
     },
     resultId: "result-1",
@@ -125,7 +130,7 @@ describe("文案阶段处理器", () => {
     expect(body.messages[0].content).toContain("你是一名小红书文案撰写者。");
     expect(body.messages[1].content).toContain("原始标题");
     expect(body.messages[1].content).toContain("张数：2");
-    expect(body.messages[1].content).toContain("照片内容：未提供");
+    expect(body.messages[1].content).toContain("目标的材质/纹理/图案：未提供");
     expect(outcome.meta).toMatchObject({
       visualExtraction: "skipped-no-vision-gateway",
       visualDescriptionCount: 0,

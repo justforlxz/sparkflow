@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCopyPrompt, type CopyPromptInput } from "./prompt";
-import { VISUAL_STYLES, findVisualStyle } from "@/modules/image-generation/styles";
+import { EXTRACT_REQUIREMENTS, findExtractRequirement } from "@/modules/image-generation/styles";
 
 const INPUT: CopyPromptInput = {
   agent: {
@@ -12,11 +12,12 @@ const INPUT: CopyPromptInput = {
     platform: "小红书",
     sourceTitle: "原始标题在这里",
     sourceBody: "原始文案在这里",
+    extractTarget: "桌垫的织物纹理",
   },
   images: {
-    generatedCount: 4,
-    descriptions: ["阳台上的绿萝，逆光", "桌上的手冲咖啡杯，木色桌面"],
-    visualStyle: "fresh",
+    extractedCount: 4,
+    descriptions: ["米白色棉麻织纹，细密的十字纹路", "浅灰亚麻纹理，织线略粗"],
+    extractRequirement: "faithful",
   },
   copyStyle: "story",
   extraPrompt: "语气再轻松一点",
@@ -38,13 +39,12 @@ describe("提示词拼装（docs/prd/06「输入拼装」）", () => {
       images: { ...INPUT.images, descriptions: [] },
     });
 
-    expect(user).toContain("照片内容：未提供");
+    expect(user).toContain("目标的材质/纹理/图案：未提供");
     expect(user).toContain("本次没有获取到照片内容");
   });
 });
 
 describe("提示词拼装（docs/prd/06「输入拼装」）", () => {
-
   it("第一部分：Agent 快照的 role、systemPrompt、outputRequirements 都进 system", () => {
     const { system } = buildCopyPrompt(INPUT);
 
@@ -53,7 +53,7 @@ describe("提示词拼装（docs/prd/06「输入拼装」）", () => {
     expect(system).toContain(INPUT.agent.outputRequirements);
   });
 
-  it("第二部分：来源信息进 user，并明确原始文案只作参考", () => {
+  it("第二部分：来源信息与提取目标进 user，并明确原始文案只作参考", () => {
     const { user } = buildCopyPrompt(INPUT);
 
     expect(user).toContain("平台：小红书");
@@ -61,46 +61,55 @@ describe("提示词拼装（docs/prd/06「输入拼装」）", () => {
     expect(user).toContain("原始文案在这里");
     expect(user).toContain("不得照搬");
     expect(user).toContain("不得当作待改写文本");
+    expect(user).toContain("提取目标：桌垫的织物纹理");
   });
 
-  it("第三部分：图片描述给出张数与视觉方向描述，不含图片字节", () => {
+  it("AC-EX-5 文案提示词含提取目标与「目标的材质/纹理/图案」要求", () => {
+    const { user } = buildCopyPrompt(INPUT);
+
+    expect(user).toContain("提取目标：桌垫的织物纹理");
+    expect(user).toContain("目标的材质/纹理/图案");
+    expect(user).toContain("只写目标的材质、纹理、图案与颜色");
+    expect(user).toContain("不写照片里的场景与道具");
+  });
+
+  it("第三部分：素材图给出张数与提取要求描述，不含图片字节", () => {
     const { user } = buildCopyPrompt(INPUT);
 
     expect(user).toContain("张数：4");
-    expect(user).toContain("视觉方向：");
+    expect(user).toContain("提取要求：");
+    expect(user).toContain(findExtractRequirement("faithful")!.description);
     expect(user).not.toContain("data:image");
   });
 
-  it("AC-FIX-1 视觉方向带上图片模块登记表里的描述全文，不再只给代号", () => {
-    const { user } = buildCopyPrompt(INPUT);
-
-    expect(user).toContain(findVisualStyle("fresh")!.description);
-    expect(user).not.toContain("视觉方向代号：fresh");
-  });
-
-  it("AC-FIX-2 三个视觉方向各自取到自己的描述，不串用", () => {
-    for (const style of VISUAL_STYLES) {
+  it("AC-FIX-2 三个提取要求各自取到自己的描述，不串用", () => {
+    for (const requirement of EXTRACT_REQUIREMENTS) {
       const { user } = buildCopyPrompt({
         ...INPUT,
-        images: { ...INPUT.images, visualStyle: style.value },
+        images: { ...INPUT.images, extractRequirement: requirement.value },
       });
 
-      expect(user, style.value).toContain(style.description);
+      expect(user, requirement.value).toContain(requirement.description);
 
-      for (const other of VISUAL_STYLES.filter((entry) => entry.value !== style.value)) {
-        expect(user, `${style.value} 不应包含 ${other.value} 的描述`).not.toContain(
+      for (const other of EXTRACT_REQUIREMENTS.filter(
+        (entry) => entry.value !== requirement.value,
+      )) {
+        expect(user, `${requirement.value} 不应包含 ${other.value} 的描述`).not.toContain(
           other.description,
         );
       }
     }
   });
 
-  it("AC-FIX-3 未知的视觉方向 key 按原文呈现，不抛错、不编造描述", () => {
-    const { user } = buildCopyPrompt({ ...INPUT, images: { ...INPUT.images, visualStyle: "sunset" } });
+  it("AC-FIX-3 未知的提取要求 key 按原文呈现，不抛错、不编造描述", () => {
+    const { user } = buildCopyPrompt({
+      ...INPUT,
+      images: { ...INPUT.images, extractRequirement: "sunset" },
+    });
 
-    expect(user).toContain("视觉方向：sunset");
-    for (const style of VISUAL_STYLES) {
-      expect(user).not.toContain(style.description);
+    expect(user).toContain("提取要求：sunset");
+    for (const requirement of EXTRACT_REQUIREMENTS) {
+      expect(user).not.toContain(requirement.description);
     }
   });
 
@@ -111,15 +120,16 @@ describe("提示词拼装（docs/prd/06「输入拼装」）", () => {
     expect(user).toContain("补充要求：语气再轻松一点");
   });
 
-  it("没有补充要求时写「无」；没有来源信息时写「未填写」", () => {
+  it("没有补充要求时写「无」；没有来源信息与提取目标时写「未填写」", () => {
     const { user } = buildCopyPrompt({
       ...INPUT,
-      collection: { platform: null, sourceTitle: null, sourceBody: null },
+      collection: { platform: null, sourceTitle: null, sourceBody: null, extractTarget: null },
       extraPrompt: null,
     });
 
     expect(user).toContain("平台：未填写");
     expect(user).toContain("原始标题：未填写");
+    expect(user).toContain("提取目标：未填写");
     expect(user).toContain("补充要求：无");
   });
 

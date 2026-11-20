@@ -28,7 +28,9 @@ export async function listCollectionResults(collectionId: string): Promise<Resul
   if (!(await collectionExists(collectionId))) throw AppError.notFound("资源夹不存在");
 
   const rows = await repo.listResultsByCollection(collectionId);
-  return rows.map(({ result, stages }) => toResultView(result, stages));
+  return rows.map(({ result, stages, extractTarget }) =>
+    toResultView(result, stages, extractTarget),
+  );
 }
 
 /**
@@ -38,7 +40,7 @@ export async function listCollectionResults(collectionId: string): Promise<Resul
 export async function getResult(resultId: string): Promise<ResultView> {
   const record = await repo.findResultWithStages(resultId);
   if (!record) throw AppError.notFound("创作结果不存在");
-  return toResultView(record.result, record.stages);
+  return toResultView(record.result, record.stages, record.extractTarget);
 }
 
 /** 只把请求里真正给出的字段交给下游：`undefined` 表示「这一项不改」。 */
@@ -70,7 +72,7 @@ export async function updateResult(
 
   const record = await repo.findResultWithStages(resultId);
   if (!record) throw AppError.notFound("创作结果不存在");
-  return toResultView(record.result, record.stages);
+  return toResultView(record.result, record.stages, record.extractTarget);
 }
 
 /**

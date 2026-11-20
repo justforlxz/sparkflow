@@ -190,6 +190,7 @@ async function createCollectionWithImage(
       sourceUrl: "https://example.com/note/publish",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
+      extractTarget: "桌垫的织物纹理",
       ...images,
     },
   });
@@ -204,7 +205,7 @@ async function createTask(
   collectionId: string,
 ): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
-    data: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
+    data: { extractRequirement: "faithful", copyStyle: "story", extraPrompt: null },
   });
   expect(response.status()).toBe(201);
   return ((await response.json()) as { data: { task: TaskView } }).data.task;

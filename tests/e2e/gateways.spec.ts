@@ -316,7 +316,7 @@ test("AC-02-4 删除被引用的网关返回 409 并指出引用方", async ({ r
       error: { message: string; details?: { code: string } };
     };
     expect(body.error.details?.code).toBe("GATEWAY_IN_USE");
-    expect(body.error.message).toContain("图片创作 Agent");
+    expect(body.error.message).toContain("图片提取 Agent");
 
     // 解除绑定后可以删除
     const unbound = await request.patch("/api/agents/image", {

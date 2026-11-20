@@ -10,11 +10,12 @@ import {
 } from "./constants";
 
 /**
- * 视觉方向与文案风格只校验形状，不校验取值：可选值由图片创作（N6）与文案创作（N7）
- * 的 `styles.ts` 登记，本节点不复制一份枚举。
+ * 提取要求与文案风格在这里只校验形状，取值是否合法由各自的登记表判定：
+ * 可选值来自图片提取（`image-generation/styles.ts`）与文案创作（`copy-generation/styles.ts`），
+ * 本节点不复制一份枚举。提取要求的取值校验在 `service.createTask`（旧三项要被拒绝，AC-EX-3）。
  */
 export const createTaskSchema = z.object({
-  visualStyle: z.string().trim().min(1, "请选择视觉方向").max(MAX_STYLE_LENGTH),
+  extractRequirement: z.string().trim().min(1, "请选择提取要求").max(MAX_STYLE_LENGTH),
   copyStyle: z.string().trim().min(1, "请选择文案风格").max(MAX_STYLE_LENGTH),
   // 不再接收 imageCount：成品张数 = 原图张数（ADR 0008）。旧客户端多传的字段被忽略。
   extraPrompt: z.preprocess(

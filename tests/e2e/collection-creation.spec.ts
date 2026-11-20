@@ -168,6 +168,7 @@ async function createCollection(request: APIRequestContext, count = 2): Promise<
       sourceUrl: "https://example.com/note/1",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
+      extractTarget: "桌垫的织物纹理",
       ...images,
     },
   });
@@ -184,7 +185,7 @@ async function createTask(
 ): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
     data: {
-      visualStyle: "fresh",
+      extractRequirement: "faithful",
       copyStyle: "story",
       extraPrompt: input.extraPrompt ?? null,
     },

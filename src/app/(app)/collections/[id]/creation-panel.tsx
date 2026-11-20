@@ -181,7 +181,7 @@ export function CreationPanel({
                 <Panel bodyClassName="space-y-2 text-body">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-footnote text-ink-tertiary">
-                      {formatTime(task.createdAt)} · {task.visualStyleLabel} · {task.copyStyleLabel}
+                      {formatTime(task.createdAt)} · {task.extractRequirementLabel} · {task.copyStyleLabel}
                     </span>
                     <Pill tone={TASK_STATUS_TONE[task.status]}>{task.statusLabel}</Pill>
                   </div>
@@ -228,7 +228,7 @@ export function CreationPanel({
                   <Panel bodyClassName="space-y-2 text-body">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-footnote text-ink-tertiary">
-                        {formatTime(task.createdAt)} · {task.visualStyleLabel} ·{" "}
+                        {formatTime(task.createdAt)} · {task.extractRequirementLabel} ·{" "}
                         {task.copyStyleLabel}
                       </span>
                       <Pill tone={TASK_STATUS_TONE[task.status]}>{task.statusLabel}</Pill>
@@ -316,6 +316,15 @@ export function CreationPanel({
                       <span className="flex min-w-0 flex-wrap items-center gap-2 text-footnote text-ink-secondary">
                         <span>
                           {CREATION_SECTION_COPY.summaryGeneratedAt} {result.createdAt.slice(0, 10)}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        {/* 本次的提取目标来自任务快照（ADR 0009）：老任务没有这一项时显示占位。 */}
+                        <span
+                          data-testid="creation-result-extract-target"
+                          className="min-w-0 truncate"
+                        >
+                          {CREATION_SECTION_COPY.extractTargetLabel}：
+                          {result.extractTarget?.trim() ? result.extractTarget : "—"}
                         </span>
                         <span aria-hidden="true">·</span>
                         <span>

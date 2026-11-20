@@ -30,7 +30,7 @@ const API_KEY = "sk-test-local-do-not-use-1234";
 const IMAGE_AGENT: AgentSnapshot = {
   agentType: "image",
   enabled: true,
-  name: "图片创作 Agent",
+  name: "图片提取 Agent",
   gatewayId: "gateway-1",
   protocol: "magpie-mcp",
   baseUrl: "https://magpie.example.com",
@@ -49,9 +49,11 @@ const COPY_AGENT: AgentSnapshot = {
 };
 
 interface ContextOverrides {
-  /** 这次资源夹里有几张原图（成品张数 = 它）。 */
+  /** 这次资源夹里有几张原图（提取图张数 = 它）。 */
   assetCount?: number;
-  visualStyle?: string;
+  extractRequirement?: string;
+  /** 快照里的提取目标；传 null 模拟 ADR 0009 之前的旧任务。 */
+  extractTarget?: string | null;
   extraPrompt?: string | null;
   imageModel?: string | null;
 }
@@ -63,19 +65,22 @@ function buildContext(overrides: ContextOverrides = {}): StageContext {
     taskId: "task-1",
     attempt: 1,
     params: {
-      visualStyle: overrides.visualStyle ?? "fresh",
+      extractRequirement: overrides.extractRequirement ?? "faithful",
       copyStyle: "story",
       extraPrompt: overrides.extraPrompt ?? null,
     },
     agents: {
       image: { ...IMAGE_AGENT, modelId: overrides.imageModel ?? null },
       copy: COPY_AGENT,
+      extractTarget:
+        overrides.extractTarget === undefined ? "桌垫的织物纹理" : overrides.extractTarget,
     },
     collection: {
       id: "collection-1",
       platform: "小红书",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
+      extractTarget: "桌垫的织物纹理",
       assets: Array.from({ length: assetCount }, (_, index) => ({
         id: `source-${index + 1}`,
         fileName: `${String.fromCharCode(97 + index)}.png`,
@@ -184,16 +189,22 @@ describe("一图对一图（AC-05-1）", () => {
     expect(withoutModel.inputs[0]?.model).toBeNull();
   });
 
-  it("提示词带上视觉方向与补充要求", async () => {
+  it("提示词带上提取目标、提取要求与补充要求", async () => {
     const generator = new RecordingGenerator();
     await generateImages(
-      buildContext({ assetCount: 1, extraPrompt: "不要出现文字", visualStyle: "product" }),
+      buildContext({
+        assetCount: 1,
+        extraPrompt: "不要出现文字",
+        extractRequirement: "flatten",
+        extractTarget: "桌垫的织物纹理",
+      }),
       { generator, compress: fakeCompress },
     );
 
     const prompt = generator.inputs[0]?.prompt ?? "";
     expect(prompt).toContain("你是生活方式图片创作者");
-    expect(prompt).toContain("视觉方向：产品质感");
+    expect(prompt).toContain("提取目标：桌垫的织物纹理");
+    expect(prompt).toContain("提取要求：平整化");
     expect(prompt).toContain("补充要求：不要出现文字");
   });
 });
@@ -263,7 +274,7 @@ describe("部分原图失败（AC-05-5）", () => {
 
     expect(error).toBeInstanceOf(StageError);
     expect(error).toMatchObject({ code: "UPSTREAM_TIMEOUT" });
-    expect((error as Error).message).toContain("全部 2 张原图都未生成成品图");
+    expect((error as Error).message).toContain("全部 2 张原图都未提取出素材图");
     expect((error as Error).message).toContain("第 1 张原图（a.png）");
     expect((error as Error).message).toContain("第 2 张原图（b.png）");
     expect((error as StageError).meta).toMatchObject({ failures: [{ index: 1 }, { index: 2 }] });
@@ -377,7 +388,7 @@ describe("失败摘要为中文可操作文案（MKACG-902）", () => {
         code: "UPSTREAM_REJECTED",
         respond: () =>
           jsonResult({ content: [{ type: "text", text: "no image: invalid size" }], isError: true }),
-        mustContain: "视觉方向",
+        mustContain: "提取要求",
         forbidden: ["invalid size"],
       },
     ];

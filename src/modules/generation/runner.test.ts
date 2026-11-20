@@ -318,13 +318,14 @@ const copyStage: StageHandler = {
   },
 };
 
-/** 造 N 张原图：成品张数就等于它（ADR 0008），任务参数里不再有张数。 */
+/** 造 N 张原图：提取图张数就等于它（ADR 0008），任务参数里不再有张数。 */
 function collectionWith(assetCount: number): CollectionContext {
   return {
     id: "collection-1",
     platform: "xiaohongshu",
     sourceTitle: "原始标题",
     sourceBody: "原始文案",
+    extractTarget: "桌垫的织物纹理",
     assets: Array.from({ length: assetCount }, (_, index) => ({
       id: `source-${index + 1}`,
       fileName: `${index + 1}.png`,
@@ -364,10 +365,14 @@ function setup(
 async function createTask(store: MemoryStore, extraPrompt: string | null = null) {
   const created = await store.createTask({
     collectionId: COLLECTION.id,
-    visualStyle: "fresh",
+    extractRequirement: "faithful",
     copyStyle: "story",
     extraPrompt,
-    agentSnapshot: { image: snapshot("image"), copy: snapshot("copy") },
+    agentSnapshot: {
+      image: snapshot("image"),
+      copy: snapshot("copy"),
+      extractTarget: "桌垫的织物纹理",
+    },
   });
   return created.task;
 }

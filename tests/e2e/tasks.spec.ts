@@ -48,7 +48,7 @@ interface TaskView {
   collectionId: string;
   status: string;
   statusLabel: string;
-  visualStyle: string;
+  extractRequirement: string;
   copyStyle: string;
   expectedImageCount: number;
   extraPrompt: string | null;
@@ -184,6 +184,7 @@ async function createCollectionWithImage(
       sourceUrl: "https://example.com/note/1",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
+      extractTarget: "桌垫的织物纹理",
       ...images,
     },
   });
@@ -200,7 +201,7 @@ async function createTask(
 ): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
     data: {
-      visualStyle: "fresh",
+      extractRequirement: "faithful",
       copyStyle: "story",
       extraPrompt: input.extraPrompt ?? null,
     },
@@ -285,7 +286,7 @@ test("AC-04-1 创建任务立即返回（< 1s），两阶段初始状态为 queu
 
   const started = Date.now();
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
-    data: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
+    data: { extractRequirement: "faithful", copyStyle: "story", extraPrompt: null },
   });
   const elapsed = Date.now() - started;
 
@@ -348,7 +349,7 @@ test("AC-04-4 停用图片 Agent 后创建任务被拒绝（AGENT_NOT_READY）�
   await patchAgent(request, "image", { enabled: false });
 
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
-    data: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
+    data: { extractRequirement: "faithful", copyStyle: "story", extraPrompt: null },
   });
 
   expect(response.status()).toBe(409);

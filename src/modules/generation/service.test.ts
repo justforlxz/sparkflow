@@ -85,6 +85,7 @@ function agentSnapshot(type: StageName, modelId: string | null = "model-1"): Age
 const AGENTS: TaskAgentSnapshots = {
   image: agentSnapshot("image"),
   copy: agentSnapshot("copy"),
+  extractTarget: "桌垫的织物纹理",
 };
 
 /** 当前 Agent 配置这里只用模型与网关两项，其余字段与重试说明无关。 */
@@ -97,7 +98,7 @@ function taskWith(stages: StageRecord[]): TaskWithStages {
     task: {
       id: TASK_ID,
       collectionId: "collection-1",
-      visualStyle: "fresh",
+      extractRequirement: "faithful",
       copyStyle: "story",
       extraPrompt: null,
       agentSnapshot: AGENTS,

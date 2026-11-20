@@ -131,7 +131,11 @@ export default async function TaskDetailPage({ params }: PageProps) {
 
         <Panel title={TASK_COPY.paramsLabel} className="h-fit">
           <dl className="text-body">
-            <ParameterRow label={TASK_COPY.visualStyleLabel} value={task.visualStyleLabel} />
+            <ParameterRow label={TASK_COPY.extractTargetLabel} value={task.extractTarget ?? "—"} />
+            <ParameterRow
+              label={TASK_COPY.extractRequirementLabel}
+              value={task.extractRequirementLabel}
+            />
             <ParameterRow label={TASK_COPY.copyStyleLabel} value={task.copyStyleLabel} />
             <ParameterRow
               label={TASK_COPY.expectedImageCountLabel}

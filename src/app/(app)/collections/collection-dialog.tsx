@@ -38,6 +38,8 @@ export interface CollectionDialogValues {
   sourceUrl: string;
   sourceTitle: string;
   sourceBody: string;
+  /** 提取目标（ADR 0009）：发起创作时必填，保存时可以为空。 */
+  extractTarget: string;
 }
 
 export interface CollectionDialogProps {
@@ -56,10 +58,23 @@ const EMPTY_VALUES: CollectionDialogValues = {
   sourceUrl: "",
   sourceTitle: "",
   sourceBody: "",
+  extractTarget: "",
 };
 
-const FIELD_LABELS: Array<{ key: keyof CollectionDialogValues; label: string; textarea?: boolean }> = [
+const FIELD_LABELS: Array<{
+  key: keyof CollectionDialogValues;
+  label: string;
+  textarea?: boolean;
+  placeholder?: string;
+  hint?: string;
+}> = [
   { key: "name", label: "名称" },
+  {
+    key: "extractTarget",
+    label: COLLECTION_COPY.extractTargetLabel,
+    placeholder: COLLECTION_COPY.extractTargetPlaceholder,
+    hint: COLLECTION_COPY.extractTargetHint,
+  },
   { key: "platform", label: "来源平台" },
   { key: "sourceUrl", label: "来源链接" },
   { key: "sourceTitle", label: "原始标题" },
@@ -173,6 +188,11 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
 
   async function handleSave() {
     setError(null);
+    // 提取目标是发起创作的前提（ADR 0009、AC-01-9）：表单空值不发请求，与接口的校验同一件事。
+    if (values.extractTarget.trim() === "") {
+      setError(COLLECTION_COPY.extractTargetRequired);
+      return;
+    }
     setSaving(true);
     try {
       if (mode === "create") {
@@ -229,12 +249,16 @@ export function CollectionDialog({ mode, collection }: CollectionDialogProps) {
                     <input
                       type="text"
                       value={values[field.key]}
+                      placeholder={field.placeholder}
                       onChange={(event) =>
                         setValues((current) => ({ ...current, [field.key]: event.target.value }))
                       }
                       className={INPUT_CLASS}
                     />
                   )}
+                  {field.hint ? (
+                    <span className="text-footnote text-ink-tertiary">{field.hint}</span>
+                  ) : null}
                 </label>
               ))}
             </div>

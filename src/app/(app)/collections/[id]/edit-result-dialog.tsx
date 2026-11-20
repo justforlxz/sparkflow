@@ -18,7 +18,7 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { RESULT_COPY } from "@/modules/generation/constants";
 import type { ResultView } from "@/modules/generation/view";
-import { VISUAL_STYLES } from "@/modules/image-generation/styles";
+import { describeResultStyle, EXTRACT_REQUIREMENTS } from "@/modules/image-generation/styles";
 import { parseTagInput } from "@/modules/publish/text";
 
 /**
@@ -148,9 +148,14 @@ function EditResultForm({
               onChange={(event) => setForm({ ...form, visualStyle: event.target.value })}
               className={SELECT_CLASS}
             >
-              {VISUAL_STYLES.map((style) => (
-                <option key={style.value} value={style.value}>
-                  {style.label}
+              {/* 历史结果存的是旧视觉方向 key（ADR 0009 不做数据迁移）：先补一个当前值的选项，
+                  避免打开编辑就把它的视觉风格悄悄改成新选项。 */}
+              {EXTRACT_REQUIREMENTS.some((entry) => entry.value === form.visualStyle) ? null : (
+                <option value={form.visualStyle}>{describeResultStyle(form.visualStyle)}</option>
+              )}
+              {EXTRACT_REQUIREMENTS.map((requirement) => (
+                <option key={requirement.value} value={requirement.value}>
+                  {requirement.label}
                 </option>
               ))}
             </select>

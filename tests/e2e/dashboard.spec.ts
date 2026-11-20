@@ -195,6 +195,7 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
       sourceUrl: "https://example.com/note/dashboard",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
+      extractTarget: "桌垫的织物纹理",
       "images-0": { name: "a.png", mimeType: "image/png", buffer: PNG_ONE_PIXEL },
     },
   });
@@ -206,7 +207,7 @@ async function createCollectionWithImage(request: APIRequestContext): Promise<st
 
 async function createTask(request: APIRequestContext, collectionId: string): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
-    data: { visualStyle: "fresh", copyStyle: "story", extraPrompt: null },
+    data: { extractRequirement: "faithful", copyStyle: "story", extraPrompt: null },
   });
   expect(response.status()).toBe(201);
   return ((await response.json()) as { data: { task: TaskView } }).data.task;

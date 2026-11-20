@@ -42,6 +42,7 @@ export async function loadStageCollectionContext(collectionId: string): Promise<
     platform: collection.platform,
     sourceTitle: collection.sourceTitle,
     sourceBody: collection.sourceBody,
+    extractTarget: collection.extractTarget,
     assets: collection.assets.map((asset) => ({
       id: asset.id,
       fileName: asset.fileName,

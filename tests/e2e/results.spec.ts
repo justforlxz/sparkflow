@@ -41,6 +41,7 @@ interface TaskView {
   id: string;
   collectionId: string;
   status: string;
+  extractRequirement: string;
   resultId: string | null;
   result: ResultView | null;
   stages: { image: StageView; copy: StageView };
@@ -177,6 +178,7 @@ async function createCollectionWithImage(
       sourceUrl: "https://example.com/note/1",
       sourceTitle: "原始标题",
       sourceBody: "原始文案",
+      extractTarget: "桌垫的织物纹理",
       ...images,
     },
   });
@@ -193,7 +195,7 @@ async function createTask(
 ): Promise<TaskView> {
   const response = await request.post(`/api/collections/${collectionId}/tasks`, {
     data: {
-      visualStyle: "fresh",
+      extractRequirement: "faithful",
       copyStyle: "story",
       extraPrompt: input.extraPrompt ?? null,
     },
@@ -241,6 +243,57 @@ async function waitForRetriedCopy(request: APIRequestContext, taskId: string): P
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
+/**
+ * 造一条 ADR 0009 之前的历史任务：`visual_style` 存的是已删除的旧 key（fresh），
+ * 任务快照里没有 `extractTarget`（迁移只加列、不回填历史数据）。
+ * 两条阶段直接写成成功，避免 worker 把这条历史任务跑起来干扰其它用例。
+ */
+async function insertLegacyTask(collectionId: string): Promise<string> {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("造历史任务需要 DATABASE_URL");
+
+  const agent = (agentType: string, protocol: string, modelId: string | null) => ({
+    agentType,
+    enabled: true,
+    name: "旧 Agent",
+    gatewayId: "legacy-gateway",
+    protocol,
+    baseUrl: "https://legacy.example.com",
+    modelId,
+    role: "旧角色",
+    systemPrompt: "旧提示词",
+    outputRequirements: "旧输出要求",
+  });
+
+  const pool = new pg.Pool({ connectionString });
+  try {
+    const inserted = await pool.query(
+      `INSERT INTO "generation_task"
+         ("id", "collection_id", "visual_style", "copy_style", "extra_prompt", "agent_snapshot", "created_at")
+       VALUES (gen_random_uuid()::text, $1, 'fresh', 'story', NULL, $2::jsonb, CURRENT_TIMESTAMP)
+       RETURNING "id"`,
+      [
+        collectionId,
+        JSON.stringify({
+          image: agent("image", "magpie-mcp", null),
+          copy: agent("copy", "openai-chat", "legacy-model"),
+        }),
+      ],
+    );
+    const taskId = inserted.rows[0].id as string;
+    await pool.query(
+      `INSERT INTO "generation_stage"
+         ("id", "task_id", "stage", "status", "attempts", "started_at", "finished_at")
+       VALUES (gen_random_uuid()::text, $1, 'image', 'succeeded', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+              (gen_random_uuid()::text, $1, 'copy', 'succeeded', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [taskId],
+    );
+    return taskId;
+  } finally {
+    await pool.end();
   }
 }
 
@@ -324,7 +377,7 @@ test("AC-07-2 任务列表同时显示生图阶段与文案阶段的状态标签
   await expect(row.getByText("文案阶段")).toBeVisible();
   await expect(row.getByTestId("stage-image-status")).toHaveText("已完成");
   await expect(row.getByTestId("stage-copy-status")).toHaveText("已完成");
-  await expect(row.getByText("预计成品张数 2 张")).toBeVisible();
+  await expect(row.getByText("预计提取图张数 2 张")).toBeVisible();
 });
 
 test("AC-07-3 对 partial 任务点重试：只有文案阶段重排，生图阶段与图片数不变", async ({
@@ -400,6 +453,59 @@ test("AC-07-4 重新生成先确认：取消不产生任务，确认后新增一
   expect(originalAfter.resultId).toBeTruthy();
   // 新任务立刻出现在列表里，两个阶段都排队/执行中。
   await expect(page.getByTestId("task-row")).toHaveCount(countBefore + 1);
+});
+
+/**
+ * AC-04-9 + ADR 0009：历史任务存的是已删除的视觉方向 key（fresh），快照里也没有提取目标。
+ * 原样回传旧 key 必须被拒绝（AC-EX-3），而任务列表没有别的入口能改正它——
+ * 所以「重新生成」弹窗要能让用户重选提取要求，确认后新建任务成功。
+ */
+test("AC-04-9 历史任务重新生成：旧视觉方向被拒绝，弹窗重选提取要求后新建任务", async ({
+  page,
+  request,
+}) => {
+  const collectionId = await createCollectionWithImage(request);
+  const legacyTaskId = await insertLegacyTask(collectionId);
+
+  // 旧 key 原样回传：服务端拒绝，不产生任务。
+  const rejected = await request.post(`/api/collections/${collectionId}/tasks`, {
+    data: { extractRequirement: "fresh", copyStyle: "story", extraPrompt: null },
+  });
+  expect(rejected.status()).toBe(400);
+  const rejectedBody = (await rejected.json()) as { error: { code: string; message: string } };
+  expect(rejectedBody.error.code).toBe("VALIDATION_FAILED");
+  expect(rejectedBody.error.message).toContain("提取要求");
+  expect((await listTasks(request)).filter((task) => task.collectionId === collectionId)).toHaveLength(
+    1,
+  );
+
+  await loginInBrowser(page);
+  await page.goto("/tasks");
+
+  const row = taskRow(page, legacyTaskId);
+  await row.getByTestId("regenerate-button").click();
+  const dialog = page.getByRole("dialog", { name: "重新生成？" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("将重新执行生图与文案两个阶段并产生新结果");
+
+  // 旧任务的提取要求已不在登记表里：弹窗给出三项、默认第一项，并说明为什么必须重选。
+  const requirement = dialog.getByTestId("regenerate-requirement");
+  await expect(requirement.locator("option")).toHaveText(["忠实还原", "平整化", "去反光"]);
+  await expect(requirement).toHaveValue("faithful");
+  await expect(dialog.getByTestId("regenerate-legacy-note")).toBeVisible();
+
+  await requirement.selectOption("dereflect");
+  await page.getByTestId("regenerate-confirm").click();
+
+  await expect
+    .poll(async () => (await listTasks(request)).filter((task) => task.collectionId === collectionId).length)
+    .toBe(2);
+  const regenerated = (await listTasks(request)).filter(
+    (task) => task.collectionId === collectionId && task.id !== legacyTaskId,
+  );
+  expect(regenerated).toHaveLength(1);
+  // 提交的是弹窗里重选的值，不是旧任务里那个已经删除的 key。
+  expect(regenerated[0]!.extractRequirement).toBe("dereflect");
 });
 
 test("AC-07-5 全部成功的任务不显示重试按钮", async ({ page, request }) => {

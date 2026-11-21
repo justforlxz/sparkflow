@@ -47,7 +47,7 @@ afterEach(async () => {
 
 test("AC-01-1 两张图片落库后按上传顺序返回，文件写在 media-assets/<collectionId>/ 下", async () => {
   const created = await createCollection(
-    { name: "集成-两张图", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
+    { name: "集成-两张图", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
     [pngFile("a.png"), pngFile("b.png")],
   );
   createdIds.push(created.id);
@@ -70,7 +70,7 @@ test("AC-01-1 两张图片落库后按上传顺序返回，文件写在 media-as
 
 test("AC-01-2 不带图片也能建夹：没有图片记录，也不写磁盘", async () => {
   const created = await createCollection(
-    { name: "集成-先建夹", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
+    { name: "集成-先建夹", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
     [],
   );
   createdIds.push(created.id);
@@ -83,7 +83,7 @@ test("AC-01-2 不带图片也能建夹：没有图片记录，也不写磁盘", 
 
 test("AC-01-4 只改来源信息时图片数量与内容不变", async () => {
   const created = await createCollection(
-    { name: "集成-改来源", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
+    { name: "集成-改来源", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
     [pngFile("a.png"), pngFile("b.png")],
   );
   createdIds.push(created.id);
@@ -94,7 +94,6 @@ test("AC-01-4 只改来源信息时图片数量与内容不变", async () => {
     sourceUrl: "https://example.com/note/1",
     sourceTitle: "原始标题",
     sourceBody: "原始文案",
-    extractTarget: "桌垫的织物纹理",
   });
 
   expect(updated.name).toBe("集成-改来源-新名字");
@@ -104,7 +103,7 @@ test("AC-01-4 只改来源信息时图片数量与内容不变", async () => {
 
 test("AC-01-5 解除关联只删记录，磁盘文件仍在，其余图片不受影响", async () => {
   const created = await createCollection(
-    { name: "集成-解除关联", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
+    { name: "集成-解除关联", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
     [pngFile("a.png"), pngFile("b.png")],
   );
   createdIds.push(created.id);
@@ -125,7 +124,7 @@ test("AC-01-5 解除关联只删记录，磁盘文件仍在，其余图片不受
 
 test("AC-01-6 删除资源夹后图片记录级联消失，磁盘目录被清理", async () => {
   const created = await createCollection(
-    { name: "集成-删除", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
+    { name: "集成-删除", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
     [pngFile("a.png"), pngFile("b.png")],
   );
   createdIds.push(created.id);
@@ -147,7 +146,7 @@ test("AC-01-6 删除资源夹后图片记录级联消失，磁盘目录被清理
 
 test("追加图片接在现有顺序之后，排序不重叠", async () => {
   const created = await createCollection(
-    { name: "集成-追加", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
+    { name: "集成-追加", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
     [pngFile("a.png")],
   );
   createdIds.push(created.id);
@@ -160,7 +159,7 @@ test("追加图片接在现有顺序之后，排序不重叠", async () => {
 
 test("最后一张图片可以解除关联，资源夹变成 0 张（AC-01-2）", async () => {
   const created = await createCollection(
-    { name: "集成-零张", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null, extractTarget: null },
+    { name: "集成-零张", platform: null, sourceUrl: null, sourceTitle: null, sourceBody: null },
     [pngFile("only.png")],
   );
   createdIds.push(created.id);
@@ -182,7 +181,6 @@ const EDIT_FIELDS = {
   sourceUrl: "https://example.com/note/1",
   sourceTitle: "原始标题",
   sourceBody: "原始文案",
-  extractTarget: "桌垫的织物纹理",
 };
 
 /** 资源夹目录下的文件名清单：用来断言「磁盘没有新增文件」与「被移除的原图仍留在磁盘」。 */
@@ -269,19 +267,19 @@ test("AC-01-2 结果集为 0 张时保存成功：来源字段写入、关联全
   expect(await storedFiles(created.id)).toEqual(filesBefore);
 });
 
-test("AC-FIX-6 资源夹有运行中任务时保存返回 CONFLICT 并说明原因", async () => {
+test("AC-FIX-6 资源夹有运行中的提取时保存返回 CONFLICT 并说明原因", async () => {
   const created = await createCollection(EDIT_FIELDS, [pngFile("a.png")]);
   createdIds.push(created.id);
 
-  // 两条阶段都排队中 → 派生的任务状态是 running（docs/prd/04「阶段与状态」）。
-  await getDb().generationTask.create({
+  // 排队中的提取运行 → 资源夹不可改图（docs/prd/12 MUST 1：此时改图会影响正在进行的提取）。
+  await getDb().extractionRun.create({
     data: {
       collectionId: created.id,
-      visualStyle: "留白干净",
-      copyStyle: "口语化",
-      imageCount: 1,
-      agentSnapshot: {},
-      stages: { create: [{ stage: "image" }, { stage: "copy" }] },
+      status: "queued",
+      requirement: "faithful",
+      categories: ["material"],
+      sourceAssetIds: [created.assets[0].id],
+      progress: { done: 0, total: 1 },
     },
   });
 
@@ -296,7 +294,7 @@ test("AC-FIX-6 资源夹有运行中任务时保存返回 CONFLICT 并说明原�
       ],
       files: new Map([["pending-1", pngFile("c.png")]]),
     }),
-  ).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringContaining("运行中的任务") });
+  ).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringContaining("运行中的提取") });
 
   expect(await storedFiles(created.id)).toEqual(filesBefore);
   expect(await getDb().mediaAsset.count({ where: { collectionId: created.id } })).toBe(1);

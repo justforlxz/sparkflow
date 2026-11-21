@@ -1,0 +1,41 @@
+// 文案版本（docs/adr/0010、docs/prd/12-asset-library.md「数据模型」）。
+//
+// 一次「生成文案」产生一条版本：`version_no` 在资源夹内递增且不复用（MUST 5）。
+// 版本固化两样东西 —— 生成出来的三段文案，以及当时选中的素材 id 列表（MUST 4）。
+// 之后素材被删，版本里仍保留这些 id，界面据此显示「已删除素材」而不是丢数据。
+//
+// `selectedAssetIds` 与 library_asset 之间不声明外键，原因同 library_asset.sourceAssetId：
+// 素材被手动删除后版本必须还能打开。
+//
+// 生成是异步的（进程内 worker），PRD 的字段清单里没有作业状态，但创建接口必须立即返回、
+// 界面要显示「生成中/失败原因」，因此加了 status / error / meta / extraPrompt / finishedAt 五项。
+model CopyVersion {
+  id               String          @id @default(uuid())
+  collectionId     String          @map("collection_id")
+  versionNo        Int             @map("version_no")
+  // queued | running | succeeded | failed，取值登记在 src/modules/copy-generation/constants.ts。
+  status           String          @default("queued")
+  title            String?
+  body             String?
+  tags             String[]        @default([])
+  copyStyle        String          @map("copy_style")
+  // 创建时固化的文案 Agent 配置（不含密钥，docs/prd/03 MUST 6）。
+  agentSnapshot    Json            @map("agent_snapshot")
+  selectedAssetIds String[]        @default([]) @map("selected_asset_ids")
+  extraPrompt      String?         @map("extra_prompt")
+  // { code, message, at }：失败时的可读原因。
+  error            Json?
+  // 调用摘要（模型、耗时、视觉提取的结局）；成功时也写，界面据此标注「未包含照片内容」。
+  meta             Json?
+  createdAt        DateTime        @default(now()) @map("created_at")
+  finishedAt       DateTime?       @map("finished_at")
+  collection       MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  // 发布记录（prisma/schema/publish.prisma）以 copyVersionId 外键并级联删除。
+  publishRecord    PublishRecord?
+
+  // 版本号在资源夹内唯一（MUST 5）。
+  @@unique([collectionId, versionNo])
+  @@index([collectionId, createdAt])
+  @@index([status])
+  @@map("copy_version")
+}

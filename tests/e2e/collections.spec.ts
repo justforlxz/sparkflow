@@ -37,7 +37,6 @@ interface CollectionDetail {
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
-  extractTarget: string | null;
   status: string;
   assetCount: number;
   assets: CollectionAsset[];
@@ -79,16 +78,12 @@ async function loginInBrowser(page: Page): Promise<void> {
   await expect(page).toHaveURL("/");
 }
 
-/**
- * 建一个资源夹。`extractTarget` 传 null 表示这个字段整个不传（库里是 null），
- * 传空串或纯空白则原样提交，用来验证三种空形态在发起创作时都被拒绝（AC-01-9）。
- */
+/** 建一个资源夹（带一张原图）。 */
 async function createCollection(
   request: APIRequestContext,
   name: string,
   files: Array<{ name: string; mimeType: string; buffer: Buffer }> = [png("a.png")],
   sourceUrl: string = "https://example.com/note/1",
-  extractTarget: string | null = "桌垫的织物纹理",
 ): Promise<CollectionDetail> {
   // Playwright 的 multipart 每个键只能带一个文件，因此按序号拆键；服务端接收所有文件字段。
   const multipart: Record<string, string | { name: string; mimeType: string; buffer: Buffer }> = {
@@ -98,7 +93,6 @@ async function createCollection(
     sourceTitle: "原始标题",
     sourceBody: "原始文案",
   };
-  if (extractTarget !== null) multipart.extractTarget = extractTarget;
   files.forEach((file, index) => {
     multipart[`images-${index}`] = file;
   });
@@ -143,7 +137,6 @@ test("AC-01-1 创建资源夹并上传 2 张图片后，列表与详情都能看
 
   const dialog = page.getByRole("dialog", { name: "新建媒体资源夹" });
   await dialog.getByLabel("名称").fill(name);
-  await dialog.getByLabel("提取目标").fill("桌垫的织物纹理");
   await dialog.getByLabel("来源平台").fill("小红书");
   await dialog.getByLabel("来源链接").fill("https://example.com/note/1");
   await dialog.getByLabel("原始标题").fill("秋季穿搭 3 套");
@@ -180,7 +173,7 @@ test("AC-01-1 创建资源夹并上传 2 张图片后，列表与详情都能看
   expect(found.data.total).toBe(1);
 });
 
-test("AC-01-2 没有图片也能保存成功；详情显示引导态，「开始 AI 创作」置灰且不发起请求", async ({
+test("AC-01-2 没有图片也能保存成功；详情显示引导态", async ({
   page,
   request,
 }) => {
@@ -194,7 +187,6 @@ test("AC-01-2 没有图片也能保存成功；详情显示引导态，「开始
   // 用户常先建夹、后收集素材：不带图片保存必须成功。
   const dialog = page.getByRole("dialog", { name: "新建媒体资源夹" });
   await dialog.getByLabel("名称").fill(name);
-  await dialog.getByLabel("提取目标").fill("桌垫的织物纹理");
   await dialog.getByRole("button", { name: "保存" }).click();
   await expect(dialog).toBeHidden();
 
@@ -214,80 +206,6 @@ test("AC-01-2 没有图片也能保存成功；详情显示引导态，「开始
   await expect(page.getByText("先点「编辑」把收集到的图片上传进来", { exact: false })).toBeVisible();
   await expect(page.locator("img[alt]")).toHaveCount(0);
 
-  // 「开始 AI 创作」置灰：点击只给提示，不发请求，也不弹创作弹窗。
-  const taskRequests: string[] = [];
-  page.on("request", (sent) => {
-    if (sent.method() === "POST" && sent.url().includes("/tasks")) taskRequests.push(sent.url());
-  });
-
-  const startButton = page.getByTestId("start-creation");
-  await expect(startButton).toHaveAttribute("aria-disabled", "true");
-  // 真实浏览器不会拦下 aria-disabled 上的点击：这里绕过 Playwright 的可操作性检查。
-  await startButton.click({ force: true });
-  await expect(page.getByRole("status")).toHaveText("先上传原始素材");
-  await expect(page.getByTestId("submit-creation")).toHaveCount(0);
-  expect(taskRequests).toEqual([]);
-});
-
-test("AC-01-8 0 张图的资源夹发起创作返回 VALIDATION_FAILED，不建任务", async ({ request }) => {
-  await ensureAccount(request);
-  const created = await createCollection(request, uniqueName("AC-01-8"), []);
-  expect(created.assetCount).toBe(0);
-
-  const response = await request.post(`/api/collections/${created.id}/tasks`, {
-    data: { extractRequirement: "faithful", copyStyle: "story", imageCount: 1, extraPrompt: null },
-  });
-  expect(response.status()).toBe(400);
-  const body = (await response.json()) as ErrorBody;
-  expect(body.error.code).toBe("VALIDATION_FAILED");
-  expect(body.error.message).toContain("没有原始图片");
-
-  // 没有落下任务记录：任务列表里查不到这个资源夹的任务。
-  const tasks = await request.get("/api/tasks");
-  expect(tasks.status()).toBe(200);
-  expect(JSON.stringify(await tasks.json())).not.toContain(created.id);
-});
-
-/**
- * AC-01-9 的服务端判据：绕过表单必填，直接调接口。
- * 三种空形态（字段不传 → 库里 null、空串、纯空白）都必须 400 + VALIDATION_FAILED，且不产生任务。
- */
-test("AC-01-9 提取目标为空时直接调接口发起创作返回 VALIDATION_FAILED，不建任务", async ({
-  request,
-}) => {
-  await ensureAccount(request);
-
-  const cases: Array<[string, string | null]> = [
-    ["null", null],
-    ["空字符串", ""],
-    ["纯空白", "   "],
-  ];
-
-  for (const [label, extractTarget] of cases) {
-    const created = await createCollection(
-      request,
-      uniqueName(`AC-01-9-${label}`),
-      [png("a.png")],
-      "https://example.com/note/1",
-      extractTarget,
-    );
-    expect(created.assetCount, label).toBe(1);
-    // 保存路径不拦空值：详情里如实是 null（资源夹可以先建、之后再补提取目标）。
-    expect(created.extractTarget, label).toBeNull();
-
-    const response = await request.post(`/api/collections/${created.id}/tasks`, {
-      data: { extractRequirement: "faithful", copyStyle: "story", extraPrompt: null },
-    });
-    expect(response.status(), label).toBe(400);
-    const body = (await response.json()) as ErrorBody;
-    expect(body.error.code, label).toBe("VALIDATION_FAILED");
-    expect(body.error.message, label).toContain("提取目标");
-
-    // 任务数不变：任务列表里查不到这个资源夹的任务。
-    const tasks = await request.get("/api/tasks");
-    expect(tasks.status()).toBe(200);
-    expect(JSON.stringify(await tasks.json()), label).not.toContain(created.id);
-  }
 });
 
 test("AC-01-3 上传 .txt 被拒绝，错误信息说明原因", async ({ page, request }) => {
@@ -300,7 +218,6 @@ test("AC-01-3 上传 .txt 被拒绝，错误信息说明原因", async ({ page, 
 
   const dialog = page.getByRole("dialog", { name: "新建媒体资源夹" });
   await dialog.getByLabel("名称").fill(name);
-  await dialog.getByLabel("提取目标").fill("桌垫的织物纹理");
   await dialog
     .getByLabel("添加图片")
     .setInputFiles({ name: "note.txt", mimeType: "text/plain", buffer: Buffer.from("纯文本内容") });
@@ -406,7 +323,7 @@ test("AC-01-5 解除某张原图关联后，该图从详情消失，其余图片
   expect(detail.assets.map((asset) => asset.fileName)).toEqual(["b.png"]);
 });
 
-test("AC-01-6 删除资源夹后，其任务、结果、发布记录在数据库与界面中都不再出现", async ({
+test("AC-01-6 删除资源夹后，其提取运行、素材、文案版本与发布记录都不再出现", async ({
   page,
   request,
 }) => {
@@ -419,7 +336,7 @@ test("AC-01-6 删除资源夹后，其任务、结果、发布记录在数据库
   await page.getByRole("button", { name: "删除" }).click();
 
   const dialog = page.getByRole("dialog", { name: "删除这个资源夹？" });
-  await expect(dialog).toContainText("创作任务、结果与发布记录会一并删除");
+  await expect(dialog).toContainText("提取运行、素材、文案版本与发布记录会一并删除");
   await dialog.getByRole("button", { name: "确认删除" }).click();
 
   await expect(page).toHaveURL("/collections");
@@ -640,7 +557,7 @@ test("AC-900-1 AC-900-2 AC-900-4 资源夹详情在 375×812 与 320×568 下无
   expect(response.headers()["content-type"]).toBe("image/png");
 });
 
-test("AC-900-3 375×812 与 320×568 下工作台、资源夹列表、任务列表仍无横向溢出", async ({
+test("AC-900-3 375×812 与 320×568 下工作台与资源夹列表仍无横向溢出", async ({
   page,
   request,
 }) => {
@@ -652,7 +569,7 @@ test("AC-900-3 375×812 与 320×568 下工作台、资源夹列表、任务列�
     { width: 320, height: 568 },
   ]) {
     await page.setViewportSize(viewport);
-    for (const route of ["/", "/collections", "/tasks"]) {
+    for (const route of ["/", "/collections"]) {
       await page.goto(route);
       const { scrollWidth, clientWidth } = await viewportWidths(page);
       expect(scrollWidth, `${route} 在 ${viewport.width} 宽度下不应横向溢出`).toBe(clientWidth);

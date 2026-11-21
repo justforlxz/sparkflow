@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FeatureGate } from "@/components/FeatureGate";
-import { PublishRecordList } from "@/components/publish/publish-record-list";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { Panel } from "@/components/ui/Panel";
@@ -13,39 +11,15 @@ import {
   TEXT_LINK_CLASS,
 } from "@/components/ui/styles";
 import { isAppError } from "@/lib/errors";
-import { listCollectionResults } from "@/modules/generation/results";
-import { CREATION_COPY, RESULT_COPY } from "@/modules/generation/constants";
-import { listCollectionTasks } from "@/modules/generation/service";
-import { COLLECTION_COPY, COLLECTION_STATUS_LABELS, MAX_PAGE_SIZE } from "@/modules/media-collection/constants";
+import { COLLECTION_COPY, COLLECTION_STATUS_LABELS } from "@/modules/media-collection/constants";
 import { getCollection, type CollectionDetailView } from "@/modules/media-collection/service";
-import { PUBLISH_COPY } from "@/modules/publish/constants";
-import { getPublishedResultIds, listPublishRecords } from "@/modules/publish/service";
 import { CollectionDialog } from "../collection-dialog";
 import { DeleteCollectionButton } from "./delete-collection-button";
-import { CreationPanel } from "./creation-panel";
-import { StartCreationDialog } from "./start-creation-dialog";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}
-
-/** 页签由 URL 参数决定：刷新与分享链接都能停在同一个页签上，不需要客户端状态。 */
-const TABS = {
-  assets: COLLECTION_COPY.assetTab,
-  results: RESULT_COPY.tabLabel,
-  published: PUBLISH_COPY.collectionTab,
-} as const;
-
-type TabKey = keyof typeof TABS;
-
-function resolveTab(value: string | string[] | undefined): TabKey {
-  const first = Array.isArray(value) ? value[0] : value;
-  if (first === "results") return "results";
-  if (first === "published") return "published";
-  return "assets";
 }
 
 async function loadCollection(id: string): Promise<CollectionDetailView> {
@@ -69,28 +43,15 @@ function SourceRow({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function tabClass(active: boolean): string {
-  return active
-    ? `-mb-px border-b-2 border-accent px-1 pb-2 text-body font-medium text-ink`
-    : `-mb-px border-b-2 border-transparent px-1 pb-2 text-body text-ink-secondary hover:text-ink`;
-}
-
-export default async function CollectionDetailPage({ params, searchParams }: PageProps) {
+/**
+ * 资源夹详情：本节点只剩「原始素材」这一面（来源信息 + 原图）。
+ *
+ * 提取运行与素材库页签由 MKACG-939 落地，发布页签与发布记录页由 MKACG-940 落地；
+ * 旧模型的「AI 创作结果」页签随数据层一起移除（ADR 0010、MKACG-938）。
+ */
+export default async function CollectionDetailPage({ params }: PageProps) {
   const { id } = await params;
   const collection = await loadCollection(id);
-  const tab = resolveTab((await searchParams).tab);
-  /* 「AI 创作结果」页签一次取回任务与结果，创作区就地显示进度与结果（MKACG-933）。
-   * 发布状态只查 id、由服务端给出，前端不推断（docs/prd/07 MUST NOT）。 */
-  const [results, tasks] = await Promise.all([
-    listCollectionResults(id),
-    listCollectionTasks(id),
-  ]);
-  const publishedResultIds = await getPublishedResultIds(results.map((result) => result.id));
-  // 「发布记录」页签与全局 /published 页是同一个 service 的同一份数据。
-  const publishedRecords =
-    tab === "published"
-      ? await listPublishRecords({ collectionId: id, page: 1, pageSize: MAX_PAGE_SIZE })
-      : null;
 
   return (
     <section className="space-y-6">
@@ -106,21 +67,11 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
               {COLLECTION_STATUS_LABELS[collection.status]}
             </Pill>
             <span>原图 {collection.assetCount} 张</span>
-            <span>创作任务 {collection.taskCount} 个</span>
-            <span>结果 {collection.resultCount} 个</span>
+            <span>素材 {collection.libraryAssetCount} 条</span>
+            <span>文案版本 {collection.copyVersionCount} 个</span>
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          {/* 图生图已是唯一的创作方式（ADR 0008）：入口由功能开关判定，关掉时只剩提示、
-              不发请求；这也是 AC-10-4 双向断言的一半。
-              资源夹允许 0 张原图，但发起创作要求至少一张：弹窗里按 `assetCount` 挡住。 */}
-          <FeatureGate feature="image-to-image" label={CREATION_COPY.action}>
-            <StartCreationDialog
-              collectionId={collection.id}
-              assetCount={collection.assetCount}
-              extractTarget={collection.extractTarget}
-            />
-          </FeatureGate>
           <CollectionDialog
             mode="edit"
             collection={{
@@ -131,7 +82,6 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
                 sourceUrl: collection.sourceUrl ?? "",
                 sourceTitle: collection.sourceTitle ?? "",
                 sourceBody: collection.sourceBody ?? "",
-                extractTarget: collection.extractTarget ?? "",
               },
               assets: collection.assets,
             }}
@@ -140,96 +90,41 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
         </div>
       </div>
 
-      <nav aria-label="资源夹页签" className="flex gap-4 border-b border-line">
-        <Link
-          href={`/collections/${collection.id}`}
-          aria-current={tab === "assets" ? "page" : undefined}
-          className={tabClass(tab === "assets")}
-        >
-          {TABS.assets}
-        </Link>
-        <Link
-          href={`/collections/${collection.id}?tab=results`}
-          aria-current={tab === "results" ? "page" : undefined}
-          className={tabClass(tab === "results")}
-        >
-          {TABS.results}
-        </Link>
-        <Link
-          href={`/collections/${collection.id}?tab=published`}
-          aria-current={tab === "published" ? "page" : undefined}
-          className={tabClass(tab === "published")}
-        >
-          {TABS.published}
-        </Link>
-      </nav>
-
-      {tab === "assets" ? (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <div className="min-w-0 space-y-3">
-            <h2 className="text-heading font-semibold text-ink">{COLLECTION_COPY.imagesSection}</h2>
-            {collection.assets.length === 0 ? (
-              <EmptyState
-                message={COLLECTION_COPY.emptyAssets}
-                hint={COLLECTION_COPY.emptyAssetsHint}
-              />
-            ) : (
-              <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {collection.assets.map((asset) => (
-                  <li key={asset.id} className="space-y-1 text-caption text-ink-tertiary">
-                    {/* 缩略图是按钮：点开在站内弹窗看原图，不再开新标签页（docs/prd/07）。 */}
-                    <ImageLightbox
-                      image={asset}
-                      openLabel={RESULT_COPY.openLarge}
-                      closeLabel={PUBLISH_COPY.closeAction}
-                      thumbnailClassName="h-32 w-full rounded-md border border-line object-cover transition-opacity hover:opacity-90"
-                    />
-                    <span className="block truncate">{asset.fileName}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-          </div>
-
-          <Panel title={COLLECTION_COPY.sourceSection} className="h-fit min-w-0">
-            <dl className="text-body">
-              <SourceRow label="来源平台" value={collection.platform} />
-              <SourceRow label="来源链接" value={collection.sourceUrl} />
-              <SourceRow label="原始标题" value={collection.sourceTitle} />
-              <SourceRow label="原始文案" value={collection.sourceBody} />
-              <SourceRow label={COLLECTION_COPY.extractTargetLabel} value={collection.extractTarget} />
-            </dl>
-          </Panel>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-3">
+          <h2 className="text-heading font-semibold text-ink">{COLLECTION_COPY.imagesSection}</h2>
+          {collection.assets.length === 0 ? (
+            <EmptyState
+              message={COLLECTION_COPY.emptyAssets}
+              hint={COLLECTION_COPY.emptyAssetsHint}
+            />
+          ) : (
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {collection.assets.map((asset) => (
+                <li key={asset.id} className="space-y-1 text-caption text-ink-tertiary">
+                  {/* 缩略图是按钮：点开在站内弹窗看原图，不再开新标签页（docs/prd/07）。 */}
+                  <ImageLightbox
+                    image={asset}
+                    openLabel="查看大图"
+                    closeLabel="关闭"
+                    thumbnailClassName="h-32 w-full rounded-md border border-line object-cover transition-opacity hover:opacity-90"
+                  />
+                  <span className="block truncate">{asset.fileName}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      ) : tab === "published" ? (
-        <div className="space-y-3">
-          <PublishRecordList
-            records={publishedRecords?.items ?? []}
-            emptyText={PUBLISH_COPY.emptyCollection}
-          />
-          {publishedRecords && publishedRecords.total > publishedRecords.items.length ? (
-            <Link
-              href={`/published?collectionId=${collection.id}`}
-              className={`text-footnote ${TEXT_LINK_CLASS}`}
-            >
-              {PUBLISH_COPY.pageTitle}
-            </Link>
-          ) : null}
-        </div>
-      ) : (
-        /* 进度与结果全部收在「AI 创作结果」页签（MKACG-933）：原始素材页签只剩原图与来源信息。
-         * 锚点 `#creation` 供 /tasks 的「查看结果」直接跳过来（AC-C-5）。 */
-        <CreationPanel
-          collectionId={collection.id}
-          initialTasks={tasks}
-          results={results}
-          publishedResultIds={publishedResultIds}
-          sourceAssetIds={collection.assets.map((asset) => asset.id)}
-          // 分享入口由服务端开关决定渲染成什么，客户端组件里不判断功能是否实现（docs/prd/10）。
-          shareEntry={<FeatureGate feature="share-to-xiaohongshu" />}
-        />
-      )}
+
+        <Panel title={COLLECTION_COPY.sourceSection} className="h-fit min-w-0">
+          <dl className="text-body">
+            <SourceRow label="来源平台" value={collection.platform} />
+            <SourceRow label="来源链接" value={collection.sourceUrl} />
+            <SourceRow label="原始标题" value={collection.sourceTitle} />
+            <SourceRow label="原始文案" value={collection.sourceBody} />
+          </dl>
+        </Panel>
+      </div>
     </section>
   );
 }

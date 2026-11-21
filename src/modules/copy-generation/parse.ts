@@ -2,11 +2,12 @@
  * 文案结构化输出的解析与清洗（docs/prd/06-copy-generation.md「输出结构」）。
  *
  * 纯函数，不碰网络与数据库：适配器把模型原文交进来，这里要么给出干净的三个字段，
- * 要么抛 `StageError` 让阶段失败（runner 据此记 `COPY_FORMAT` / `COPY_EMPTY`，不写脏数据）。
+ * 要么抛 `StageError` 让这次生成失败（runner 据此记 `COPY_FORMAT` / `COPY_EMPTY`，不写脏数据）。
  */
 import { logger } from "@/lib/logger";
-import { COPY_ERROR_CODES, MAX_TAGS, MAX_TITLE_LENGTH } from "./constants";
-import { StageError, type CopyContent } from "@/modules/generation/types";
+import { COPY_ERROR_CODES, MAX_COPY_TITLE_LENGTH, MAX_TAGS } from "./constants";
+import { StageError } from "@/lib/job-failure";
+import type { CopyContent } from "./types";
 
 /** 允许模型把 JSON 包在 ```json 围栏里；围栏语言标记可省略。 */
 const CODE_FENCE = /```[A-Za-z0-9_-]*[ \t]*\r?\n?([\s\S]*?)```/;
@@ -55,13 +56,13 @@ export function normalizeTitle(value: unknown): string {
   if (typeof value !== "string") return "";
   const title = value.trim();
   const characters = Array.from(title);
-  if (characters.length <= MAX_TITLE_LENGTH) return title;
+  if (characters.length <= MAX_COPY_TITLE_LENGTH) return title;
 
   logger.warn("文案标题超过上限，已截断", {
-    limit: MAX_TITLE_LENGTH,
+    limit: MAX_COPY_TITLE_LENGTH,
     originalLength: characters.length,
   });
-  return characters.slice(0, MAX_TITLE_LENGTH).join("");
+  return characters.slice(0, MAX_COPY_TITLE_LENGTH).join("");
 }
 
 /** 保留换行，把连续空行压缩到最多一个空行。 */

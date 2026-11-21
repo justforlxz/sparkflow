@@ -5,8 +5,11 @@
  * 后续节点新增页面走数据驱动注册，不再改 `src/app/(app)/layout.tsx`）。
  *
  * `badge` 指向 `GET /api/stats` 返回的哪一项计数；没有计数的项为 `null`。
+ *
+ * ADR 0010 之后没有「创作任务」页：任务概念被提取运行与文案版本取代，两者都展示在资源夹详情里
+ * （MKACG-938）。「发布记录」页与它的导航项由发布页签节点重建（MKACG-940）。
  */
-export type NavKey = "dashboard" | "collections" | "tasks" | "published" | "settings";
+export type NavKey = "dashboard" | "collections" | "settings";
 
 /** 侧栏计数取自统计接口的这两个字段（docs/prd/09 MUST 2、AC-09-5）。 */
 export type NavBadgeKey = "collections" | "pendingGeneration";
@@ -20,10 +23,8 @@ export interface NavItem {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { key: "dashboard", href: "/", label: "工作台", badge: null },
-  // 「媒体资源夹」显示资源夹总数，「创作任务」显示待创作数：两者都必须与工作台统计一致（AC-09-5）。
+  // 「媒体资源夹」显示资源夹总数：必须与工作台统计一致（AC-09-5）。
   { key: "collections", href: "/collections", label: "媒体资源夹", badge: "collections" },
-  { key: "tasks", href: "/tasks", label: "创作任务", badge: "pendingGeneration" },
-  { key: "published", href: "/published", label: "发布记录", badge: null },
   { key: "settings", href: "/settings", label: "模型与 Agent 设置", badge: null },
 ];
 

@@ -9,7 +9,7 @@
 import { AppError } from "@/lib/errors";
 
 export const COLLECTION_ERROR_MESSAGES = {
-  busy: "资源夹有运行中的任务，请等任务结束后再修改图片或删除",
+  busy: "资源夹有运行中的提取，请等它结束后再修改图片或删除",
   emptyFile: (fileName: string) => `「${fileName}」是空文件`,
   unsupportedType: (fileName: string) =>
     `「${fileName}」不是受支持的图片：只接受 JPEG、PNG、WebP，判定以文件内容为准`,
@@ -34,13 +34,13 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
- * SHOULD：有运行中任务时拒绝改图与删除（AC-02-10 的判定点）。
- * `runningTasks` 由调用方从任务模块取，任务表在本节点尚未引入（见 service 的 `relatedCounts`）。
+ * SHOULD：有运行中的提取时拒绝改图与删除（AC-02-10 的判定点）。
+ * `runningExtractions` 由调用方从提取模块取（见 service 的 `relatedCounts`）。
  */
-export function assertCollectionMutable(runningTasks: number): void {
-  if (runningTasks > 0) {
+export function assertCollectionMutable(runningExtractions: number): void {
+  if (runningExtractions > 0) {
     throw new AppError("CONFLICT", COLLECTION_ERROR_MESSAGES.busy, {
-      details: { code: "COLLECTION_BUSY", runningTasks },
+      details: { code: "COLLECTION_BUSY", runningExtractions },
     });
   }
 }

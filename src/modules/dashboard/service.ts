@@ -3,8 +3,8 @@
  *
  * 统计口径（写死在这里，页面与接口都不再解释一遍）：
  * - `collections`：媒体资源夹总数。
- * - `pendingGeneration`（待创作）：还没有任何生成结果的资源夹数。
- * - `pendingPublish`（待发布）：有结果、但该结果还没有发布记录的条数。
+ * - `pendingGeneration`（待处理）：还没有任何素材的资源夹数。
+ * - `pendingPublish`（待发布）：有文案版本、但该版本还没有发布记录的条数。
  * - `published`（已发布）：发布记录数（同一条结果重复标记只有一行）。
  *
  * 每个数字都由它所属的模块给出一次聚合计数（`count`），本模块不遍历列表、不读别人的表
@@ -12,8 +12,8 @@
  * 与两份最近列表，前端只发一次请求（docs/prd/09 SHOULD）。
  */
 import { cache } from "react";
-import { countUnpublishedResults } from "@/modules/generation/counts";
-import { listRecentResults } from "@/modules/generation/recent";
+import { countUnpublishedVersions } from "@/modules/copy-generation/service";
+import { listRecentVersions } from "@/modules/copy-generation/recent";
 import {
   countCollections,
   countDraftCollections,
@@ -52,10 +52,10 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   // 「资源夹总数」「待创作」复用侧栏那两份按请求缓存的计数，同一次渲染不会查两遍。
   const [nav, pendingPublish, published, recentCollections, recentResults] = await Promise.all([
     loadNavCounts(),
-    countUnpublishedResults(),
+    countUnpublishedVersions(),
     countAllPublishRecords(),
     listRecentCollections(RECENT_COLLECTIONS_LIMIT),
-    listRecentResults(RECENT_RESULTS_LIMIT),
+    listRecentVersions(RECENT_RESULTS_LIMIT),
   ]);
 
   return assembleStats({

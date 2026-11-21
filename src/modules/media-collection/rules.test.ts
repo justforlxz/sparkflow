@@ -14,20 +14,20 @@ function catchAppError(run: () => void) {
 
 /**
  * 资源夹允许没有图片（MUST 1、AC-01-2）：保存路径没有「至少 1 张」这条规则，
- * 建夹、整组保存、解除关联都不校验图片数量；「至少要有一张原图」只在发起创作时校验
- * （见 `src/modules/generation/rules.ts`，AC-01-8）。这里只留运行中任务与文案的用例。
+ * 建夹、整组保存、解除关联都不校验图片数量；「至少要有一张原图」只在发起提取时校验
+ * （见 `src/modules/extraction/service.ts`）。这里只留运行中的提取与文案的用例。
  */
 
-describe("运行中任务时禁止改图与删除（AC-02-10 判定点）", () => {
-  it("有运行中任务时返回 CONFLICT 并带业务子码", () => {
+describe("有运行中的提取时禁止改图与删除（AC-02-10 判定点）", () => {
+  it("有运行中的提取时返回 CONFLICT 并带业务子码", () => {
     const error = catchAppError(() => assertCollectionMutable(1));
     expect(error.code).toBe("CONFLICT");
     expect(error.status).toBe(409);
-    expect(error.details).toMatchObject({ code: "COLLECTION_BUSY", runningTasks: 1 });
+    expect(error.details).toMatchObject({ code: "COLLECTION_BUSY", runningExtractions: 1 });
     expect(error.message).toBe(COLLECTION_ERROR_MESSAGES.busy);
   });
 
-  it("没有运行中任务时放行", () => {
+  it("没有运行中的提取时放行", () => {
     expect(() => assertCollectionMutable(0)).not.toThrow();
   });
 });

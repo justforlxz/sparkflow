@@ -24,7 +24,7 @@ export const COLLECTION_STATUSES = ["draft", "generating", "has_results", "publi
 export type CollectionStatus = (typeof COLLECTION_STATUSES)[number];
 
 export const COLLECTION_STATUS_LABELS: Record<CollectionStatus, string> = {
-  draft: "待创作",
+  draft: "待处理",
   generating: "生成中",
   has_results: "待发布",
   published: "已发布",
@@ -45,7 +45,7 @@ export const COLLECTION_COPY = {
   emptySearch: "没有匹配的资源夹。换个关键词或清空筛选试试。",
   /** 0 张图时的引导态：说明「先建夹后收集素材」是正常路径，并指出下一步做什么（AC-01-2）。 */
   emptyAssets: "这个资源夹还没有原始图片。",
-  emptyAssetsHint: "先点「编辑」把收集到的图片上传进来，之后再开始 AI 创作。",
+  emptyAssetsHint: "先点「编辑」把收集到的图片上传进来，之后再发起 AI 处理。",
   createAction: "新建媒体资源夹",
   editAction: "编辑",
   deleteAction: "删除",
@@ -54,18 +54,12 @@ export const COLLECTION_COPY = {
   addImagesLabel: "添加图片",
   assetTab: "原始素材",
   sourceSection: "来源信息",
-  /** 提取目标（ADR 0009）：资源夹表单必填，发起创作时也要求非空（AC-01-9）。 */
-  extractTargetLabel: "提取目标",
-  extractTargetPlaceholder: "例如：桌垫的织物纹理",
-  extractTargetHint: "必填：写清要从这批素材里取出什么，例如「桌垫的织物纹理」",
-  /** 表单里没填提取目标时的提示（与任务创建接口的 VALIDATION_FAILED 同一件事）。 */
-  extractTargetRequired: "请填写提取目标",
   imagesSection: "原始图片",
   deleteConfirmTitle: "删除这个资源夹？",
   deleteConfirmAction: "确认删除",
   deletingLabel: "删除中…",
   deleteConfirmBody:
-    "删除后，它的创作任务、结果与发布记录会一并删除，资源夹内的原始图片文件也会被清理。此操作不可撤销。",
+    "删除后，它的提取运行、素材、文案版本与发布记录会一并删除，资源夹内的原始图片文件也会被清理。此操作不可撤销。",
   assetStateSaved: "已保存",
   assetStatePendingAdd: "待添加",
   assetStatePendingRemove: "待移除",

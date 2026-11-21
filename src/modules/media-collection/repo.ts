@@ -11,7 +11,6 @@ export interface CollectionRow {
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
-  extractTarget: string | null;
   createdAt: Date;
   updatedAt: Date;
   assetCount: number;
@@ -34,7 +33,6 @@ export interface CollectionFields {
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
-  extractTarget: string | null;
 }
 
 export interface NewAsset {
@@ -76,7 +74,6 @@ const COLLECTION_SELECT = {
   sourceUrl: true,
   sourceTitle: true,
   sourceBody: true,
-  extractTarget: true,
   createdAt: true,
   updatedAt: true,
   assets: { select: { id: true }, orderBy: { sortOrder: "asc" }, take: 1 },
@@ -90,7 +87,6 @@ type RawCollectionRow = {
   sourceUrl: string | null;
   sourceTitle: string | null;
   sourceBody: string | null;
-  extractTarget: string | null;
   createdAt: Date;
   updatedAt: Date;
   assets: { id: string }[];
@@ -105,7 +101,6 @@ function toCollectionRow(row: RawCollectionRow): CollectionRow {
     sourceUrl: row.sourceUrl,
     sourceTitle: row.sourceTitle,
     sourceBody: row.sourceBody,
-    extractTarget: row.extractTarget,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     assetCount: row._count.assets,
@@ -144,16 +139,6 @@ export async function listRecentCollections(limit: number): Promise<CollectionRo
 /** 资源夹总数（工作台统计与侧栏计数）。 */
 export async function countCollections(): Promise<number> {
   return getDb().mediaCollection.count();
-}
-
-/**
- * 「待创作」的资源夹数：还没有任何生成结果的资源夹（docs/prd/09 MUST 1）。
- *
- * 这是本模块自己的行上的判定（`results` 是 generation 模块在本表上声明的反向关系），
- * 不代表去读生成结果表的内容，也不改变结果数据。
- */
-export async function countCollectionsWithoutResults(): Promise<number> {
-  return getDb().mediaCollection.count({ where: { results: { none: {} } } });
 }
 
 export async function findCollection(id: string): Promise<CollectionRow | null> {
@@ -211,20 +196,6 @@ export async function findAsset(collectionId: string, assetId: string): Promise<
     where: { id: assetId, collectionId },
     select: ASSET_SELECT,
   });
-}
-
-/** 批量取每个资源夹的原图张数（创作任务要显示「预计成品张数 = 原图张数」）。 */
-export async function findAssetCounts(
-  ids: readonly string[],
-): Promise<Record<string, number>> {
-  if (ids.length === 0) return {};
-
-  const rows = await getDb().mediaAsset.groupBy({
-    by: ["collectionId"],
-    where: { collectionId: { in: [...ids] } },
-    _count: { _all: true },
-  });
-  return Object.fromEntries(rows.map((row) => [row.collectionId, row._count._all]));
 }
 
 /** 追加图片接在当前最大排序值之后，保持「按上传顺序」。 */
@@ -299,4 +270,19 @@ export async function saveCollectionEdit(
       });
     }
   });
+}
+
+/**
+ * 分配下一个文案版本号（docs/prd/12 MUST 5）：在资源夹的计数器上原子加一。
+ *
+ * 为什么不是「当前最大版本号 + 1」：删掉最高的那一版之后，那种算法会把编号再发一次，
+ * 而版本号在资源夹内必须只增不减。计数器只增不减，删除版本也不回收。
+ */
+export async function allocateCopyVersionNumber(collectionId: string): Promise<number> {
+  const row = await getDb().mediaCollection.update({
+    where: { id: collectionId },
+    data: { copyVersionSeq: { increment: 1 } },
+    select: { copyVersionSeq: true },
+  });
+  return row.copyVersionSeq;
 }

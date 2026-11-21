@@ -19,7 +19,8 @@ import {
   MCP_PROTOCOL_VERSION,
   parseJsonRpc,
 } from "@/modules/gateway/adapters/magpie-mcp";
-import { StageError, type GeneratedImage } from "@/modules/generation/types";
+import { StageError } from "@/lib/job-failure";
+import type { GeneratedImage } from "./types";
 import { describeImageRejection } from "../failure";
 import { IMAGE_ERROR_CODES, type GenerateImageInput, type ImageGenerator } from "./types";
 

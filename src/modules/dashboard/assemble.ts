@@ -5,7 +5,7 @@
  * 不遍历全量列表算数（MUST NOT），也不产生任何演示数字。
  * 单独成函数是为了让「上限 6 / 4」与「零数据」这两条口径能被单测锁住。
  */
-import type { RecentResultView } from "@/modules/generation/recent";
+import type { RecentVersionView } from "@/modules/copy-generation/recent";
 import type { CollectionSummaryView } from "@/modules/media-collection/service";
 import { RECENT_COLLECTIONS_LIMIT, RECENT_RESULTS_LIMIT } from "./constants";
 
@@ -20,7 +20,7 @@ export interface DashboardCounts {
 /** 统计结果：四个数字 + 两份最近列表，全部来自服务端查询；页面与接口拿到的是同一个形状。 */
 export interface DashboardStats extends DashboardCounts {
   recentCollections: CollectionSummaryView[];
-  recentResults: RecentResultView[];
+  recentResults: RecentVersionView[];
 }
 
 export function assembleStats(source: DashboardStats): DashboardStats {

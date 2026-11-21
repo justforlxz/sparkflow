@@ -1,9 +1,11 @@
 // 媒体资源夹与原始图片（docs/prd/01-media-collection.md、docs/prd/00-overview.md 第 5 节）。
 //
-// 任务、结果、发布记录分属「创作任务」「任务与结果」「发布」三个模块，它们的表由各自节点引入。
-// 那些模块在自己的 schema 里用 `collectionId` 外键并声明 `onDelete: Cascade`，这样删除资源夹时
-// 数据库会一并删掉它们（docs/prd/00-overview.md 全局规则 7）。本文件只保留这些外键的反向字段，
+// 提取运行、素材库、文案版本、发布记录分属各自的 schema 文件。那些模块在自己的 schema 里用
+// `collectionId` 外键并声明 `onDelete: Cascade`，这样删除资源夹时数据库会一并删掉它们
+// （docs/prd/00-overview.md 全局规则 7、docs/prd/12 MUST 8）。本文件只保留这些外键的反向字段，
 // 关系本身（字段、`onDelete`）在各自模块的 schema 里声明，这里不写它们的列。
+//
+// 没有 `extract_target`：类别（material / border / other）取代了单值提取目标（ADR 0010、MKACG-938）。
 model MediaCollection {
   id          String   @id @default(uuid())
   name        String
@@ -11,15 +13,16 @@ model MediaCollection {
   sourceUrl   String?  @map("source_url")
   sourceTitle String?  @map("source_title")
   sourceBody  String?  @map("source_body")
-  // 提取目标：要从这批素材里取出什么（ADR 0009、docs/prd/01「数据与接口」）。
-  // 可空表示还没填；发起创作时必须有值，判定在任务创建路径上，不在保存路径上。
-  extractTarget String? @map("extract_target")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+  // 文案版本号的计数器：只增不减，删除版本后也不回收（docs/prd/12 MUST 5：version_no 不复用）。
+  // 单独一列而不是「当前最大版本号 + 1」，是因为删掉最高版本后那种算法会复用编号。
+  copyVersionSeq Int    @default(0) @map("copy_version_seq")
   assets      MediaAsset[]
-  // 以下两组反向关系由创作任务模块（prisma/schema/generation.prisma）声明，删除资源夹时级联。
-  tasks       GenerationTask[]
-  results     GenerationResult[]
+  // 以下三组反向关系由各自的 schema 文件声明，删除资源夹时级联。
+  extractionRuns ExtractionRun[]
+  libraryAssets  LibraryAsset[]
+  copyVersions   CopyVersion[]
   // 发布记录的反向关系由发布模块（prisma/schema/publish.prisma）声明。
   publishRecords PublishRecord[]
 
@@ -27,6 +30,9 @@ model MediaCollection {
 }
 
 // 原图。`storageKey` 与记录解耦：解除关联只删这一行，磁盘文件保留（MUST 4）。
+//
+// 从原图派生的素材（library_asset）不在此声明反向关系：素材只记 `source_asset_id` 字符串，
+// 原图被解除关联后素材要留在库里（docs/prd/12 MUST 4）。
 model MediaAsset {
   id           String          @id @default(uuid())
   collectionId String          @map("collection_id")
@@ -37,8 +43,6 @@ model MediaAsset {
   sortOrder    Int             @default(0) @map("sort_order")
   createdAt    DateTime        @default(now()) @map("created_at")
   collection   MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  // 反向关系由创作任务模块（prisma/schema/generation.prisma）声明：成品记录自己对应哪张原图。
-  generatedAssets GeneratedAsset[]
 
   @@index([collectionId, sortOrder])
   @@map("media_asset")

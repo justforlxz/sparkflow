@@ -220,28 +220,39 @@ describe("创建任务前的就绪校验（MUST 8、AC-03-7）", () => {
   });
 });
 
-describe("给创建任务用的快照（MUST 6）", () => {
-  it("就绪时返回两份快照，图片 Agent 的 modelId 为 null", async () => {
+describe("按类型取就绪快照（MUST 6、docs/prd/12 MUST 1）", () => {
+  it("只取指定类型：图片 Agent 的 modelId 为 null", async () => {
     vi.mocked(repo.listAgentConfigs).mockResolvedValue([
       record({ type: "image", gatewayModelId: null }),
       record({ type: "copy", gatewayModelId: "gpt-4o-mini" }),
     ]);
 
-    const snapshots = await service.requireAgentSnapshots(gateways());
+    const snapshot = await service.requireAgentSnapshotOf(gateways(), "image");
 
-    expect(snapshots.map((snapshot) => [snapshot.agentType, snapshot.modelId])).toEqual([
-      ["image", null],
-      ["copy", "gpt-4o-mini"],
-    ]);
+    expect([snapshot.agentType, snapshot.modelId]).toEqual(["image", null]);
   });
 
-  it("未就绪时不产出快照", async () => {
+  it("另一个类型未就绪不牵连本类型：提取只要求图片 Agent", async () => {
+    vi.mocked(repo.listAgentConfigs).mockResolvedValue([
+      record({ type: "image", gatewayModelId: null }),
+      record({ type: "copy", enabled: false, gatewayModelId: "gpt-4o-mini" }),
+    ]);
+
+    await expect(service.requireAgentSnapshotOf(gateways(), "image")).resolves.toMatchObject({
+      agentType: "image",
+    });
+    await expect(service.requireAgentSnapshotOf(gateways(), "copy")).rejects.toMatchObject({
+      details: { code: "AGENT_NOT_READY" },
+    });
+  });
+
+  it("该类型未就绪时不产出快照", async () => {
     vi.mocked(repo.listAgentConfigs).mockResolvedValue([
       record({ type: "image", enabled: false }),
       record({ type: "copy", gatewayModelId: "gpt-4o-mini" }),
     ]);
 
-    await expect(service.requireAgentSnapshots(gateways())).rejects.toMatchObject({
+    await expect(service.requireAgentSnapshotOf(gateways(), "image")).rejects.toMatchObject({
       details: { code: "AGENT_NOT_READY" },
     });
   });

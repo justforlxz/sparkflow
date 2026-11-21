@@ -5,10 +5,10 @@
  * 它只按 `src/lib/logger.ts` 的脱敏规则写进服务端结构化日志，供排查（MUST 2）。
  *
  * 分类不在这里合并：`UPSTREAM_REJECTED` / `UPSTREAM_AUTH` / `UPSTREAM_TIMEOUT` /
- * `UPSTREAM_FORMAT` 的判定仍在适配器与 `service.ts`，本文件只负责把原因说成中文。
+ * `UPSTREAM_FORMAT` 的判定仍在适配器里，本文件只负责把原因说成中文。
  */
 import { mentionsModel } from "@/modules/gateway/adapters/http";
-import { StageError } from "@/modules/generation/types";
+import { StageError } from "@/lib/job-failure";
 
 /** 上游拒绝出图时的中文说明：模型与请求参数要改的是不同配置项，分开写。 */
 export const IMAGE_REJECTION_COPY = {

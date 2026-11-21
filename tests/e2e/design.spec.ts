@@ -59,7 +59,7 @@ async function widths(page: Page): Promise<{ scrollWidth: number; clientWidth: n
   }));
 }
 
-test("AC-D-4 375×812 下工作台、资源夹列表、资源夹详情、任务、发布、设置六个页面都不横向溢出", async ({
+test("AC-D-4 375×812 下工作台、资源夹列表、资源夹详情、设置四个页面都不横向溢出", async ({
   page,
   request,
 }) => {
@@ -72,8 +72,6 @@ test("AC-D-4 375×812 下工作台、资源夹列表、资源夹详情、任务�
     { href: "/", label: "工作台" },
     { href: "/collections", label: "资源夹列表" },
     { href: `/collections/${collectionId}`, label: "资源夹详情" },
-    { href: "/tasks", label: "创作任务" },
-    { href: "/published", label: "发布记录" },
     { href: "/settings", label: "设置" },
   ];
 
@@ -135,12 +133,14 @@ test("AC-D-5 键盘 Tab 遍历工作台、资源夹列表与设置页：焦点�
   request,
 }) => {
   await ensureAccount(request);
+  // 建一个资源夹，让工作台与资源夹列表都有内容区的可聚焦项（空状态只有引导文案）。
+  await createCollection(request);
   await loginInBrowser(page);
   await page.setViewportSize(VIEWPORT);
 
-  // 每个页面至少有 8 个可聚焦元素（侧栏 5 个导航项 + 退出 + 页头主操作 + 区块内操作），
-  // 走 8 步能覆盖到侧栏与内容区，又不会因为走到页面末尾而落到浏览器界面上。
-  const tabStops = 8;
+  // 每个页面至少有 6 个可聚焦元素（侧栏 3 个导航项 + 退出 + 页头主操作 + 区块内操作），
+  // 走 6 步能覆盖到侧栏与内容区，又不会因为走到页面末尾而落到浏览器界面上。
+  const tabStops = 6;
   for (const href of ["/", "/collections", "/settings"]) {
     await page.goto(href);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

@@ -1,175 +1,137 @@
 /**
- * 文案阶段处理器（docs/prd/06-copy-generation.md）：读快照 → 取密钥 → 拼提示词 → 调文本模型 → 解析。
+ * 文案版本的业务层：生成入口、版本列表、原地编辑（docs/prd/12「接口」表后四项）。
  *
  * 边界：
- * 1. 只从 `StageContext` 拿输入（快照、素材、参数），不查别的模块的表；
- * 2. 密钥按快照里的 `gatewayId` 现取（docs/prd/03 MUST 6：快照不含密钥），走网关模块的
- *    阶段执行入口，与生图阶段共用同一份实现；
- * 3. 模型、地址、接口形状都用快照里的值，之后改配置不影响已创建的任务（全局规则 4）；
- * 4. 落库由 runner 负责，这里只交 `CopyContent`。
+ * 1. 生成文案只依赖文案 Agent：图片 Agent 没配置好不该挡住文案（MUST 1：两个动作互不依赖）；
+ * 2. 生成不触发提取、也不读提取的队列，只读素材库里选中的那几张（MUST NOT）；
+ * 3. 每次生成都新建一条版本，`version_no` 在资源夹内递增（MUST 5）；编辑只是原地改当前版本。
  */
-import { isAppError } from "@/lib/errors";
-import { createVisionClient, getGatewayExecutionTarget } from "@/modules/gateway/service";
-import type { StageRegistry } from "@/modules/generation/registry";
-import { StageError, type StageContext, type StageHandler } from "@/modules/generation/types";
-import { findTextGenerator } from "./adapters";
-import type { TextGenerator } from "./adapters/types";
-import { COPY_ERROR_CODES, DEFAULT_COPY_TIMEOUT_MS } from "./constants";
-import { parseCopyContent } from "./parse";
-import { buildCopyPrompt } from "./prompt";
-import {
-  extractVisualDescriptions,
-  VISUAL_EXTRACTION_STATES,
-  type VisionAnalyzer,
-  type VisualExtractionState,
-} from "./visual";
+import { AppError } from "@/lib/errors";
+import { requireAgentSnapshotOf } from "@/modules/agent-config/service";
+import { allocateCopyVersionNumber, getCollection } from "@/modules/media-collection/service";
+import { getLibraryAssets } from "@/modules/extraction/service";
+import type { LibraryAssetRecord } from "@/modules/extraction/types";
+import * as repo from "./repo";
+import type { CreateCopyVersionInput, UpdateCopyVersionInput } from "./schema";
+import { findCopyStyle } from "./styles";
+import { toCopyVersionView, type CopyVersionView } from "./view";
+import { listGatewayViews } from "@/modules/gateway/service";
 
-export interface CopyStageDeps {
-  /** 按网关 id 取明文密钥；单测注入假实现，默认走网关服务。 */
-  loadApiKey?: (gatewayId: string) => Promise<string>;
-  fetchImpl?: typeof fetch;
-  timeoutMs?: number;
-  /** 整体替换文本适配器（单测与本地联调用假实现）；默认按快照里的接口形状选。 */
-  generator?: TextGenerator;
-  /** 单测注入：跳过 sharp，直接把原图字节当成 data URL 用（视觉提取用）。 */
-  compress?: (bytes: Buffer) => Promise<string>;
-  /**
-   * 视觉提取用的客户端；单测注入假实现。`null` 表示没有可用的理解网关。
-   * 不传时按 `magpie-vision` 网关现取（docs/prd/06）。
-   */
-  vision?: VisionAnalyzer | null;
+/** 选中素材的去重与归属校验：素材必须属于这个资源夹，且不能是已删除的。 */
+async function resolveSelectedAssets(
+  collectionId: string,
+  input: readonly string[],
+): Promise<{ assetIds: string[]; assets: LibraryAssetRecord[] }> {
+  const assetIds = [...new Set(input.map((id) => id.trim()).filter((id) => id.length > 0))];
+  if (assetIds.length === 0) throw AppError.validationFailed("至少选择一张素材");
+
+  const assets = await getLibraryAssets(assetIds);
+  if (assets.length !== assetIds.length) {
+    throw AppError.validationFailed("所选素材里有已被删除的，请重新选择");
+  }
+  for (const asset of assets) {
+    if (asset.collectionId !== collectionId) {
+      throw AppError.validationFailed("所选素材里有一张不属于这个资源夹，请刷新页面后重试");
+    }
+  }
+  return { assetIds, assets };
 }
 
-/** 密钥取不到（网关被删、密钥解不开）归到鉴权失败：这一阶段没有可用的凭据。 */
-async function revealApiKey(
-  loadApiKey: (gatewayId: string) => Promise<string>,
-  gatewayId: string,
-): Promise<string> {
-  try {
-    return await loadApiKey(gatewayId);
-  } catch (error) {
-    if (isAppError(error)) {
-      throw new StageError(COPY_ERROR_CODES.auth, error.message, { cause: error });
-    }
-    throw error;
+function assertValidCopyStyle(value: string): void {
+  if (!findCopyStyle(value)) {
+    throw AppError.validationFailed("文案风格无效，请重新选择");
   }
 }
 
 /**
- * 默认取密钥：走网关模块的阶段执行入口（`getGatewayExecutionTarget`），
- * 与生图阶段共用同一份实现，本模块不再保留第二份等价的解密逻辑。
+ * 生成文案（`POST /api/collections/[id]/copy-versions`）：只写库并立即返回，执行交给 worker。
+ * 文案 Agent 未就绪时抛 `CONFLICT` + `AGENT_NOT_READY`，且不产生版本记录。
  */
-async function defaultLoadApiKey(gatewayId: string): Promise<string> {
-  return (await getGatewayExecutionTarget(gatewayId)).apiKey;
+export async function createCopyVersion(
+  collectionId: string,
+  input: CreateCopyVersionInput,
+): Promise<CopyVersionView> {
+  // 资源夹不存在时 404，避免把「查不到」写成一条孤立版本。
+  await getCollection(collectionId);
+
+  const { assetIds, assets } = await resolveSelectedAssets(collectionId, input.selectedAssetIds);
+  assertValidCopyStyle(input.copyStyle);
+
+  // 只校验文案 Agent：图片 Agent 没配好不该挡住文案（MUST 1）。
+  const agent = await requireAgentSnapshotOf(await listGatewayViews(), "copy");
+
+  // 版本号在资源夹上分配：只增不减，删掉某一版之后也不会重发（MUST 5、AC-LIB-7）。
+  const versionNo = await allocateCopyVersionNumber(collectionId);
+  const version = await repo.createVersion({
+    collectionId,
+    versionNo,
+    copyStyle: input.copyStyle,
+    agentSnapshot: agent,
+    selectedAssetIds: assetIds,
+    extraPrompt: input.extraPrompt ?? null,
+  });
+
+  return toCopyVersionView(version, assets);
 }
 
-export function createCopyStage(deps: CopyStageDeps = {}): StageHandler {
-  const loadApiKey = deps.loadApiKey ?? defaultLoadApiKey;
-  const timeoutMs = deps.timeoutMs ?? DEFAULT_COPY_TIMEOUT_MS;
+/** 版本列表：最新在前（`GET /api/collections/[id]/copy-versions`）。 */
+export async function listCopyVersions(collectionId: string): Promise<CopyVersionView[]> {
+  const versions = await repo.listVersionsByCollection(collectionId);
+  if (versions.length === 0) return [];
 
-  return {
-    stage: "copy",
-    async run(context: StageContext) {
-      const agent = context.agents.copy;
-
-      if (!agent.enabled) {
-        throw new StageError(COPY_ERROR_CODES.rejected, "文案创作 Agent 已停用，无法执行文案阶段");
-      }
-      if (!agent.modelId) {
-        throw new StageError(COPY_ERROR_CODES.rejected, "文案创作 Agent 没有绑定模型");
-      }
-
-      const generator = deps.generator ?? findTextGenerator(agent.protocol);
-      if (!generator) {
-        throw new StageError(
-          COPY_ERROR_CODES.rejected,
-          `接口形状「${agent.protocol}」不支持文本生成`,
-        );
-      }
-      const apiKey = await revealApiKey(loadApiKey, agent.gatewayId);
-
-      // 文案要围绕提取目标来写：先逐张读图拿到目标特征的中文描述（docs/prd/06「视觉提取」）。
-      // 读图走独立的 `magpie-vision` 网关，不要求文案模型自己具备 image_input；
-      // 没有可用的理解网关、或识别失败时继续生成文案，但必须标注「未包含照片内容」。
-      // 提取目标在创建任务时已固化进快照；ADR 0009 之前的旧任务没有这一项，退回资源夹的当前值。
-      const extractTarget = context.agents.extractTarget ?? context.collection.extractTarget ?? "";
-      const vision =
-        deps.vision !== undefined
-          ? deps.vision
-          : await createVisionClient(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {});
-      let descriptions: string[] = [];
-      let visualExtraction: VisualExtractionState;
-      if (!vision) {
-        visualExtraction = VISUAL_EXTRACTION_STATES.noGateway;
-      } else {
-        const extracted = await extractVisualDescriptions({
-          analyzer: vision,
-          assets: context.collection.assets,
-          readSourceImage: context.readSourceImage,
-          extractTarget,
-          ...(deps.compress ? { compress: deps.compress } : {}),
-          signal: context.signal,
-        });
-        descriptions = extracted.descriptions;
-        visualExtraction = extracted.state;
-      }
-
-      const prompt = buildCopyPrompt({
-        agent: {
-          role: agent.role,
-          systemPrompt: agent.systemPrompt,
-          outputRequirements: agent.outputRequirements,
-        },
-        collection: {
-          platform: context.collection.platform,
-          sourceTitle: context.collection.sourceTitle,
-          sourceBody: context.collection.sourceBody,
-          extractTarget,
-        },
-        images: {
-          extractedCount: context.collection.assets.length,
-          descriptions,
-          extractRequirement: context.params.extractRequirement,
-        },
-        copyStyle: context.params.copyStyle,
-        extraPrompt: context.params.extraPrompt,
-      });
-
-      const startedAt = Date.now();
-      const { text } = await generator.generate({
-        baseUrl: agent.baseUrl,
-        apiKey,
-        modelId: agent.modelId,
-        system: prompt.system,
-        user: prompt.user,
-        timeoutMs,
-        signal: context.signal,
-        fetchImpl: deps.fetchImpl,
-      });
-      const copy = parseCopyContent(text);
-
-      return {
-        stage: "copy",
-        copy,
-        meta: {
-          protocol: agent.protocol,
-          model: agent.modelId,
-          totalMs: Date.now() - startedAt,
-          titleLength: Array.from(copy.title).length,
-          tagCount: copy.tags.length,
-          /** 视觉提取的结局：界面据 `done` 之外的值标注「未包含照片内容」。 */
-          visualExtraction,
-          visualDescriptionCount: descriptions.length,
-        },
-      };
-    },
-  };
+  const assets = await getLibraryAssets(versions.flatMap((version) => version.selectedAssetIds));
+  return versions.map((version) => toCopyVersionView(version, assets));
 }
 
-/** 接线处：`src/modules/generation/stages/index.ts` 在真实适配器下调用。 */
-export function registerCopyGenerationStages(
-  registry: StageRegistry,
-  deps: CopyStageDeps = {},
-): void {
-  registry.register(createCopyStage(deps));
+/** 单个版本（发布模块用）：发布记录要读它的标题快照与素材快照。 */
+export async function getCopyVersion(versionId: string): Promise<CopyVersionView> {
+  const version = await repo.findVersion(versionId);
+  if (!version) throw AppError.notFound("文案版本不存在");
+  const assets = await getLibraryAssets(version.selectedAssetIds);
+  return toCopyVersionView(version, assets);
+}
+
+/**
+ * 编辑当前版本（`PATCH /api/copy-versions/[id]`）：原地改，不产生新版本（MUST NOT）。
+ * 只有生成成功的版本才可编辑：生成中改会被执行覆盖，失败版本没有内容可改。
+ */
+export async function updateCopyVersion(
+  versionId: string,
+  input: UpdateCopyVersionInput,
+): Promise<CopyVersionView> {
+  const version = await repo.findVersion(versionId);
+  if (!version) throw AppError.notFound("文案版本不存在");
+  if (version.status !== "succeeded") {
+    throw new AppError("CONFLICT", "只有生成完成的文案版本才能编辑", {
+      details: { code: "COPY_VERSION_NOT_EDITABLE", status: version.status },
+    });
+  }
+
+  await repo.updateVersionFields(versionId, {
+    ...(input.title === undefined ? {} : { title: input.title }),
+    ...(input.body === undefined ? {} : { body: input.body }),
+    ...(input.tags === undefined ? {} : { tags: input.tags }),
+  });
+
+  return getCopyVersion(versionId);
+}
+
+/* ---------- 供资源夹与工作台使用的计数（不读本模块的表） ---------- */
+
+/** 资源夹里的文案版本数（资源夹列表的派生状态用）。 */
+export async function countCollectionVersions(collectionId: string): Promise<number> {
+  return repo.countCollectionVersions(collectionId);
+}
+
+/** 工作台「待发布」：还没有发布记录的版本数（docs/prd/09 MUST 1）。 */
+export async function countUnpublishedVersions(): Promise<number> {
+  return repo.countUnpublishedVersions();
+}
+
+/** 批量取版本号（发布记录展示用）：只给 id 与版本号，不读整行。 */
+export async function getCopyVersionSummaries(
+  versionIds: readonly string[],
+): Promise<Record<string, number>> {
+  const rows = await repo.findVersionSummaries(versionIds);
+  return Object.fromEntries(rows.map((row) => [row.id, row.versionNo]));
 }

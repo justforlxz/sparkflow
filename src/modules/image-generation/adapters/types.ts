@@ -6,7 +6,15 @@
  * 一图对一图（ADR 0008）：一次 `generate` 只带**一张**原图（`reference_images` 只有它），
  * 期望拿回一张成品图。要不要跳过某张由上层 `service.ts` 决定，适配器只负责一次调用。
  */
-import type { GeneratedImage } from "@/modules/generation/types";
+/** 一次出图的结果：字节已取回（内联或从网关下载），落盘与写库由上层完成。 */
+export interface GeneratedImage {
+  bytes: Buffer;
+  mimeType: string;
+  /** 展示用文件名；不参与落盘路径（路径由服务端生成）。 */
+  fileName?: string;
+  width?: number | null;
+  height?: number | null;
+}
 
 /** 一次「按这张原图重绘」的请求。 */
 export interface GenerateImageInput {
@@ -24,15 +32,15 @@ export interface GenerateImageInput {
 
 /**
  * 出图适配器。返回的图片字节已经取回（内联或从网关 URL 下载），
- * 落盘与写 `generated_asset` 由 generation 模块的 runner 负责。
+ * 落盘与写 `library_asset` 由提取模块的 runner 负责。
  */
 export interface ImageGenerator {
   generate(input: GenerateImageInput, options?: { signal?: AbortSignal }): Promise<GeneratedImage[]>;
 }
 
 /**
- * 出图阶段的失败分类（docs/prd/05 MUST 7）。这些字符串直接作为
- * `generation_stage.error.code` 写入，runner 原样记录。
+ * 出图失败的分类（docs/prd/05 MUST 7）。这些字符串直接作为
+ * `extraction_run.error.code` / `failures[].code` 写入，runner 原样记录。
  */
 export const IMAGE_ERROR_CODES = {
   /** 上游超时或暂时不可用，含下载图片失败。 */

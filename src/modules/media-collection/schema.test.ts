@@ -14,7 +14,6 @@ describe("资源夹字段（multipart 与 JSON 共用）", () => {
       sourceUrl: null,
       sourceTitle: null,
       sourceBody: null,
-      extractTarget: null,
     });
   });
 
@@ -32,20 +31,7 @@ describe("资源夹字段（multipart 与 JSON 共用）", () => {
       sourceUrl: null,
       sourceTitle: "秋季穿搭 3 套",
       sourceBody: null,
-      extractTarget: null,
     });
-  });
-
-  it("提取目标可以填写，首尾空白去掉，空值归一成 null", () => {
-    expect(collectionFieldsSchema.parse({ name: "秋季穿搭", extractTarget: "  桌垫的织物纹理 " }))
-      .toMatchObject({ extractTarget: "桌垫的织物纹理" });
-    expect(collectionFieldsSchema.parse({ name: "秋季穿搭", extractTarget: "  " })).toMatchObject({
-      extractTarget: null,
-    });
-  });
-
-  it("提取目标超长被拒绝", () => {
-    expect(collectionFieldsSchema.safeParse({ name: "秋季穿搭", extractTarget: "长".repeat(201) }).success).toBe(false);
   });
 
   it("缺少名称时提示填写名称", () => {

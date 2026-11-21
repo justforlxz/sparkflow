@@ -8,7 +8,7 @@
  * 3. 创建任务前的就绪校验集中在这里：未就绪一律 `AGENT_NOT_READY` 并说明缺什么（MUST 8）。
  */
 import { AppError } from "@/lib/errors";
-import { AGENT_TYPES, findAgentType, type AgentTypeDefinition } from "./constants";
+import { AGENT_TYPES, findAgentType, type AgentType, type AgentTypeDefinition } from "./constants";
 import { defaultTextFields } from "./defaults";
 import type { AgentGatewayBinding } from "./readiness";
 import { buildAgentSnapshot, type AgentSnapshot } from "./snapshot";
@@ -156,17 +156,33 @@ export async function requireReadyAgentViews(
   });
 }
 
-/** 给创建任务使用：先就绪校验，再返回两份配置快照（MUST 6）；N5 接入时复用这里。 */
-export async function requireAgentSnapshots(
+/**
+ * 按类型取一份就绪快照（docs/prd/12 MUST 1：提取与文案是两个独立动作）。
+ *
+ * 提取只用图片 Agent，文案只用文案 Agent：一份没就绪不该把另一份也挡住。
+ * 决策与 `requireReadyAgentViews` 同一份判定、同一种错误形状（`AGENT_NOT_READY`），
+ * 只是把范围收窄到一个类型。
+ */
+export async function requireAgentSnapshotOf(
   gateways: readonly AgentGatewayBinding[],
-): Promise<AgentSnapshot[]> {
-  const views = await requireReadyAgentViews(gateways);
-
-  return views.map((view) => {
-    const gateway = findGateway(gateways, view.gatewayId);
-    if (!gateway) {
-      throw new AppError("INTERNAL", `Agent ${view.label} 的就绪状态与网关数据不一致`);
-    }
-    return buildAgentSnapshot(view, gateway);
-  });
+  type: AgentType,
+): Promise<AgentSnapshot> {
+  const views = await listAgentViews(gateways);
+  const view = views.find((candidate) => candidate.type === type);
+  if (!view) {
+    throw new AppError("INTERNAL", `Agent 配置缺失：${type}，请确认数据库迁移已应用`);
+  }
+  if (!view.ready) {
+    throw new AppError("CONFLICT", `Agent 未就绪，不能发起：${view.label}（${view.issues.join("；")}）`, {
+      details: {
+        code: "AGENT_NOT_READY",
+        agents: [{ type: view.type, name: view.label, issues: view.issues }],
+      },
+    });
+  }
+  const gateway = findGateway(gateways, view.gatewayId);
+  if (!gateway) {
+    throw new AppError("INTERNAL", `Agent ${view.label} 的就绪状态与网关数据不一致`);
+  }
+  return buildAgentSnapshot(view, gateway);
 }

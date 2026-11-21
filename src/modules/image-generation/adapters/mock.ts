@@ -4,10 +4,11 @@
  *
  * 一次调用只回一张图（一图对一图，ADR 0008），与真实插件一致。
  * 失败路径按脚本触发：提示词里带 `mock:fail-image-all` 时每一次都失败，
- * 带 `mock:fail-image-at-<n>` 时只让第 n 次调用失败（验证 AC-05-5 的部分成功）。
+ * 带 `mock:fail-image-at-<n>` 时只让第 n 次调用失败（验证 AC-LIB-2 的部分成功）。
  */
-import { MOCK_SCRIPT_HINTS, mockFailImageAt } from "@/modules/generation/stages/mock";
-import { StageError, type GeneratedImage } from "@/modules/generation/types";
+import { StageError } from "@/lib/job-failure";
+import { MOCK_SCRIPT_HINTS, mockFailImageAt } from "../mock-script";
+import type { GeneratedImage } from "./types";
 import { IMAGE_ERROR_CODES, type GenerateImageInput, type ImageGenerator } from "./types";
 
 /** 1×1 的 PNG：用例只关心「图片落盘且可读」，不关心像素。 */
@@ -17,7 +18,7 @@ const PNG_ONE_PIXEL = Buffer.from(
 );
 
 export class MockImageGenerator implements ImageGenerator {
-  /** 本次阶段里第几次调用；一个阶段一个实例，因此计数与「第几张原图」一致。 */
+  /** 本次运行里第几次调用；一条运行一个实例，因此计数与「第几项」一致。 */
   private calls = 0;
 
   async generate(input: GenerateImageInput): Promise<GeneratedImage[]> {

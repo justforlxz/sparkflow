@@ -4,7 +4,7 @@
  * 只由适配器调用。响应体只在判定结构时使用，**不回显**上游内容，错误消息里也不出现密钥。
  */
 import { logger } from "@/lib/logger";
-import { StageError } from "@/modules/generation/types";
+import { StageError } from "@/lib/job-failure";
 import { COPY_ERROR_CODES, DEFAULT_COPY_TIMEOUT_MS } from "../constants";
 import type { TextRequest } from "./types";
 

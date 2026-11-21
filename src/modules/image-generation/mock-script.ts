@@ -1,0 +1,32 @@
+/**
+ * mock 适配器的脚本标记（`GENERATION_ADAPTER=mock`，docs/acceptance.md 第 3 节）。
+ *
+ * 失败路径按脚本触发：请求的补充要求（`extraPrompt`）里带上下面某个标记，对应调用就按约定失败，
+ * 这样 e2e 能用真实请求驱动「整批失败」「某一项失败」，不需要测试接口或改环境变量。
+ *
+ * 标记集中在这里：适配器与用例都从这一份取，改一处即可。
+ */
+export const MOCK_SCRIPT_HINTS = {
+  /** 每一次图片调用都失败：用来验证「全部失败时不入库」。 */
+  failImage: "mock:fail-image-all",
+  /** 只让第 n 次图片调用失败（后面接 `-<n>`）：验证 AC-LIB-2 的部分成功。 */
+  failImageAt: "mock:fail-image-at",
+  /** 文案生成直接失败：验证失败原因与「不产生版本内容」。 */
+  failCopy: "mock:fail-copy",
+} as const;
+
+/**
+ * 从提示词里读「让第几次调用失败」。
+ * 与 `failImage` 是两条独立标记：`mock:fail-image-at-2` 只让第 2 次失败，不会被当成整体失败。
+ */
+export function mockFailImageAt(prompt: string): number | null {
+  const matched = new RegExp(`${MOCK_SCRIPT_HINTS.failImageAt}-(\\d+)`).exec(prompt);
+  if (!matched) return null;
+  const index = Number.parseInt(matched[1] ?? "", 10);
+  return Number.isInteger(index) && index > 0 ? index : null;
+}
+
+/** 补充要求里是否带了这个标记。 */
+export function hasMockHint(prompt: string | null | undefined, hint: string): boolean {
+  return prompt?.includes(hint) ?? false;
+}

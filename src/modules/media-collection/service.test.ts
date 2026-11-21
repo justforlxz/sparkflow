@@ -27,12 +27,14 @@ vi.mock("./files", () => ({
 }));
 
 vi.mock("./thumbnails", () => ({ scaleImage: vi.fn() }));
-vi.mock("@/modules/generation/counts", () => ({ countCollectionUsage: vi.fn() }));
+vi.mock("@/modules/extraction/service", () => ({ countCollectionUsage: vi.fn() }));
+vi.mock("@/modules/copy-generation/service", () => ({ countCollectionVersions: vi.fn() }));
 vi.mock("@/modules/publish/counts", () => ({ countCollectionPublishRecords: vi.fn() }));
 
 const repo = await import("./repo");
 const files = await import("./files");
-const counts = await import("@/modules/generation/counts");
+const counts = await import("@/modules/extraction/service");
+const copyCounts = await import("@/modules/copy-generation/service");
 const publishCounts = await import("@/modules/publish/counts");
 const service = await import("./service");
 
@@ -50,7 +52,6 @@ const FIELDS = {
   sourceUrl: null,
   sourceTitle: null,
   sourceBody: null,
-  extractTarget: "桌垫的织物纹理",
 };
 
 function assetRow(id: string, sortOrder: number): AssetRow {
@@ -76,7 +77,6 @@ function collectionRow(assets: AssetRow[]): CollectionRow {
     sourceUrl: null,
     sourceTitle: null,
     sourceBody: null,
-    extractTarget: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
     assetCount: assets.length,
@@ -105,7 +105,8 @@ beforeEach(() => {
   vi.mocked(repo.collectionExists).mockResolvedValue(true);
   vi.mocked(repo.listAssets).mockResolvedValue([ASSET_A, ASSET_B]);
   vi.mocked(repo.findCollection).mockResolvedValue(collectionRow([ASSET_A, ASSET_B]));
-  vi.mocked(counts.countCollectionUsage).mockResolvedValue({ tasks: 0, activeTasks: 0, results: 0 });
+  vi.mocked(counts.countCollectionUsage).mockResolvedValue({ runs: 0, activeRuns: 0, libraryAssets: 0 });
+  vi.mocked(copyCounts.countCollectionVersions).mockResolvedValue(0);
   vi.mocked(publishCounts.countCollectionPublishRecords).mockResolvedValue(0);
   vi.mocked(files.writeAssetBytes).mockResolvedValue(undefined);
   vi.mocked(files.removeAssetFile).mockResolvedValue(undefined);
@@ -370,7 +371,7 @@ describe("校验不通过时不做任何写操作（AC-FIX-2）", () => {
 
 describe("运行中任务时拒绝保存（AC-FIX-6）", () => {
   it("有运行中任务时返回 CONFLICT，且在写盘之前拦下", async () => {
-    vi.mocked(counts.countCollectionUsage).mockResolvedValue({ tasks: 1, activeTasks: 1, results: 0 });
+    vi.mocked(counts.countCollectionUsage).mockResolvedValue({ runs: 1, activeRuns: 1, libraryAssets: 0 });
 
     const error = await catchAppError(() =>
       service.saveCollectionEdit(COLLECTION_ID, {

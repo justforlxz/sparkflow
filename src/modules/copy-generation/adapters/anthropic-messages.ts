@@ -5,7 +5,7 @@
  * 版本头复用网关适配器里的常量：同一协议事实只有一处定义。
  */
 import { ANTHROPIC_VERSION } from "@/modules/gateway/adapters/anthropic-messages";
-import { StageError } from "@/modules/generation/types";
+import { StageError } from "@/lib/job-failure";
 import { ANTHROPIC_MAX_TOKENS, COPY_ERROR_CODES } from "../constants";
 import { postTextRequest } from "./http";
 import {

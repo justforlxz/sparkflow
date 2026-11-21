@@ -158,7 +158,7 @@ export default async function DashboardPage() {
               {stats.recentResults.map((result) => (
                 <li key={result.id}>
                   <Link
-                    href={`/collections/${result.collectionId}?tab=results`}
+                    href={`/collections/${result.collectionId}`}
                     data-testid="recent-result"
                     data-result-id={result.id}
                     className={CARD_LINK_CLASS}
@@ -176,7 +176,7 @@ export default async function DashboardPage() {
                     )}
                     <span className="min-w-0 flex-1 space-y-1">
                       <span className="block truncate text-body font-medium text-ink">
-                        {result.title ?? DASHBOARD_COPY.untitledResult}
+                        {result.versionLabel} {result.title ?? DASHBOARD_COPY.untitledResult}
                       </span>
                       <span className="block truncate text-footnote text-ink-tertiary">
                         {result.collectionName} · {formatDate(result.createdAt)}

@@ -37,9 +37,7 @@ export const collectionFieldsSchema = z.object({
   sourceUrl: optionalText("来源链接", 2000),
   sourceTitle: optionalText("原始标题", 200),
   sourceBody: optionalText("原始文案", 20000),
-  // 提取目标（ADR 0009）：创建/编辑/详情与整组保存的 fields 都接受它，空值归一成 null。
-  // 「必须填」只在发起创作时校验（AC-01-9），保存路径上不拦。
-  extractTarget: optionalText("提取目标", 200),
+  // 没有「提取目标」：类别（material / border）取代了单值目标（ADR 0010、MKACG-938）。
 });
 
 export type CollectionFieldsInput = z.infer<typeof collectionFieldsSchema>;

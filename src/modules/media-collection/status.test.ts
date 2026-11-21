@@ -1,29 +1,52 @@
 import { describe, expect, it } from "vitest";
 import { deriveCollectionStatus, isCollectionStatus, type CollectionCounts } from "./status";
 
-const none: CollectionCounts = { runningTasks: 0, tasks: 0, results: 0, published: 0 };
+const none: CollectionCounts = {
+  runningExtractions: 0,
+  extractionRuns: 0,
+  libraryAssets: 0,
+  copyVersions: 0,
+  published: 0,
+};
 
 describe("资源夹派生状态（docs/prd/01-media-collection.md「数据与接口」）", () => {
-  it("没有任务也没有结果时为 draft", () => {
+  it("没有提取也没有素材时为 draft", () => {
     expect(deriveCollectionStatus(none)).toBe("draft");
   });
 
-  it("有运行中任务时为 generating", () => {
-    expect(deriveCollectionStatus({ ...none, tasks: 1, runningTasks: 1 })).toBe("generating");
+  it("有排队或执行中的提取时为 generating", () => {
+    expect(deriveCollectionStatus({ ...none, extractionRuns: 1, runningExtractions: 1 })).toBe(
+      "generating",
+    );
   });
 
-  it("有结果未发布时为 has_results", () => {
-    expect(deriveCollectionStatus({ ...none, tasks: 1, results: 1 })).toBe("has_results");
+  it("有素材未发布时为 has_results", () => {
+    expect(deriveCollectionStatus({ ...none, extractionRuns: 1, libraryAssets: 1 })).toBe(
+      "has_results",
+    );
+  });
+
+  it("只有文案版本也算 has_results", () => {
+    expect(deriveCollectionStatus({ ...none, copyVersions: 1 })).toBe("has_results");
   });
 
   it("有发布记录时为 published", () => {
-    expect(deriveCollectionStatus({ ...none, tasks: 2, results: 2, published: 1 })).toBe("published");
+    expect(
+      deriveCollectionStatus({ ...none, libraryAssets: 2, copyVersions: 2, published: 1 }),
+    ).toBe("published");
   });
 
-  it("运行中任务优先于已发布：再创作一次时回到 generating", () => {
-    expect(deriveCollectionStatus({ ...none, tasks: 3, runningTasks: 1, results: 2, published: 1 })).toBe(
-      "generating",
-    );
+  it("运行中提取优先于已发布：再提取一次时回到 generating", () => {
+    expect(
+      deriveCollectionStatus({
+        ...none,
+        extractionRuns: 3,
+        runningExtractions: 1,
+        libraryAssets: 2,
+        copyVersions: 2,
+        published: 1,
+      }),
+    ).toBe("generating");
   });
 });
 

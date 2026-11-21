@@ -50,18 +50,3 @@ export function findExtractRequirement(value: string): ExtractRequirementDefinit
 export function extractRequirementLabel(value: string): string {
   return findExtractRequirement(value)?.label ?? value;
 }
-
-/**
- * 历史结果行的「视觉风格」存的是旧的视觉方向 key（ADR 0009 不做数据迁移，已有结果按旧语义展示）。
- * 这张表只用于把旧 key 显示成当时的中文名，不参与新任务的取值校验，也不再用于提示词。
- */
-const LEGACY_VISUAL_STYLE_LABELS: Record<string, string> = {
-  fresh: "清新生活感",
-  editorial: "杂志视觉",
-  product: "产品质感",
-};
-
-/** 结果上的「视觉风格」：新的提取要求与历史视觉方向都要能显示，认不出的 key 原样给出。 */
-export function describeResultStyle(value: string): string {
-  return findExtractRequirement(value)?.label ?? LEGACY_VISUAL_STYLE_LABELS[value] ?? value;
-}

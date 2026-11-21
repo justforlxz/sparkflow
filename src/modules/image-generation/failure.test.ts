@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { StageError } from "@/modules/generation/types";
+import { StageError } from "@/lib/job-failure";
 import {
   IMAGE_FAILURE_FALLBACK_COPY,
   IMAGE_REJECTION_COPY,

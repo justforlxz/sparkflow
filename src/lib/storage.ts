@@ -1,5 +1,5 @@
 /**
- * 磁盘存储目录。`UPLOAD_DIR` 下按 `media-assets/`（原图）与 `generated-assets/`（生成图）分目录，
+ * 磁盘存储目录。`UPLOAD_DIR` 下按 `media-assets/`（原图）与 `library-assets/`（素材图）分目录，
  * 具体子目录与文件名由各业务模块生成；这里负责根目录定位、路径段校验与 storage_key 解析。
  */
 import { mkdir } from "node:fs/promises";
@@ -17,7 +17,7 @@ export async function ensureStorageRoot(): Promise<string> {
   return root;
 }
 
-/** storage_key 里的一段（资源夹 id、结果 id、文件名）只允许字母、数字与连字符。 */
+/** storage_key 里的一段（资源夹 id、运行 id、文件名）只允许字母、数字与连字符。 */
 const SAFE_SEGMENT = /^[A-Za-z0-9-]+$/;
 
 export function assertStorageSegment(segment: string, message: string): void {

@@ -1,16 +1,17 @@
 /**
- * 提示词拼装（docs/prd/06-copy-generation.md「输入拼装」）。
+ * 提示词拼装（docs/prd/06-copy-generation.md「输入拼装」，ADR 0010）。
  *
  * 四部分各自独立、显式列出，改其中一部分不影响流程：
  * 1. Agent 快照的 role / systemPrompt / outputRequirements；
- * 2. 资源夹来源信息与**提取目标**（原始文案只作参考意见，不是待改写文本）；
- * 3. 本次提取出的素材图（张数 + 提取要求 + 每张图的描述；不传图片二进制）；
- * 4. 任务参数（文案风格、补充要求）。
+ * 2. 资源夹来源信息（原始文案只作参考意见，不是待改写文本）；
+ * 3. 本次选中的素材（类别分布 + 每张图的目标特征描述；不传图片二进制）；
+ * 4. 这次的要求（文案风格、补充要求）。
  *
  * 返回 `{ system, user }` 两条消息：内容约束与输出结构放 system，素材与本次要求放 user。
  * 模板变量集中在 `CopyPromptInput`，单测直接断言每一部分。
  */
-import { findExtractRequirement } from "@/modules/image-generation/styles";
+import { categoryLabel } from "@/modules/extraction/categories";
+import type { SelectedAssetRef } from "./types";
 import { describeCopyStyle } from "./styles";
 
 export interface CopyPromptInput {
@@ -23,16 +24,12 @@ export interface CopyPromptInput {
     platform: string | null;
     sourceTitle: string | null;
     sourceBody: string | null;
-    /** 资源夹的提取目标原文；未填写为 null（ADR 0009）。 */
-    extractTarget: string | null;
   };
-  images: {
-    /** 本次提取出的素材图张数（= 原图张数，ADR 0008）。 */
-    extractedCount: number;
-    /** 每张原图一条目标特征描述，按原图顺序编号；空数组表示这次没有提取到内容。 */
+  assets: {
+    /** 选中的素材清单（顺序即版本里记录的顺序）。 */
+    selected: readonly SelectedAssetRef[];
+    /** 每张素材一条目标特征描述，与 `selected` 同序；空数组表示这次没有获取到内容。 */
     descriptions: readonly string[];
-    /** 提取要求的 key（由图片提取模块登记）；描述也从那份登记表取，这里不另写一份。 */
-    extractRequirement: string;
   };
   copyStyle: string;
   extraPrompt: string | null;
@@ -64,18 +61,41 @@ function orPlaceholder(value: string | null, placeholder: string): string {
   return trimmed ? trimmed : placeholder;
 }
 
+/** 类别分布：「材质纹理 2 张、边框样式 1 张」。 */
+function describeCategories(selected: readonly SelectedAssetRef[]): string {
+  const counts = new Map<string, number>();
+  for (const asset of selected) {
+    counts.set(asset.category, (counts.get(asset.category) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([category, count]) => `${categoryLabel(category)} ${count} 张`)
+    .join("、");
+}
+
 /**
- * 提取要求进提示词的样子：名称加描述，描述取自图片提取模块的登记表（docs/architecture.md 第 5 节）。
- * 认不出的 key 按原文交给模型，不编造描述 —— 与文案风格的既有做法一致。
+ * 目标特征描述进提示词的样子：按素材顺序逐条列出，第 k 条对应第 k 张素材。
+ * 没有描述时明说「未提供」，不假装看过图。
  */
-function describeExtractRequirement(value: string): string {
-  const requirement = findExtractRequirement(value);
-  return requirement ? `${requirement.label}——${requirement.description}` : value;
+function describeVisualDescriptions(
+  selected: readonly SelectedAssetRef[],
+  descriptions: readonly string[],
+): string[] {
+  if (descriptions.length === 0) {
+    return ["- 素材的材质/纹理/图案：未提供（本次没有获取到素材内容）"];
+  }
+
+  return [
+    "- 素材的材质/纹理/图案（按素材顺序，第 k 条对应第 k 张素材）：",
+    ...descriptions.map(
+      (description, index) =>
+        `  ${index + 1}. [${categoryLabel(selected[index]?.category ?? "")}] ${description}`,
+    ),
+  ];
 }
 
 export function buildCopyPrompt(input: CopyPromptInput): CopyPrompt {
-  const { agent, collection, images, copyStyle, extraPrompt } = input;
-  const extractTarget = orPlaceholder(collection.extractTarget, "未填写");
+  const { agent, collection, assets, copyStyle, extraPrompt } = input;
+  const count = assets.selected.length;
 
   const system = [
     agent.role.trim(),
@@ -92,13 +112,12 @@ export function buildCopyPrompt(input: CopyPromptInput): CopyPrompt {
     `- 平台：${orPlaceholder(collection.platform, "未填写")}`,
     `- 原始标题：${orPlaceholder(collection.sourceTitle, "未填写")}`,
     `- 原始文案（仅作参考，不得照搬，也不得当作待改写文本）：${orPlaceholder(collection.sourceBody, "未填写")}`,
-    `- 提取目标：${extractTarget}`,
     "",
-    "【本次提取的素材图】",
-    `- 张数：${images.extractedCount}`,
-    `- 提取要求：${describeExtractRequirement(images.extractRequirement)}`,
-    ...describeVisualDescriptions(images.descriptions),
-    `- 说明：文案要围绕提取目标「${extractTarget}」来写，只写目标的材质、纹理、图案与颜色，不写照片里的场景与道具。`,
+    "【本次选中的素材】",
+    `- 张数：${count}`,
+    `- 类别：${describeCategories(assets.selected)}`,
+    ...describeVisualDescriptions(assets.selected, assets.descriptions),
+    `- 说明：文案只围绕这 ${count} 张素材的材质、纹理、图案与颜色来写，不写照片里的场景与道具。`,
     "",
     "【这次的要求】",
     `- 文案风格：${describeCopyStyle(copyStyle)}`,
@@ -106,19 +125,4 @@ export function buildCopyPrompt(input: CopyPromptInput): CopyPrompt {
   ].join("\n");
 
   return { system, user };
-}
-
-/**
- * 目标特征描述进提示词的样子（docs/prd/06「视觉提取」）：按原图编号逐条列出，
- * 第 k 条对应第 k 张原图与第 k 张提取图。没有描述时明说「未提供」，不假装看过图。
- */
-function describeVisualDescriptions(descriptions: readonly string[]): string[] {
-  if (descriptions.length === 0) {
-    return ["- 目标的材质/纹理/图案：未提供（本次没有获取到照片内容）"];
-  }
-
-  return [
-    "- 目标的材质/纹理/图案（按原图编号，第 k 条对应第 k 张原图与提取图）：",
-    ...descriptions.map((description, index) => `  ${index + 1}. ${description}`),
-  ];
 }

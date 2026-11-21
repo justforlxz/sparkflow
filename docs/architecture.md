@@ -75,16 +75,21 @@ tests/e2e/          # 端到端验收
 
 ### 文件
 
-`UPLOAD_DIR` 下两类：`media-assets/<collectionId>/`（原图）、`generated-assets/<resultId>/`（生成图）。
-文件名服务端生成，数据库只存 `storage_key`。读取统一经 `/api/files/[...key]`，校验会话后返回字节；
+`UPLOAD_DIR` 下两类：`media-assets/<collectionId>/`（原图）、`library-assets/<runId>/`（提取出的素材）。
+文件名服务端生成，数据库只存 `storage_key`。读取统一经鉴权路由（`/api/files/...`），校验会话后返回字节；
 缩略图用 `?w=` 当场处理，不预生成文件。
 
-### 任务执行（ADR 0002、0005）
+### 后台作业（ADR 0002、ADR 0010）
 
-- `generation_task` 一条 + `generation_stage` 两条（image / copy）。任务状态由阶段状态派生。
-- 进程内 worker 轮询 `queued` 阶段，一次执行一个任务；启动时把 `running` 阶段记为失败。
-- 重试只重置失败阶段；重新生成 = 新建任务。
-- 扩展点：将来要多实例，把取任务换成 `FOR UPDATE SKIP LOCKED`，阶段逻辑不变。
+两条互不触发的作业链，共用同一个进程内 worker：
+
+- **提取运行**（`extraction_run`）：勾选的原图 × 类别，产出 `library_asset`；失败项不阻断其它项，
+  整体记 `partial`。`progress.total` = 原图数 × 类别数。
+- **文案版本**（`copy_version`）：选中的素材 → 一次文案，`version_no` 在资源夹内递增且不复用。
+
+worker 轮询两张表的 `queued` 行，一次执行一个作业；启动时把 `running` 记为失败。
+两个动作都可以重跑来得到新产物，没有「只重试失败阶段」的概念。
+扩展点：将来要多实例，把取作业换成 `FOR UPDATE SKIP LOCKED`，作业逻辑不变。
 
 ## 5. 扩展点
 
@@ -93,7 +98,7 @@ tests/e2e/          # 端到端验收
 | 新的接口形状（协议） | `src/modules/gateway/adapters/` 加文件 + 注册 + 枚举加值 |
 | 新的功能开关 | `feature-flags/registry.ts` 加一项（必要时加一条迁移） |
 | 新的提取要求 / 文案风格 | 对应模块的 `styles.ts` |
-| 新的执行阶段 | `generation_stage.stage` 枚举 + 派生状态表 + worker 分支 |
+| 新的提取类别 | `src/modules/extraction/categories.ts` 加一项 |
 | 新的页面 | `src/app/<路由>/page.tsx`，只组合模块与通用组件 |
 
 ## 6. 明确不做

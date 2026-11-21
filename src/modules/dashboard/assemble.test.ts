@@ -5,7 +5,7 @@ import {
 } from "@/modules/media-collection/constants";
 import { assembleStats, type DashboardStats } from "./assemble";
 import { RECENT_COLLECTIONS_LIMIT, RECENT_RESULTS_LIMIT } from "./constants";
-import type { RecentResultView } from "@/modules/generation/recent";
+import type { RecentVersionView } from "@/modules/copy-generation/recent";
 import type { CollectionSummaryView } from "@/modules/media-collection/service";
 
 /** 造一个字段够用、内容确定的资源夹卡片。 */
@@ -17,22 +17,24 @@ function collection(index: number): CollectionSummaryView {
     sourceUrl: null,
     sourceTitle: null,
     sourceBody: null,
-    extractTarget: null,
     createdAt: "2026-11-18T00:00:00.000Z",
     updatedAt: "2026-11-18T00:00:00.000Z",
     status: "draft" as CollectionStatus,
     assetCount: 1,
-    taskCount: 0,
-    resultCount: 0,
+    extractionRunCount: 0,
+    libraryAssetCount: 0,
+    copyVersionCount: 0,
     coverUrl: null,
   };
 }
 
-function result(index: number): RecentResultView {
+function result(index: number): RecentVersionView {
   return {
     id: `result-${index}`,
     collectionId: `collection-${index}`,
     collectionName: `资源夹 ${index}`,
+    versionNo: index,
+    versionLabel: `v${index}`,
     title: `标题 ${index}`,
     thumbnailUrl: null,
     createdAt: "2026-11-18T00:00:00.000Z",

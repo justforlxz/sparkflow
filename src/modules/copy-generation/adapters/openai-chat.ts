@@ -4,7 +4,7 @@
  * 请求形状与 `src/modules/gateway/adapters/openai-chat.ts` 的连接测试一致，只是把
  * 「最小 ping 调用」换成真正的文案生成；不引入 SDK，直接用 fetch。
  */
-import { StageError } from "@/modules/generation/types";
+import { StageError } from "@/lib/job-failure";
 import { COPY_ERROR_CODES } from "../constants";
 import { postTextRequest } from "./http";
 import {

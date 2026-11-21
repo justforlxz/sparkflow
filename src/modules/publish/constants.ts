@@ -19,6 +19,7 @@ export const PUBLISH_COPY = {
   publishedAtLabel: "发布时间",
   versionLabel: "版本",
   imageCountLabel: "素材",
+  imageCountSuffix: "张",
   sourceCollectionLabel: "来源资源夹",
   platformLabel: "平台",
   filterLabel: "来源资源夹",
@@ -39,6 +40,9 @@ export const PUBLISH_COPY = {
   noTitle: "（无标题）",
   previousPage: "上一页",
   nextPage: "下一页",
+  /** 全局列表尾部的统计行（条数 / 页码 / 每页条数）。 */
+  listSummary: (total: number, page: number, pageSize: number) =>
+    `共 ${total} 条发布记录 · 第 ${page} 页 · 每页 ${pageSize} 条`,
   /**
    * 水印提示的定稿文案（`docs/prd/05-image-generation.md`「水印提示文案（定稿）」）。
    * 让用户知道成品可能带模型水印；说明不是阻断，不加勾选、不阻止标记发布。

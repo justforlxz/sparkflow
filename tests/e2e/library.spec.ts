@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import pg from "pg";
 import { EXTRACTION_TERMINAL_STATUSES } from "../../src/modules/extraction/constants";
 import { MOCK_SCRIPT_HINTS } from "../../src/modules/image-generation/mock-script";
-import { ensureAccount } from "./support/auth";
+import { ACCOUNT, ensureAccount } from "./support/auth";
 
 /**
  * 素材库、提取运行与文案版本的接口验收（docs/prd/12-asset-library.md）。
@@ -442,4 +442,245 @@ test("AC-LIB-8 同一版本重复标记发布，发布记录仍为 1 条", async
     copyVersionId: version.id,
     versionLabel: "v1",
   });
+});
+
+/* ------------------------------------------------------------------ *
+ * 界面验收（MKACG-939）：原始素材页签的「AI 处理」与素材库页签的分组展示
+ * ------------------------------------------------------------------ */
+
+/** 浏览器上下文与 `request` 各自持有 cookie：页面在页面上登录，接口用 ensureAccount。 */
+async function loginInBrowser(page: Page): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("邮箱").fill(ACCOUNT.email);
+  await page.getByLabel("密码").fill(ACCOUNT.password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page).toHaveURL("/");
+}
+
+/** 界面用例的数据准备走接口：发起一次提取并等它进入终态，断言只看界面。 */
+async function extractAndWait(
+  request: APIRequestContext,
+  collection: { id: string; assetIds: string[] },
+  options: { categories?: string[]; extraPrompt?: string } = {},
+): Promise<ExtractionRun> {
+  const response = await request.post(`/api/collections/${collection.id}/extractions`, {
+    data: {
+      sourceAssetIds: collection.assetIds,
+      categories: options.categories ?? ["material"],
+      requirement: "faithful",
+      extraPrompt: options.extraPrompt,
+    },
+  });
+  expect(response.status()).toBe(201);
+  const run = ((await response.json()) as { data: { run: ExtractionRun } }).data.run;
+  return waitForRun(request, collection.id, run.id);
+}
+
+test("AC-LIB-1 AC-LIB-3 界面：2 张原图 × 2 个类别，进度 total=4，素材库 4 条；再跑一次累加", async ({
+  page,
+  request,
+}) => {
+  await createGateway(request, "magpie-mcp", "image");
+  const collection = await createCollection(request, uniqueName("AC-LIB-1-ui"), 2);
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${collection.id}`);
+
+  // 默认页签是「原始素材」，原图默认全选。
+  await expect(page.getByTestId("panel-assets")).toBeVisible();
+  const sourceChecks = page.getByRole("checkbox", { name: /选择这张原图/ });
+  await expect(sourceChecks).toHaveCount(2);
+  for (let index = 0; index < 2; index += 1) {
+    await expect(sourceChecks.nth(index)).toBeChecked();
+  }
+
+  // 勾选两个类别后点「AI 处理」。
+  await page.getByRole("checkbox", { name: "材质纹理" }).check();
+  await page.getByRole("checkbox", { name: "边框样式" }).check();
+  await page.getByTestId("extract-submit").click();
+
+  // 发起后页签顶部立刻给出进度，总数按 原图×类别 计。
+  await expect(page.getByTestId("extraction-progress-text").first()).toHaveText(
+    /正在提取 \d+\/4/,
+  );
+
+  // 素材库：两个类别各 2 条，每条都带来源原图缩略图。
+  await page.getByTestId("tab-library").click();
+  await expect(page.getByTestId("library-item")).toHaveCount(4, { timeout: 40_000 });
+  await expect(
+    page.getByTestId("library-group-material").getByTestId("library-item"),
+  ).toHaveCount(2);
+  await expect(
+    page.getByTestId("library-group-border").getByTestId("library-item"),
+  ).toHaveCount(2);
+  await expect(page.locator("[data-testid='library-item'] img[alt^='原图 ']")).toHaveCount(4);
+
+  // 再跑一次：素材增加而不是覆盖（AC-LIB-3）。
+  await page.getByTestId("tab-assets").click();
+  await page.getByRole("checkbox", { name: "材质纹理" }).check();
+  await page.getByRole("checkbox", { name: "边框样式" }).check();
+  await page.getByTestId("extract-submit").click();
+  await page.getByTestId("tab-library").click();
+  await expect(page.getByTestId("library-item")).toHaveCount(8, { timeout: 40_000 });
+});
+
+test("AC-LIB-2 界面：部分失败标注「部分失败」、失败项数量与原因，其余素材正常显示", async ({
+  page,
+  request,
+}) => {
+  await createGateway(request, "magpie-mcp", "image");
+  const collection = await createCollection(request, uniqueName("AC-LIB-2-ui"), 2);
+  // mock 适配器按脚本让第 2 次调用失败：剩 3 条正常入库。
+  const run = await extractAndWait(request, collection, {
+    categories: ["material", "border"],
+    extraPrompt: `${MOCK_SCRIPT_HINTS.failImageAt}-2`,
+  });
+  expect(run.status).toBe("partial");
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${collection.id}`);
+
+  // 运行列表：状态、失败项数量与可读原因都在这一行上。
+  const runRow = page.getByTestId("extraction-run").first();
+  await expect(runRow).toContainText("部分失败");
+  await expect(runRow).toContainText("失败项 1 条");
+  await expect(runRow).toContainText("已保留 3/4 条素材");
+
+  // 失败项不阻断其他素材入库。
+  await page.getByTestId("tab-library").click();
+  await expect(page.getByTestId("library-item")).toHaveCount(3);
+});
+
+test("AC-LIB-10 原始素材页签里没有素材与文案；素材库页签里没有来源信息表单", async ({
+  page,
+  request,
+}) => {
+  await createGateway(request, "magpie-mcp", "image");
+  const collection = await createCollection(request, uniqueName("AC-LIB-10"), 1);
+  await extractAndWait(request, collection, { categories: ["material", "border"] });
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${collection.id}`);
+
+  // 两个页签都在，默认选中的是「原始素材」。
+  await expect(page.getByTestId("tab-assets")).toHaveAttribute("aria-selected", "true");
+  const assetsPanel = page.getByTestId("panel-assets");
+  await expect(assetsPanel).toBeVisible();
+  // 提取运行与来源信息在原始素材页签；素材不在。
+  await expect(assetsPanel.getByText("提取运行")).toBeVisible();
+  await expect(assetsPanel.getByText("来源信息")).toBeVisible();
+  await expect(assetsPanel.getByTestId("library-item")).toHaveCount(0);
+  await expect(page.getByTestId("panel-library")).toHaveCount(0);
+
+  await page.getByTestId("tab-library").click();
+  const libraryPanel = page.getByTestId("panel-library");
+  await expect(libraryPanel.getByTestId("library-item")).toHaveCount(2);
+  // 素材库页签没有原图来源信息表单。
+  await expect(libraryPanel.getByText("来源信息")).toHaveCount(0);
+  await expect(libraryPanel.getByText("来源平台")).toHaveCount(0);
+  await expect(libraryPanel.getByLabel("来源链接")).toHaveCount(0);
+  await expect(page.getByTestId("panel-assets")).toHaveCount(0);
+});
+
+test("AC-C-8 素材库点图在站内弹窗预览，无新标签页、无 window.open", async ({
+  page,
+  request,
+}) => {
+  await createGateway(request, "magpie-mcp", "image");
+  const collection = await createCollection(request, uniqueName("AC-C-8"), 1);
+  await extractAndWait(request, collection);
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${collection.id}`);
+  await page.getByTestId("tab-library").click();
+  await expect(page.getByTestId("library-item")).toHaveCount(1);
+
+  // 记录任何 window.open 调用：判据是「一次都没有」。
+  await page.evaluate(() => {
+    const scope = window as Window & { openCalls?: string[] };
+    scope.openCalls = [];
+    window.open = ((url?: string | URL) => {
+      scope.openCalls?.push(String(url));
+      return null;
+    }) as typeof window.open;
+  });
+
+  const popup = page.waitForEvent("popup", { timeout: 1500 }).catch(() => null);
+  await page.getByTestId("panel-library").getByTestId("image-thumbnail").first().click();
+  await expect(page.getByTestId("image-lightbox")).toBeVisible();
+  expect(await popup).toBeNull();
+  expect(
+    await page.evaluate(() => (window as Window & { openCalls?: string[] }).openCalls),
+  ).toEqual([]);
+
+  // 弹窗里加载的是原图地址，不是缩略图地址。
+  const originalSrc = await page.getByTestId("image-lightbox-image").getAttribute("src");
+  expect(originalSrc).toMatch(/^\/api\/files\/library\//);
+  expect(originalSrc).not.toContain("w=");
+
+  // Esc 关闭，焦点回到缩略图（docs/prd/07 MUST 3）。
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("image-lightbox")).toHaveCount(0);
+});
+
+test("AC-U-1 375px 下两个页签不横向溢出；勾选、类别多选与删除确认可键盘操作", async ({
+  page,
+  request,
+}) => {
+  await createGateway(request, "magpie-mcp", "image");
+  const collection = await createCollection(request, uniqueName("AC-U-1"), 2);
+  await extractAndWait(request, collection, { categories: ["material", "border"] });
+
+  await loginInBrowser(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(`/collections/${collection.id}`);
+
+  const viewportWidths = () =>
+    page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+
+  let widths = await viewportWidths();
+  expect(widths.scrollWidth, "原始素材页签在 375 宽度下不应横向溢出").toBe(widths.clientWidth);
+
+  // 原图勾选：聚焦后按空格切换。
+  const firstSource = page.getByRole("checkbox", { name: /选择这张原图/ }).first();
+  await firstSource.focus();
+  await page.keyboard.press(" ");
+  await expect(firstSource).not.toBeChecked();
+  await page.keyboard.press(" ");
+  await expect(firstSource).toBeChecked();
+
+  // 类别多选：聚焦后按空格切换。
+  const material = page.getByRole("checkbox", { name: "材质纹理" });
+  await material.focus();
+  await page.keyboard.press(" ");
+  await expect(material).toBeChecked();
+
+  // 页签：左右方向键切换（ARIA 页签模式），切到素材库后同样不横向溢出。
+  await page.getByTestId("tab-assets").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("tab-library")).toBeFocused();
+  await expect(page.getByTestId("panel-library")).toBeVisible();
+  await expect(page.getByTestId("library-item")).toHaveCount(4);
+  widths = await viewportWidths();
+  expect(widths.scrollWidth, "素材库页签在 375 宽度下不应横向溢出").toBe(widths.clientWidth);
+
+  // 删除确认：勾选一条素材 → 键盘打开删除按钮 → 键盘确认删除。
+  const firstItemCheck = page
+    .getByTestId("panel-library")
+    .getByRole("checkbox", { name: /选择这条素材/ })
+    .first();
+  await firstItemCheck.focus();
+  await page.keyboard.press(" ");
+  await expect(firstItemCheck).toBeChecked();
+
+  await page.getByTestId("library-delete").focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "删除这条素材？" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "确认删除" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("library-item")).toHaveCount(3, { timeout: 20_000 });
 });

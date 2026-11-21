@@ -57,6 +57,17 @@ export async function findCollectionNames(
   return Object.fromEntries(rows.map((row) => [row.id, row.name]));
 }
 
+/**
+ * 发布记录的资源夹筛选选项：只需要 id 与名称，按创建时间倒序。
+ * 不翻页 —— 筛选器要列出全部资源夹，否则筛不到排在后面的。
+ */
+export async function listCollectionOptions(): Promise<Array<{ id: string; name: string }>> {
+  return getDb().mediaCollection.findMany({
+    select: { id: true, name: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 const ASSET_SELECT = {
   id: true,
   collectionId: true,

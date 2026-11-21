@@ -13,6 +13,7 @@ import {
   PAGE_TITLE_CLASS,
   SELECT_CLASS,
 } from "@/components/ui/styles";
+import { firstValues } from "@/lib/search-params";
 import {
   COLLECTION_COPY,
   COLLECTION_STATUSES,
@@ -27,15 +28,6 @@ export const dynamic = "force-dynamic";
 
 interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
-}
-
-function firstValues(params: Record<string, string | string[] | undefined>): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(params)) {
-    const first = Array.isArray(value) ? value[0] : value;
-    if (typeof first === "string") result[key] = first;
-  }
-  return result;
 }
 
 export default async function CollectionsPage({ searchParams }: PageProps) {

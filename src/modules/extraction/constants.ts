@@ -60,6 +60,7 @@ export const EXTRACTION_POLL_INTERVAL_MS = 3000;
 export const LIBRARY_COPY = {
   assetsTab: "原始素材",
   libraryTab: "素材库",
+  publishTab: "发布",
   runsTitle: "提取运行",
   emptyRuns: "这个资源夹还没有提取运行。",
   emptyLibrary: "还没有素材；先勾选原图并处理。",

@@ -33,10 +33,10 @@ async function loadCollection(id: string): Promise<CollectionDetailView> {
 }
 
 /**
- * 资源夹详情：页签「原始素材 / 素材库」（docs/prd/12「页面结构」、ADR 0010）。
+ * 资源夹详情：页签「原始素材 / 素材库 / 发布」（docs/prd/12「页面结构」、ADR 0010）。
  *
  * 页面只做取数与页头；页签里的交互、轮询与刷新在 `CollectionTabs`。
- * 「发布」页签与文案版本由 MKACG-940 落地；旧模型的「AI 创作结果」页签随数据层一起移除。
+ * 素材库数据在这里取一次给两个页签共用（素材库页签选删除、发布页签选素材）。
  */
 export default async function CollectionDetailPage({ params }: PageProps) {
   const { id } = await params;

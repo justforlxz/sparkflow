@@ -166,6 +166,11 @@ export async function getCollectionNames(
   return repo.findCollectionNames([...new Set(ids)]);
 }
 
+/** 发布记录的筛选选项（只给 id 与名称，不读图片与计数）。 */
+export async function listCollectionOptions(): Promise<Array<{ id: string; name: string }>> {
+  return repo.listCollectionOptions();
+}
+
 /** 只查存在性：创作任务与结果需要判断资源夹是否还在，但不需要它的图片与计数。 */
 export async function collectionExists(id: string): Promise<boolean> {
   return repo.collectionExists(id);

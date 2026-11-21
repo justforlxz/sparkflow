@@ -1,8 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { COLLECTION_STATUS_TONE } from "@/components/ui/status-tone";
 import {
@@ -11,9 +8,12 @@ import {
   TEXT_LINK_CLASS,
 } from "@/components/ui/styles";
 import { isAppError } from "@/lib/errors";
+import { LIBRARY_COPY } from "@/modules/extraction/constants";
+import { listExtractionRuns, listLibrary } from "@/modules/extraction/service";
 import { COLLECTION_COPY, COLLECTION_STATUS_LABELS } from "@/modules/media-collection/constants";
 import { getCollection, type CollectionDetailView } from "@/modules/media-collection/service";
 import { CollectionDialog } from "../collection-dialog";
+import { CollectionTabs } from "./collection-tabs";
 import { DeleteCollectionButton } from "./delete-collection-button";
 
 export const dynamic = "force-dynamic";
@@ -32,26 +32,19 @@ async function loadCollection(id: string): Promise<CollectionDetailView> {
   }
 }
 
-function SourceRow({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="flex gap-3 border-b border-line py-2 last:border-b-0">
-      <dt className="w-24 shrink-0 text-ink-tertiary">{label}</dt>
-      <dd className="min-w-0 whitespace-pre-wrap break-words text-ink">
-        {value ?? COLLECTION_COPY.notFoundSource}
-      </dd>
-    </div>
-  );
-}
-
 /**
- * 资源夹详情：本节点只剩「原始素材」这一面（来源信息 + 原图）。
+ * 资源夹详情：页签「原始素材 / 素材库」（docs/prd/12「页面结构」、ADR 0010）。
  *
- * 提取运行与素材库页签由 MKACG-939 落地，发布页签与发布记录页由 MKACG-940 落地；
- * 旧模型的「AI 创作结果」页签随数据层一起移除（ADR 0010、MKACG-938）。
+ * 页面只做取数与页头；页签里的交互、轮询与刷新在 `CollectionTabs`。
+ * 「发布」页签与文案版本由 MKACG-940 落地；旧模型的「AI 创作结果」页签随数据层一起移除。
  */
 export default async function CollectionDetailPage({ params }: PageProps) {
   const { id } = await params;
   const collection = await loadCollection(id);
+  const [runs, library] = await Promise.all([
+    listExtractionRuns(collection.id),
+    listLibrary(collection.id),
+  ]);
 
   return (
     <section className="space-y-6">
@@ -67,7 +60,9 @@ export default async function CollectionDetailPage({ params }: PageProps) {
               {COLLECTION_STATUS_LABELS[collection.status]}
             </Pill>
             <span>原图 {collection.assetCount} 张</span>
-            <span>素材 {collection.libraryAssetCount} 条</span>
+            <span>
+              {LIBRARY_COPY.libraryTab} {collection.libraryAssetCount} 条
+            </span>
             <span>文案版本 {collection.copyVersionCount} 个</span>
           </p>
         </div>
@@ -90,41 +85,11 @@ export default async function CollectionDetailPage({ params }: PageProps) {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-3">
-          <h2 className="text-heading font-semibold text-ink">{COLLECTION_COPY.imagesSection}</h2>
-          {collection.assets.length === 0 ? (
-            <EmptyState
-              message={COLLECTION_COPY.emptyAssets}
-              hint={COLLECTION_COPY.emptyAssetsHint}
-            />
-          ) : (
-            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {collection.assets.map((asset) => (
-                <li key={asset.id} className="space-y-1 text-caption text-ink-tertiary">
-                  {/* 缩略图是按钮：点开在站内弹窗看原图，不再开新标签页（docs/prd/07）。 */}
-                  <ImageLightbox
-                    image={asset}
-                    openLabel="查看大图"
-                    closeLabel="关闭"
-                    thumbnailClassName="h-32 w-full rounded-md border border-line object-cover transition-opacity hover:opacity-90"
-                  />
-                  <span className="block truncate">{asset.fileName}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <Panel title={COLLECTION_COPY.sourceSection} className="h-fit min-w-0">
-          <dl className="text-body">
-            <SourceRow label="来源平台" value={collection.platform} />
-            <SourceRow label="来源链接" value={collection.sourceUrl} />
-            <SourceRow label="原始标题" value={collection.sourceTitle} />
-            <SourceRow label="原始文案" value={collection.sourceBody} />
-          </dl>
-        </Panel>
-      </div>
+      <CollectionTabs
+        collection={collection}
+        initialRuns={runs}
+        initialLibrary={library}
+      />
     </section>
   );
 }

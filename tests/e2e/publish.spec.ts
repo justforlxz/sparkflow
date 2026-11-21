@@ -253,6 +253,16 @@ function resultCard(page: Page, resultId: string) {
   return page.locator(`[data-result-id="${resultId}"]`).first();
 }
 
+/** 结果默认折叠（docs/prd/07 MUST 3）：编辑、发布准备、删除这些入口在展开后才出现。 */
+async function expandResultCard(card: Locator) {
+  const toggle = card.getByTestId("result-toggle");
+  // 点击可能落在水合完成之前（dev 首屏较慢）：确认没展开就再点一次，直到真的展开。
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+  }).toPass({ timeout: 20_000 });
+}
+
 function publishDialog(page: Page) {
   return page.getByRole("dialog", { name: "发布准备" });
 }
@@ -285,6 +295,7 @@ function zipEntryNames(archive: Buffer): string[] {
 /** 打开发布准备弹窗（结果页签上的入口）。 */
 async function openPublishDialog(page: Page, collectionId: string, resultId: string) {
   await page.goto(`/collections/${collectionId}?tab=results`);
+  await expandResultCard(resultCard(page, resultId));
   await resultCard(page, resultId).getByTestId("publish-prepare").click();
   const dialog = publishDialog(page);
   await expect(dialog).toBeVisible();
@@ -637,6 +648,7 @@ test("AC-901-1 结果页签与发布准备各显示一处水印提示", async ({
   await loginInBrowser(page);
 
   await page.goto(`/collections/${collectionId}?tab=results`);
+  await expandResultCard(resultCard(page, result.id));
   await expectWatermarkNotice(resultCard(page, result.id).getByTestId("result-watermark-notice"));
 
   await resultCard(page, result.id).getByTestId("publish-prepare").click();
@@ -651,6 +663,7 @@ test("AC-901-2 375×812 下两处水印提示不产生横向溢出", async ({ pa
   await loginInBrowser(page);
 
   await page.goto(`/collections/${collectionId}?tab=results`);
+  await expandResultCard(resultCard(page, result.id));
   await expectWatermarkNotice(resultCard(page, result.id).getByTestId("result-watermark-notice"));
   await expectNoHorizontalOverflow(page, "结果页签");
 
@@ -666,6 +679,7 @@ test("AC-901-3 提示与发布准备弹窗不发起任何 /api/ 请求", async (
   await loginInBrowser(page);
 
   await page.goto(`/collections/${collectionId}?tab=results`);
+  await expandResultCard(resultCard(page, result.id));
   await expectWatermarkNotice(resultCard(page, result.id).getByTestId("result-watermark-notice"));
   // 缩略图本身走 /api/files/generated/...：等这次加载结束再开始计数，
   // 只统计「提示与弹窗」带来的请求（AC-901-3 断言的就是这部分为零）。

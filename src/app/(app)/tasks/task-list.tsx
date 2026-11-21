@@ -232,7 +232,7 @@ export function TaskList({ initialTasks }: TaskListProps) {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
-                    href={`/collections/${task.collectionId}#creation`}
+                    href={`/collections/${task.collectionId}?tab=results#creation`}
                     className={buttonClass({ variant: "secondary", size: "sm" })}
                   >
                     {TASK_COPY.viewResultAction}

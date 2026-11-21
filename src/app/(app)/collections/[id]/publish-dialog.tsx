@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { fetchJson } from "@/components/api";
 import {
   buttonClass,
@@ -16,6 +17,7 @@ import {
   OVERLAY_CLASS,
   TEXTAREA_CLASS,
 } from "@/components/ui/styles";
+import { RESULT_COPY } from "@/modules/generation/constants";
 import type { ResultView } from "@/modules/generation/view";
 import { PUBLISH_COPY } from "@/modules/publish/constants";
 import { formatPublishText, parseTagInput } from "@/modules/publish/text";
@@ -154,30 +156,28 @@ export function PublishDialog({ result, shareEntry, onClose, onPublished }: Publ
 
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {result.assets.map((asset) => (
-              <li key={asset.id}>
-                <label className="block space-y-1 text-caption text-ink-tertiary">
-                  {/* 鉴权路由读取生成图片缩略图，不走 Next 图片优化器。 */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={asset.thumbnailUrl}
-                    alt={asset.fileName}
-                    className={
-                      selected.includes(asset.id)
-                        ? "h-24 w-full rounded-md border-2 border-accent-strong object-cover"
-                        : "h-24 w-full rounded-md border-2 border-transparent object-cover opacity-50 hover:opacity-80"
-                    }
+              <li key={asset.id} className="space-y-1">
+                {/* 缩略图点开在站内弹窗看原图；勾选只管下载与发布范围，两者分开（docs/prd/07）。 */}
+                <ImageLightbox
+                  image={asset}
+                  openLabel={RESULT_COPY.openLarge}
+                  closeLabel={PUBLISH_COPY.closeAction}
+                  thumbnailClassName={
+                    selected.includes(asset.id)
+                      ? "h-24 w-full rounded-md border-2 border-accent-strong object-cover"
+                      : "h-24 w-full rounded-md border-2 border-transparent object-cover opacity-50 hover:opacity-80"
+                  }
+                />
+                <label className="flex items-center gap-1 text-caption text-ink-tertiary">
+                  <input
+                    type="checkbox"
+                    className={CHECKBOX_CLASS}
+                    data-testid="publish-asset"
+                    data-asset-id={asset.id}
+                    checked={selected.includes(asset.id)}
+                    onChange={() => toggleAsset(asset.id)}
                   />
-                  <span className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      className={CHECKBOX_CLASS}
-                      data-testid="publish-asset"
-                      data-asset-id={asset.id}
-                      checked={selected.includes(asset.id)}
-                      onChange={() => toggleAsset(asset.id)}
-                    />
-                    <span className="truncate">{asset.fileName}</span>
-                  </span>
+                  <span className="truncate">{asset.fileName}</span>
                 </label>
               </li>
             ))}

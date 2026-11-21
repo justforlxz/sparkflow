@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import pg from "pg";
 
 import { MOCK_SCRIPT_HINTS } from "../../src/modules/generation/stages/mock";
@@ -204,8 +204,19 @@ function resultCard(page: Page, resultId: string) {
   return page.locator(`[data-result-id="${resultId}"]`).first();
 }
 
+/** 结果默认折叠（docs/prd/07 MUST 3）：编辑、发布准备、删除这些入口在展开后才出现。 */
+async function expandResultCard(card: Locator) {
+  const toggle = card.getByTestId("result-toggle");
+  // 点击可能落在水合完成之前（dev 首屏较慢）：确认没展开就再点一次，直到真的展开。
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+  }).toPass({ timeout: 20_000 });
+}
+
 async function openPublishDialog(page: Page, collectionId: string, resultId: string) {
   await page.goto(`/collections/${collectionId}?tab=results`);
+  await expandResultCard(resultCard(page, resultId));
   await resultCard(page, resultId).getByTestId("publish-prepare").click();
   const dialog = page.getByRole("dialog", { name: "发布准备" });
   await expect(dialog).toBeVisible();
@@ -492,7 +503,7 @@ test("第 4 步 发起创作（3 张原图 → 3 张成品），两个阶段进�
   await dialog.getByTestId("submit-creation").click();
   // 提交后停在资源夹详情页，创作区就地显示两个阶段（MKACG-916 AC-C-1）。
   await expect(page).toHaveURL(
-    new RegExp(`/collections/${chain.collectionId}(\\?tab=assets)?(#creation)?$`),
+    new RegExp(`/collections/${chain.collectionId}\\?tab=results(#creation)?$`),
   );
 
   const created = await waitForNewTask(request, chain.collectionId!, new Set());
@@ -530,6 +541,7 @@ test("第 5 步 查看任务：两个阶段状态独立可见，编辑结果的�
   await expect(card).toBeVisible();
   await expect(card.getByTestId("publish-status")).toHaveText("未发布");
 
+  await expandResultCard(card);
   await card.getByTestId("edit-result").click();
   const dialog = page.getByRole("dialog", { name: "编辑结果" });
   await dialog.getByLabel("标题").fill(title);
@@ -566,7 +578,7 @@ test("第 6 步 制造文案阶段失败后重试：只重跑文案阶段，图�
   await dialog.getByTestId("submit-creation").click();
   // 提交后停在资源夹详情页，创作区就地显示两个阶段（MKACG-916 AC-C-1）。
   await expect(page).toHaveURL(
-    new RegExp(`/collections/${chain.collectionId}(\\?tab=assets)?(#creation)?$`),
+    new RegExp(`/collections/${chain.collectionId}\\?tab=results(#creation)?$`),
   );
 
   const created = await waitForNewTask(

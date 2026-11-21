@@ -66,7 +66,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
           </p>
         </div>
         <Link
-          href={`/collections/${task.collectionId}#creation`}
+          href={`/collections/${task.collectionId}?tab=results#creation`}
           className={buttonClass({ variant: "secondary" })}
         >
           {TASK_COPY.viewResultAction}
@@ -168,7 +168,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
       <div className="space-y-2">
         {task.result ? (
           <Link
-            href={`/collections/${task.collectionId}#creation`}
+            href={`/collections/${task.collectionId}?tab=results#creation`}
             data-testid="result-entry"
             className={TEXT_LINK_CLASS}
           >

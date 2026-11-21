@@ -32,6 +32,8 @@ export interface CollectionAssetView {
   sortOrder: number;
   /** 可直接渲染的鉴权 URL（SHOULD：上传后不必二次查询）。 */
   url: string;
+  /** 网格用的缩略图地址（`?w=400`）：弹窗里加载 `url` 原图（docs/prd/07 SHOULD）。 */
+  thumbnailUrl: string;
 }
 
 export interface CollectionSummaryView {
@@ -123,6 +125,7 @@ function toAssetView(collectionId: string, asset: repo.AssetRow): CollectionAsse
     size: asset.size,
     sortOrder: asset.sortOrder,
     url: assetFileUrl(collectionId, asset.id),
+    thumbnailUrl: assetFileUrl(collectionId, asset.id, DEFAULT_THUMBNAIL_WIDTH),
   };
 }
 

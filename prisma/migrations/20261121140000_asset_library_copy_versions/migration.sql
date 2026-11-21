@@ -5,7 +5,8 @@
 --
 -- 映射规则（ADR 0010 第 6 条）：
 --   generation_result → copy_version（version_no 按资源夹内 created_at 顺序编 1..N；
---                                     selected_asset_ids 取该结果下生成图的 source_asset_id）
+--                                     selected_asset_ids 取该结果下生成图的 id；下面的迁移把
+--                                     generated_asset.id 原样当作 library_asset.id，所以这里存的就是素材 id）
 --   generated_asset   → library_asset（category = 'other'，保留来源原图）
 --   generation_task   → extraction_run（status 按旧任务派生结果照搬，categories = ['other']，
 --                                       source_asset_ids 取该任务结果的素材来源）
@@ -216,9 +217,9 @@ SELECT
     COALESCE(t."copy_style", 'story'),
     COALESCE(t."agent_snapshot", '{}'::JSONB),
     COALESCE((
-        SELECT array_agg(g."source_asset_id")
+        SELECT array_agg(g."id" ORDER BY g."sort_order" ASC, g."id" ASC)
         FROM "generated_asset" g
-        WHERE g."result_id" = r."id" AND g."source_asset_id" IS NOT NULL
+        WHERE g."result_id" = r."id"
     ), ARRAY[]::TEXT[]),
     t."extra_prompt",
     CASE

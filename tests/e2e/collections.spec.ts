@@ -627,13 +627,15 @@ test("AC-900-1 AC-900-2 AC-900-4 资源夹详情在 375×812 与 320×568 下无
     expect(await fileName.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
   }
 
-  // 缩略图仍可点开大图：新标签页指向 /api/files 且返回图片本身。
-  const [bigImage] = await Promise.all([
-    page.waitForEvent("popup"),
-    page.locator("ul.grid img").first().click(),
-  ]);
-  await expect(bigImage).toHaveURL(/\/api\/files\//);
-  const response = await bigImage.request.get(bigImage.url());
+  // 缩略图点开的是站内弹窗里的原图，不再打开新标签页（docs/prd/07「图片预览（全站统一）」）。
+  const popupPromise = page.waitForEvent("popup", { timeout: 1500 }).catch(() => null);
+  await page.locator("ul.grid button[data-testid='image-thumbnail']").first().click();
+  await expect(page.getByTestId("image-lightbox")).toBeVisible();
+  expect(await popupPromise).toBeNull();
+
+  const originalSrc = await page.getByTestId("image-lightbox-image").getAttribute("src");
+  expect(originalSrc).toMatch(/^\/api\/files\//);
+  const response = await request.get(originalSrc!);
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toBe("image/png");
 });

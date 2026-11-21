@@ -268,15 +268,15 @@ test("AC-EX-6 资源夹表单 → 详情 → 创作弹窗 → 结果摘要，四
   await creationDialog.getByTestId("submit-creation").click();
   // 弹窗关闭说明创建请求已经成功返回：之后再去任务列表取 id，避免读到还没落库的请求。
   await expect(creationDialog).toBeHidden();
-  await expect(page).toHaveURL(new RegExp(`/collections/${collectionId}`));
+  await expect(page).toHaveURL(new RegExp(`/collections/${collectionId}\\?tab=results#creation`));
 
   // 四、结果摘要：任务跑完后回到资源夹详情，折叠摘要里显示本次的提取目标。
   const taskId = await findTaskId(request, collectionId);
   const task = await waitForTerminal(request, taskId);
   expect(task.status).toBe("succeeded");
 
-  await page.goto(`/collections/${collectionId}?tab=assets#creation`);
-  const summary = page.getByTestId("creation-result-extract-target").first();
+  await page.goto(`/collections/${collectionId}?tab=results#creation`);
+  const summary = page.getByTestId("result-extract-target").first();
   await expect(summary).toBeVisible();
   await expect(summary).toHaveText(`提取目标：${EXTRACT_TARGET}`);
 

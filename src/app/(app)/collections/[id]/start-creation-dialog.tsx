@@ -86,11 +86,14 @@ export function StartCreationDialog({
         }),
       });
       setOpen(false);
-      /* 不跳 `/tasks`（MKACG-916 MUST 1、AC-C-1）：回到资源夹详情的「创作」区，
-       * 那里就地显示两个阶段的状态与「第 k/N 张」进度。
-       * 显式带上 `?tab=assets`：从「AI 创作结果」页签发起时也要回到有创作区的那个页签，
+      /* 不跳 `/tasks`（MKACG-916 MUST 1、AC-C-1）：回到资源夹详情的「AI 创作结果」页签，
+       * 那里就地显示两个阶段的状态、「第 k/N 张」进度与随后出现的结果（MKACG-933）。
+       * 显式带上 `?tab=results`：进度与结果都在这个页签；
        * 而且查询串变化才会重新取服务端数据（同一路径只改 hash 不会刷新）。 */
-      router.push(`/collections/${collectionId}?tab=assets#creation`);
+      router.push(`/collections/${collectionId}?tab=results#creation`);
+      /* 任务已经落库，但「AI 创作结果」页签的链接在进入页面时就被预取过：
+       * 直接用它渲染会拿到「还没有任务」的旧数据。刷新一次让服务端重新取。 */
+      router.refresh();
       setSubmitting(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : CREATION_COPY.submitFailed);

@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import pg from "pg";
 import { MOCK_SCRIPT_HINTS } from "../../src/modules/generation/stages/mock";
 import { ACCOUNT, ensureAccount } from "./support/auth";
@@ -319,6 +319,16 @@ function resultCard(page: Page, resultId: string) {
   return page.locator(`[data-result-id="${resultId}"]`);
 }
 
+/** 结果默认折叠（docs/prd/07 MUST 3）：编辑、删除、文案失败提示都在展开后才出现。 */
+async function expandResultCard(card: Locator) {
+  const toggle = card.getByTestId("result-toggle");
+  // 点击可能落在水合完成之前（dev 首屏较慢）：确认没展开就再点一次，直到真的展开。
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+  }).toPass({ timeout: 20_000 });
+}
+
 test.beforeAll(async ({ request }) => {
   await ensureAccount(request);
   copyBindingBefore = await readCopyBinding(request);
@@ -573,6 +583,7 @@ test("AC-07-6 编辑结果标题后刷新页面标题保持新值，原始素材
 
   const card = resultCard(page, resultId);
   await expect(card).toBeVisible();
+  await expandResultCard(card);
   await card.getByTestId("edit-result").click();
 
   const dialog = page.getByRole("dialog", { name: "编辑结果" });
@@ -608,6 +619,7 @@ test("AC-07-6 partial 结果手动补写后在卡片上能看到新文案", asyn
   await page.goto(`/collections/${collectionId}?tab=results`);
 
   const card = resultCard(page, resultId);
+  await expandResultCard(card);
   await expect(card.getByTestId("copy-failed-hint")).toBeVisible();
   await expect(card.getByTestId("result-title")).toHaveCount(0);
 
@@ -652,6 +664,7 @@ test("AC-07-7 删除某个结果后，同资源夹另一个结果与原始素材
   await page.goto(`/collections/${collectionId}?tab=results`);
   await expect(page.getByTestId("result-card")).toHaveCount(2);
 
+  await expandResultCard(resultCard(page, firstResultId));
   await resultCard(page, firstResultId).getByTestId("delete-result").click();
   const dialog = page.getByRole("dialog", { name: "删除这个结果？" });
   await expect(dialog).toBeVisible();
@@ -836,6 +849,7 @@ test("AC-08-11 partial 结果的文案区域显示「文案阶段失败」提示
 
   const card = resultCard(page, resultId);
   await expect(card).toBeVisible();
+  await expandResultCard(card);
   await expect(card.getByTestId("copy-failed-hint")).toHaveText(COPY_FAILED_HINT);
   await expect(card.getByTestId("copy-retry-button")).toBeVisible();
   await expect(card.locator("img")).toHaveCount(2);

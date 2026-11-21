@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { FeatureGate } from "@/components/FeatureGate";
 import { PublishRecordList } from "@/components/publish/publish-record-list";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { COLLECTION_STATUS_TONE } from "@/components/ui/status-tone";
@@ -22,7 +23,6 @@ import { getPublishedResultIds, listPublishRecords } from "@/modules/publish/ser
 import { CollectionDialog } from "../collection-dialog";
 import { DeleteCollectionButton } from "./delete-collection-button";
 import { CreationPanel } from "./creation-panel";
-import { ResultsPanel } from "./results-panel";
 import { StartCreationDialog } from "./start-creation-dialog";
 
 export const dynamic = "force-dynamic";
@@ -79,7 +79,7 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
   const { id } = await params;
   const collection = await loadCollection(id);
   const tab = resolveTab((await searchParams).tab);
-  /* 结果与任务两个页签之外也要用：创作区在原始素材页签下就地显示进度与结果（MKACG-916）。
+  /* 「AI 创作结果」页签一次取回任务与结果，创作区就地显示进度与结果（MKACG-933）。
    * 发布状态只查 id、由服务端给出，前端不推断（docs/prd/07 MUST NOT）。 */
   const [results, tasks] = await Promise.all([
     listCollectionResults(id),
@@ -177,20 +177,13 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
               <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {collection.assets.map((asset) => (
                   <li key={asset.id} className="space-y-1 text-caption text-ink-tertiary">
-                    <a
-                      href={asset.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block rounded-md"
-                    >
-                      {/* 鉴权路由读取原图缩略图，不走 Next 图片优化器。 */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={asset.url}
-                        alt={asset.fileName}
-                        className="h-32 w-full rounded-md border border-line object-cover"
-                      />
-                    </a>
+                    {/* 缩略图是按钮：点开在站内弹窗看原图，不再开新标签页（docs/prd/07）。 */}
+                    <ImageLightbox
+                      image={asset}
+                      openLabel={RESULT_COPY.openLarge}
+                      closeLabel={PUBLISH_COPY.closeAction}
+                      thumbnailClassName="h-32 w-full rounded-md border border-line object-cover transition-opacity hover:opacity-90"
+                    />
                     <span className="block truncate">{asset.fileName}</span>
                   </li>
                 ))}
@@ -224,43 +217,19 @@ export default async function CollectionDetailPage({ params, searchParams }: Pag
             </Link>
           ) : null}
         </div>
-      ) : results.length === 0 ? (
-        <EmptyState
-          message={RESULT_COPY.emptyList}
-          action={
-            <FeatureGate feature="image-to-image" label={RESULT_COPY.emptyListAction}>
-              <StartCreationDialog
-                collectionId={collection.id}
-                assetCount={collection.assetCount}
-                extractTarget={collection.extractTarget}
-                variant="secondary"
-                label={RESULT_COPY.emptyListAction}
-              />
-            </FeatureGate>
-          }
-        />
       ) : (
-        <ResultsPanel
-          results={results}
-          publishedResultIds={publishedResultIds}
-          // 分享入口由服务端开关决定渲染成什么，客户端组件里不判断功能是否实现（docs/prd/10）。
-          shareEntry={<FeatureGate feature="share-to-xiaohongshu" />}
-        />
-      )}
-
-      {/* 创作区放在「原始素材」之后、独立分块（MKACG-916）：进行中的任务与结果都在这里，
-          不需要跳到 /tasks，也不用先进「AI 创作结果」页签。锚点 `#creation` 供 /tasks 的
-          「查看结果」直接跳过来（AC-C-5）。 */}
-      {tab === "assets" ? (
+        /* 进度与结果全部收在「AI 创作结果」页签（MKACG-933）：原始素材页签只剩原图与来源信息。
+         * 锚点 `#creation` 供 /tasks 的「查看结果」直接跳过来（AC-C-5）。 */
         <CreationPanel
           collectionId={collection.id}
           initialTasks={tasks}
           results={results}
           publishedResultIds={publishedResultIds}
           sourceAssetIds={collection.assets.map((asset) => asset.id)}
+          // 分享入口由服务端开关决定渲染成什么，客户端组件里不判断功能是否实现（docs/prd/10）。
           shareEntry={<FeatureGate feature="share-to-xiaohongshu" />}
         />
-      ) : null}
+      )}
     </section>
   );
 }

@@ -3,8 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJson } from "@/components/api";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
 import { STAGE_STATUS_TONE, TASK_STATUS_TONE } from "@/components/ui/status-tone";
@@ -33,16 +35,19 @@ import { EditResultDialog } from "./edit-result-dialog";
 import { PublishDialog } from "./publish-dialog";
 
 /**
- * 资源夹详情的「创作」区（docs/prd/07「资源夹详情的「创作」区」，MKACG-916）：
+ * 资源夹详情的「AI 创作结果」页签（docs/prd/07-results.md）：
  *
- * 1. 进行中的任务就地显示两条阶段与「正在生图 第 k/N 张」，不跳 `/tasks`（MUST 1）。
- * 2. 结果默认折叠：一排成品图缩略图（按原图顺序、标出对应第几张原图）+ 一行摘要（MUST 2）。
- * 3. 点展开才出现标题、正文、标签与「编辑」「发布准备」（MUST 3）。
- * 4. 失败 / 部分完成的任务占同一块，带可读原因；只有真的失败阶段才给「重试」（MUST 4）。
- * 5. 折叠状态存本地，刷新后保持，不落库（MUST 5）。
- * 6. 既没有任务也没有结果时给「开始 AI 创作」引导，不留空白（MUST 6）。
+ * 进度与结果都收在这一个组件里，原始素材页签只剩原图与来源信息（MKACG-933）。
  *
- * 任务数据先由服务端取一次，进入执行态后每 3 秒轮询 `GET /api/tasks`（docs/prd/07 MUST 4）；
+ * 1. 进行中的任务在最上面：两条阶段各自可见，生图阶段显示「正在生图 第 k/N 张」（MUST 1）。
+ * 2. 失败 / 部分失败的任务紧随其后，带可读原因；只有真的失败阶段才给「重试」（MUST 2）。
+ * 3. 结果默认折叠：一排提取图缩略图（按原图顺序）+ 一行摘要；点开才出现标题、正文、标签、
+ *    「编辑」「整理发布」（MUST 3、MUST 4）。
+ * 4. 折叠状态存本地，刷新后保持，不落库（MUST 5）。
+ * 5. 既没有任务也没有结果时给「开始 AI 创作」引导，不留空白（MUST 6）。
+ *
+ * 图片一律走 `ImageLightbox`：缩略图是按钮，点开在站内弹窗看原图（「图片预览（全站统一）」）。
+ * 任务数据先由服务端取一次，进入执行态后每 3 秒轮询 `GET /api/tasks`（MUST 4）；
  * 全部进入终态后停表，并让服务端重新渲染一次，好让新出现的结果进入折叠列表。
  */
 
@@ -87,8 +92,11 @@ export function CreationPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [editing, setEditing] = useState<ResultView | null>(null);
+  const [deleting, setDeleting] = useState<ResultView | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [publishing, setPublishing] = useState<ResultView | null>(null);
-  /** 刚在这个页面上发布过的结果：发布状态立刻变绿，不用等服务端刷新。 */
+  /** 刚在这个页面上删掉 / 发布过的结果：界面立刻反映，不等服务端重新渲染。 */
+  const [removedResultIds, setRemovedResultIds] = useState<string[]>([]);
   const [justPublished, setJustPublished] = useState<string[]>([]);
   /** 上一轮是否真的看到过执行中的任务：只有「跑完」才需要再让服务端渲染一次。 */
   const sawRunning = useRef(initialTasks.some((task) => task.status === "running"));
@@ -157,7 +165,39 @@ export function CreationPanel({
     }
   }
 
+  async function retryCopy(result: ResultView) {
+    setBusyId(result.id);
+    setError(null);
+    try {
+      // 只重试失败的文案阶段（ADR 0005）：生图阶段与已有图片都不动。
+      await fetchJson(`/api/tasks/${result.taskId}/retry`, { method: "POST" });
+      toast.show(RESULT_COPY.retryQueued, "success");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : RESULT_COPY.retryFailed);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    setError(null);
+    try {
+      await fetchJson<{ id: string }>(`/api/results/${deleting.id}`, { method: "DELETE" });
+      setRemovedResultIds((current) => [...current, deleting.id]);
+      setDeleting(null);
+      // 资源夹头部的结果计数也要跟着变。
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : RESULT_COPY.deleteFailed);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   const { running, troubled } = groupCreationTasks(tasks);
+  const visibleResults = results.filter((result) => !removedResultIds.includes(result.id));
   const isPublished = (resultId: string) =>
     publishedResultIds.includes(resultId) || justPublished.includes(resultId);
 
@@ -274,29 +314,29 @@ export function CreationPanel({
         </div>
       ) : null}
 
-      {results.length > 0 ? (
+      {visibleResults.length > 0 ? (
         <div className="space-y-2">
           <h3 className="text-body font-medium text-ink">{CREATION_SECTION_COPY.resultsTitle}</h3>
           <ul className="space-y-3">
-            {results.map((result) => {
+            {visibleResults.map((result) => {
               const panelId = `creation-result-${result.id}`;
               const expanded = expandedIds.includes(result.id);
+              const published = isPublished(result.id);
               return (
-                <li key={result.id} data-testid="creation-result" data-result-id={result.id}>
+                <li key={result.id} data-testid="result-card" data-result-id={result.id}>
                   <Panel bodyClassName="space-y-3">
-                    {/* 折叠态：一排成品图缩略图，按原图顺序，标出对应第几张原图（MUST 2）。 */}
+                    {/* 折叠态：一排提取图缩略图，按原图顺序，标出对应第几张原图（MUST 3）。 */}
                     <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                       {result.assets.map((asset) => (
                         <li key={asset.id} className="min-w-0 space-y-1">
-                          {/* 鉴权路由读取生成图片缩略图，不走 Next 图片优化器。 */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={asset.thumbnailUrl}
-                            alt={asset.fileName}
-                            className="h-20 w-full rounded-md border border-line object-cover"
+                          <ImageLightbox
+                            image={asset}
+                            openLabel={RESULT_COPY.openLarge}
+                            closeLabel={PUBLISH_COPY.closeAction}
+                            thumbnailClassName="h-20 w-full rounded-md border border-line object-cover transition-opacity hover:opacity-90"
                           />
                           <span
-                            data-testid="creation-result-source"
+                            data-testid="result-source"
                             className="block truncate text-caption text-ink-tertiary"
                           >
                             {originalAssetLabel(asset.sourceAssetId, sourceAssetIds)}
@@ -307,7 +347,7 @@ export function CreationPanel({
 
                     <button
                       type="button"
-                      data-testid="creation-result-toggle"
+                      data-testid="result-toggle"
                       aria-expanded={expanded}
                       aria-controls={panelId}
                       onClick={() => toggleExpanded(result.id)}
@@ -319,28 +359,25 @@ export function CreationPanel({
                         </span>
                         <span aria-hidden="true">·</span>
                         {/* 本次的提取目标来自任务快照（ADR 0009）：老任务没有这一项时显示占位。 */}
-                        <span
-                          data-testid="creation-result-extract-target"
-                          className="min-w-0 truncate"
-                        >
+                        <span data-testid="result-extract-target" className="min-w-0 truncate">
                           {CREATION_SECTION_COPY.extractTargetLabel}：
                           {result.extractTarget?.trim() ? result.extractTarget : "—"}
                         </span>
                         <span aria-hidden="true">·</span>
                         <span>
-                          {result.assets.length} {CREATION_SECTION_COPY.summaryImageCountLabel}
+                          {RESULT_COPY.generatedImageCountLabel} {result.assets.length}{" "}
+                          {CREATION_SECTION_COPY.summaryImageCountLabel}
                         </span>
                         <span aria-hidden="true">·</span>
                         {/* 发布状态由服务端查到的记录决定，前端不推断（docs/prd/07 MUST NOT）。 */}
-                        <Pill tone={isPublished(result.id) ? "published" : "neutral"}>
-                          {isPublished(result.id)
-                            ? PUBLISH_COPY.statusPublished
-                            : PUBLISH_COPY.statusUnpublished}
+                        <Pill
+                          data-testid="publish-status"
+                          tone={published ? "published" : "neutral"}
+                        >
+                          {published ? PUBLISH_COPY.statusPublished : PUBLISH_COPY.statusUnpublished}
                         </Pill>
                         {result.copyFailed ? (
-                          <span className="text-warning">
-                            {CREATION_SECTION_COPY.copyFailedLabel}
-                          </span>
+                          <span className="text-warning">{CREATION_SECTION_COPY.copyFailedLabel}</span>
                         ) : null}
                       </span>
                       <span className="shrink-0 text-footnote font-medium text-accent-strong">
@@ -355,56 +392,69 @@ export function CreationPanel({
                         提示是说明不是阻断：不加勾选、不阻止发布。 */}
                     {expanded ? (
                       <p
-                        data-testid="creation-watermark-notice"
+                        data-testid="result-watermark-notice"
                         className={noticeClass("warning", "text-footnote")}
                       >
                         {PUBLISH_COPY.upstreamWatermarkNotice}
                       </p>
                     ) : (
                       <p
-                        data-testid="creation-watermark-short-notice"
+                        data-testid="result-watermark-short-notice"
                         className={noticeClass("warning", "text-footnote")}
                       >
                         {PUBLISH_COPY.upstreamWatermarkShortNotice}
                       </p>
                     )}
 
-                    {/* 展开后才出现文案与操作（MUST 3）。 */}
+                    {/* 展开后才出现文案与操作（MUST 4）。 */}
                     {expanded ? (
                       <div id={panelId} className="space-y-2 border-t border-line pt-3 text-body">
+                        {/* 失败提示只是附加说明：手动补写过的标题 / 正文 / 标签必须照常显示。 */}
+                        {result.copyFailed ? (
+                          <div className={noticeClass("warning", "space-y-2")}>
+                            <p data-testid="copy-failed-hint">{RESULT_COPY.copyFailedHint}</p>
+                            <button
+                              type="button"
+                              data-testid="copy-retry-button"
+                              onClick={() => void retryCopy(result)}
+                              disabled={busyId === result.id}
+                              className={buttonClass({ variant: "warning", size: "sm" })}
+                            >
+                              {RESULT_COPY.retryAction}
+                            </button>
+                          </div>
+                        ) : null}
+
+                        {/* 视觉提取降级时必须标注原因与下一步动作（docs/prd/06 AC-06-8）。 */}
+                        {result.copyVisualDegradedHint ? (
+                          <p data-testid="copy-visual-degraded" className="text-footnote text-ink-tertiary">
+                            {result.copyVisualDegradedHint}
+                          </p>
+                        ) : null}
+
                         {result.title ? (
-                          <h4
-                            data-testid="creation-result-title"
-                            className="text-body-lg font-semibold text-ink"
-                          >
+                          <h4 data-testid="result-title" className="text-body-lg font-semibold text-ink">
                             {result.title}
                           </h4>
                         ) : null}
                         {result.body ? (
                           <p
-                            data-testid="creation-result-body"
+                            data-testid="result-body"
                             className="whitespace-pre-wrap break-words text-ink-secondary"
                           >
                             {result.body}
                           </p>
                         ) : null}
                         {result.tags.length > 0 ? (
-                          <p
-                            data-testid="creation-result-tags"
-                            className="break-words text-footnote text-ink-tertiary"
-                          >
+                          <p data-testid="result-tags" className="break-words text-footnote text-ink-tertiary">
                             {result.tags.map((tag) => `#${tag}`).join(" ")}
                           </p>
                         ) : null}
-                        {result.copyFailed ? (
-                          <p className="text-footnote text-warning">
-                            {RESULT_COPY.copyFailedHint}
-                          </p>
-                        ) : null}
+
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            data-testid="creation-edit-result"
+                            data-testid="edit-result"
                             onClick={() => setEditing(result)}
                             className={buttonClass({ variant: "secondary", size: "sm" })}
                           >
@@ -412,11 +462,22 @@ export function CreationPanel({
                           </button>
                           <button
                             type="button"
-                            data-testid="creation-publish-result"
+                            data-testid="publish-prepare"
                             onClick={() => setPublishing(result)}
                             className={buttonClass({ variant: "primary", size: "sm" })}
                           >
                             {PUBLISH_COPY.prepareAction}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="delete-result"
+                            onClick={() => {
+                              setDeleting(result);
+                              setError(null);
+                            }}
+                            className={buttonClass({ variant: "danger", size: "sm" })}
+                          >
+                            {RESULT_COPY.deleteAction}
                           </button>
                         </div>
                       </div>
@@ -429,7 +490,7 @@ export function CreationPanel({
         </div>
       ) : null}
 
-      {tasks.length === 0 && results.length === 0 ? (
+      {tasks.length === 0 && visibleResults.length === 0 ? (
         <EmptyState
           message={CREATION_SECTION_COPY.emptyMessage}
           hint={CREATION_SECTION_COPY.emptyHint}
@@ -444,6 +505,20 @@ export function CreationPanel({
           // 结果标题等字段变了，服务端重新渲染一次就好，本地不另存一份。
           router.refresh();
         }}
+      />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        danger
+        title={RESULT_COPY.deleteConfirmTitle}
+        body={RESULT_COPY.deleteConfirmBody}
+        confirmLabel={RESULT_COPY.confirmDelete}
+        cancelLabel={RESULT_COPY.cancelAction}
+        busy={deleteBusy}
+        confirmTestId="delete-confirm"
+        cancelTestId="delete-cancel"
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => void confirmDelete()}
       />
 
       {publishing ? (

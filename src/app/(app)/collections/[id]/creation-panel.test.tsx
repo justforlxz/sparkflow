@@ -223,54 +223,54 @@ describe("AC-C-2 结果默认折叠，展开后才出现文案与按钮", () => 
   it("折叠态只有缩略图与摘要，不露标题正文标签与按钮", () => {
     renderPanel({ results: [resultView()] });
 
-    const card = screen.getByTestId("creation-result");
+    const card = screen.getByTestId("result-card");
     expect(card.querySelectorAll("img")).toHaveLength(2);
-    expect(within(card).getAllByTestId("creation-result-source").map((node) => node.textContent)).toEqual([
+    expect(within(card).getAllByTestId("result-source").map((node) => node.textContent)).toEqual([
       "原图 1",
       "原图 2",
     ]);
 
-    const toggle = within(card).getByTestId("creation-result-toggle");
+    const toggle = within(card).getByTestId("result-toggle");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(toggle.textContent).toContain("生成于 2026-11-20");
     expect(toggle.textContent).toContain("2 张");
     expect(toggle.textContent).toContain("未发布");
 
-    expect(within(card).queryByTestId("creation-result-title")).toBeNull();
-    expect(within(card).queryByTestId("creation-result-body")).toBeNull();
-    expect(within(card).queryByTestId("creation-result-tags")).toBeNull();
-    expect(within(card).queryByTestId("creation-edit-result")).toBeNull();
-    expect(within(card).queryByTestId("creation-publish-result")).toBeNull();
+    expect(within(card).queryByTestId("result-title")).toBeNull();
+    expect(within(card).queryByTestId("result-body")).toBeNull();
+    expect(within(card).queryByTestId("result-tags")).toBeNull();
+    expect(within(card).queryByTestId("edit-result")).toBeNull();
+    expect(within(card).queryByTestId("publish-prepare")).toBeNull();
   });
 
   it("点击展开后出现标题、正文、标签与「编辑」「发布准备」", () => {
     renderPanel({ results: [resultView()] });
 
-    const card = screen.getByTestId("creation-result");
-    fireEvent.click(within(card).getByTestId("creation-result-toggle"));
+    const card = screen.getByTestId("result-card");
+    fireEvent.click(within(card).getByTestId("result-toggle"));
 
-    expect(within(card).getByTestId("creation-result-toggle").getAttribute("aria-expanded")).toBe(
+    expect(within(card).getByTestId("result-toggle").getAttribute("aria-expanded")).toBe(
       "true",
     );
-    expect(within(card).getByTestId("creation-result-title").textContent).toBe("标题一句话");
-    expect(within(card).getByTestId("creation-result-body").textContent).toBe("正文一段话");
-    expect(within(card).getByTestId("creation-result-tags").textContent).toBe("#旅行 #咖啡");
-    expect(within(card).getByTestId("creation-edit-result").textContent).toBe("编辑");
-    expect(within(card).getByTestId("creation-publish-result").textContent).toBe("发布准备");
+    expect(within(card).getByTestId("result-title").textContent).toBe("标题一句话");
+    expect(within(card).getByTestId("result-body").textContent).toBe("正文一段话");
+    expect(within(card).getByTestId("result-tags").textContent).toBe("#旅行 #咖啡");
+    expect(within(card).getByTestId("edit-result").textContent).toBe("编辑");
+    expect(within(card).getByTestId("publish-prepare").textContent).toBe("发布准备");
   });
 
   it("水印提示跟着折叠状态换：折叠态一行短文案，展开后是定稿主文案", () => {
     renderPanel({ results: [resultView()] });
 
-    const card = screen.getByTestId("creation-result");
-    expect(card.querySelector("[data-testid='creation-watermark-short-notice']")?.textContent).toBe(
+    const card = screen.getByTestId("result-card");
+    expect(card.querySelector("[data-testid='result-watermark-short-notice']")?.textContent).toBe(
       "该模型可能自带水印，发布前请确认。",
     );
-    expect(card.querySelector("[data-testid='creation-watermark-notice']")).toBeNull();
+    expect(card.querySelector("[data-testid='result-watermark-notice']")).toBeNull();
 
-    fireEvent.click(within(card).getByTestId("creation-result-toggle"));
+    fireEvent.click(within(card).getByTestId("result-toggle"));
 
-    const main = screen.getByTestId("creation-watermark-notice").textContent ?? "";
+    const main = screen.getByTestId("result-watermark-notice").textContent ?? "";
     // 主文案必须说清三件事：图片来源、水印可能来自该模型、不接受时换模型（docs/prd/05 定稿）。
     expect(main).toContain("图片由你在设置里选择的图片模型生成");
     expect(main).toContain("可能自带该模型的水印或角标");
@@ -278,19 +278,19 @@ describe("AC-C-2 结果默认折叠，展开后才出现文案与按钮", () => 
     for (const forbidden of ["已去除", "保证无水印", "上游模型", "系统已校验", "图片合格"]) {
       expect(main).not.toContain(forbidden);
     }
-    expect(card.querySelector("[data-testid='creation-watermark-short-notice']")).toBeNull();
+    expect(card.querySelector("[data-testid='result-watermark-short-notice']")).toBeNull();
   });
 
   it("已发布的结果在摘要里标成已发布，由服务端给的结果 id 决定", () => {
     renderPanel({ results: [resultView()], publishedResultIds: ["result-1"] });
 
-    expect(screen.getByTestId("creation-result-toggle").textContent).toContain("已发布");
+    expect(screen.getByTestId("result-toggle").textContent).toContain("已发布");
   });
 
   it("文案阶段失败的结果在摘要里标出失败，不在折叠态露正文", () => {
     renderPanel({ results: [resultView({ copyFailed: true })] });
 
-    const toggle = screen.getByTestId("creation-result-toggle");
+    const toggle = screen.getByTestId("result-toggle");
     expect(toggle.textContent).toContain("文案阶段失败");
     expect(toggle.textContent).not.toContain("正文一段话");
   });
@@ -302,8 +302,8 @@ describe("AC-C-3 折叠状态从本地读回", () => {
 
     renderPanel({ results: [resultView()] });
 
-    expect(screen.getByTestId("creation-result-toggle").getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByTestId("creation-result-title").textContent).toBe("标题一句话");
+    expect(screen.getByTestId("result-toggle").getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("result-title").textContent).toBe("标题一句话");
   });
 });
 
@@ -321,5 +321,72 @@ describe("MUST 6 空状态", () => {
     });
 
     expect(screen.queryByText("这个资源夹还没有开始 AI 创作。")).toBeNull();
+  });
+});
+
+describe("MKACG-933 结果卡：站内图片预览与结果操作", () => {
+  it("折叠态的缩略图是站内预览按钮，不是打开新标签页的链接", () => {
+    renderPanel({ results: [resultView()] });
+
+    const card = screen.getByTestId("result-card");
+    const thumbnails = within(card).getAllByTestId("image-thumbnail");
+    expect(thumbnails).toHaveLength(2);
+    for (const thumbnail of thumbnails) expect(thumbnail.tagName).toBe("BUTTON");
+    expect(card.querySelector('a[target="_blank"]')).toBeNull();
+  });
+
+  it("点击缩略图在弹窗里加载原图，并显示文件名", () => {
+    renderPanel({ results: [resultView()] });
+
+    const card = screen.getByTestId("result-card");
+    fireEvent.click(within(card).getAllByTestId("image-thumbnail")[0]!);
+
+    expect(screen.getByTestId("image-lightbox-image").getAttribute("src")).toBe(
+      "/api/files/generated/result-1/asset-1",
+    );
+    expect(screen.getByTestId("image-lightbox-filename").textContent).toBe("a.png");
+  });
+
+  it("「删除」只在展开后出现，点了先出二次确认并说明发布记录一并删除", () => {
+    renderPanel({ results: [resultView()] });
+
+    const card = screen.getByTestId("result-card");
+    expect(within(card).queryByTestId("delete-result")).toBeNull();
+
+    fireEvent.click(within(card).getByTestId("result-toggle"));
+    fireEvent.click(within(card).getByTestId("delete-result"));
+
+    const dialog = screen.getByRole("dialog", { name: "删除这个结果？" });
+    expect(dialog.textContent).toContain("该结果的发布记录会一并删除，原始素材不受影响");
+  });
+
+  it("文案阶段失败时展开后给出可读提示与重试入口", () => {
+    renderPanel({ results: [resultView({ copyFailed: true })] });
+
+    const card = screen.getByTestId("result-card");
+    fireEvent.click(within(card).getByTestId("result-toggle"));
+
+    expect(within(card).getByTestId("copy-failed-hint").textContent).toBe(
+      "文案阶段失败，可重试或手动补写",
+    );
+    expect(within(card).getByTestId("copy-retry-button").textContent).toBe("重试文案阶段");
+  });
+
+  it("视觉提取降级时展开后标注原因与下一步动作", () => {
+    renderPanel({
+      results: [
+        resultView({
+          copyVisualDegraded: true,
+          copyVisualDegradedHint: "未配置图片理解网关，文案未包含照片内容；请到设置页添加 magpie-vision 网关",
+        }),
+      ],
+    });
+
+    const card = screen.getByTestId("result-card");
+    fireEvent.click(within(card).getByTestId("result-toggle"));
+
+    expect(within(card).getByTestId("copy-visual-degraded").textContent).toContain(
+      "请到设置页添加 magpie-vision 网关",
+    );
   });
 });

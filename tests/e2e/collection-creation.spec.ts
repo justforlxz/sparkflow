@@ -276,7 +276,7 @@ test("AC-C-1 AC-C-2 发起创作后留在详情页，跑完自动出现折叠结
 
   const collectionId = await createCollection(request, 2);
   await loginInBrowser(page);
-  await page.goto(`/collections/${collectionId}`);
+  await page.goto(`/collections/${collectionId}?tab=results`);
 
   // 没有任务也没有结果时是引导态，不是空白（MUST 6）。
   await expect(page.getByText("这个资源夹还没有开始 AI 创作。")).toBeVisible();
@@ -286,30 +286,30 @@ test("AC-C-1 AC-C-2 发起创作后留在详情页，跑完自动出现折叠结
   await dialog.getByTestId("submit-creation").click();
 
   // 不再跳 /tasks（AC-C-1）：提交后仍停在资源夹详情页的创作区。
-  await expect(page).toHaveURL(new RegExp(`/collections/${collectionId}(\\?tab=assets)?(#creation)?$`));
+  await expect(page).toHaveURL(new RegExp(`/collections/${collectionId}\\?tab=results(#creation)?$`));
 
   // 创作区立刻能看到这次任务（可能还在跑，也可能已经跑完）。
   const runningCard = page.getByTestId("creation-running-task");
-  const result = page.getByTestId("creation-result");
+  const result = page.getByTestId("result-card");
   await expect(runningCard.or(result).first()).toBeVisible({ timeout: 30_000 });
 
   // 跑完后不需要手动刷新，结果自己出现在创作区（轮询到终态后刷新服务端数据）。
   await expect(result).toHaveCount(1, { timeout: 60_000 });
-  await expect(page).toHaveURL(new RegExp(`/collections/${collectionId}(\\?tab=assets)?(#creation)?$`));
+  await expect(page).toHaveURL(new RegExp(`/collections/${collectionId}\\?tab=results(#creation)?$`));
 
   // 默认折叠：只有缩略图与一行摘要，文案与按钮都不出现（AC-C-2）。
-  await expect(result.getByTestId("creation-result-toggle")).toHaveAttribute(
+  await expect(result.getByTestId("result-toggle")).toHaveAttribute(
     "aria-expanded",
     "false",
   );
   await expect(result.locator("img")).toHaveCount(2);
-  await expect(result.getByTestId("creation-result-source").first()).toHaveText("原图 1");
-  await expect(result.getByTestId("creation-result-title")).toHaveCount(0);
-  await expect(result.getByTestId("creation-result-body")).toHaveCount(0);
-  await expect(result.getByTestId("creation-edit-result")).toHaveCount(0);
-  await expect(result.getByTestId("creation-publish-result")).toHaveCount(0);
+  await expect(result.getByTestId("result-source").first()).toHaveText("原图 1");
+  await expect(result.getByTestId("result-title")).toHaveCount(0);
+  await expect(result.getByTestId("result-body")).toHaveCount(0);
+  await expect(result.getByTestId("edit-result")).toHaveCount(0);
+  await expect(result.getByTestId("publish-prepare")).toHaveCount(0);
 
-  const summary = result.getByTestId("creation-result-toggle");
+  const summary = result.getByTestId("result-toggle");
   await expect(summary).toContainText("生成于");
   await expect(summary).toContainText("2 张");
   await expect(summary).toContainText("未发布");
@@ -323,49 +323,49 @@ test("AC-C-2 AC-C-3 展开后才出现文案与按钮，折叠状态刷新后保
   await waitForTerminal(request, created.id, "succeeded");
 
   await loginInBrowser(page);
-  await page.goto(`/collections/${collectionId}`);
+  await page.goto(`/collections/${collectionId}?tab=results`);
 
-  const result = page.getByTestId("creation-result");
+  const result = page.getByTestId("result-card");
   await expect(result).toHaveCount(1);
-  const toggle = result.getByTestId("creation-result-toggle");
+  const toggle = result.getByTestId("result-toggle");
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await expect(result.getByTestId("creation-result-title")).toHaveCount(0);
+  await expect(result.getByTestId("result-title")).toHaveCount(0);
   // 水印提示也按折叠规则换：折叠态只露短文案（docs/prd/05 定稿、docs/prd/07 折叠规则）。
-  await expect(result.getByTestId("creation-watermark-short-notice")).toHaveText(
+  await expect(result.getByTestId("result-watermark-short-notice")).toHaveText(
     "该模型可能自带水印，发布前请确认。",
   );
-  await expect(result.getByTestId("creation-watermark-notice")).toHaveCount(0);
+  await expect(result.getByTestId("result-watermark-notice")).toHaveCount(0);
 
   // 键盘操作：焦点落在展开按钮上，回车展开（AC-C-6 的可键盘操作部分）。
   await toggle.focus();
   await page.keyboard.press("Enter");
 
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
-  await expect(result.getByTestId("creation-result-title")).toHaveText("按脚本生成的标题");
-  await expect(result.getByTestId("creation-result-body")).toContainText("mock 阶段处理器");
-  await expect(result.getByTestId("creation-result-tags")).toContainText("#mock");
-  await expect(result.getByTestId("creation-edit-result")).toBeVisible();
-  await expect(result.getByTestId("creation-publish-result")).toBeVisible();
+  await expect(result.getByTestId("result-title")).toHaveText("按脚本生成的标题");
+  await expect(result.getByTestId("result-body")).toContainText("mock 阶段处理器");
+  await expect(result.getByTestId("result-tags")).toContainText("#mock");
+  await expect(result.getByTestId("edit-result")).toBeVisible();
+  await expect(result.getByTestId("publish-prepare")).toBeVisible();
 
   // 展开后换成定稿主文案，短文案让位（两段都在 PUBLISH_COPY 里）。
-  await expect(result.getByTestId("creation-watermark-notice")).toContainText(
+  await expect(result.getByTestId("result-watermark-notice")).toContainText(
     "图片由你在设置里选择的图片模型生成",
   );
-  await expect(result.getByTestId("creation-watermark-short-notice")).toHaveCount(0);
+  await expect(result.getByTestId("result-watermark-short-notice")).toHaveCount(0);
 
   // 刷新后保持展开（同一浏览器，本地存储）。
   await page.reload();
-  await expect(result.getByTestId("creation-result-title")).toHaveText("按脚本生成的标题");
-  await expect(result.getByTestId("creation-result-toggle")).toHaveAttribute(
+  await expect(result.getByTestId("result-title")).toHaveText("按脚本生成的标题");
+  await expect(result.getByTestId("result-toggle")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
 
   // 收起后刷新也保持收起。
-  await result.getByTestId("creation-result-toggle").click();
-  await expect(result.getByTestId("creation-result-title")).toHaveCount(0);
+  await result.getByTestId("result-toggle").click();
+  await expect(result.getByTestId("result-title")).toHaveCount(0);
   await page.reload();
-  await expect(page.getByTestId("creation-result-toggle")).toHaveAttribute(
+  await expect(page.getByTestId("result-toggle")).toHaveAttribute(
     "aria-expanded",
     "false",
   );
@@ -386,7 +386,7 @@ test("AC-C-4 失败的阶段在创作区就地显示原因与「重试」，重�
   expect(partial.stages.image.attempts).toBe(1);
 
   await loginInBrowser(page);
-  await page.goto(`/collections/${collectionId}`);
+  await page.goto(`/collections/${collectionId}?tab=results`);
 
   const troubled = page.getByTestId("creation-troubled-task");
   await expect(troubled).toBeVisible();
@@ -405,7 +405,7 @@ test("AC-C-4 失败的阶段在创作区就地显示原因与「重试」，重�
 
   // 重试成功后失败块消失，结果留在创作区（重试后轮询到终态会刷新服务端数据）。
   await expect(page.getByTestId("creation-troubled-task")).toHaveCount(0, { timeout: 60_000 });
-  await expect(page.getByTestId("creation-result")).toHaveCount(1);
+  await expect(page.getByTestId("result-card")).toHaveCount(1);
 });
 
 test("AC-C-5 从 /tasks 点「查看结果」跳到资源夹，直接看到该结果（折叠态）", async ({
@@ -425,15 +425,15 @@ test("AC-C-5 从 /tasks 点「查看结果」跳到资源夹，直接看到该�
   await expect(row).toBeVisible();
   await row.getByRole("link", { name: "查看结果" }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/collections/${collectionId}#creation`));
+  await expect(page).toHaveURL(new RegExp(`/collections/${collectionId}\\?tab=results#creation`));
 
   const result = page.locator(`[data-result-id="${done.resultId}"]`);
   await expect(result).toBeVisible();
-  await expect(result.getByTestId("creation-result-toggle")).toHaveAttribute(
+  await expect(result.getByTestId("result-toggle")).toHaveAttribute(
     "aria-expanded",
     "false",
   );
-  await expect(result.getByTestId("creation-result-title")).toHaveCount(0);
+  await expect(result.getByTestId("result-title")).toHaveCount(0);
   await expect(result.locator("img")).toHaveCount(2);
 });
 
@@ -454,12 +454,12 @@ test("AC-C-6 375px 与 320px 下创作区不横向溢出，展开与收起可键
     { width: 320, height: 568 },
   ]) {
     await page.setViewportSize(viewport);
-    await page.goto(`/collections/${collectionId}`);
+    await page.goto(`/collections/${collectionId}?tab=results`);
 
-    const card = page.getByTestId("creation-result");
+    const card = page.getByTestId("result-card");
     await expect(card).toHaveCount(1);
 
-    const toggle = card.getByTestId("creation-result-toggle");
+    const toggle = card.getByTestId("result-toggle");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     const collapsed = await viewportWidths(page);
     expect(collapsed.scrollWidth, `${viewport.width} 宽度下创作区不应横向溢出`).toBe(
@@ -471,7 +471,7 @@ test("AC-C-6 375px 与 320px 下创作区不横向溢出，展开与收起可键
     await expect(toggle).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(card.getByTestId("creation-result-title")).toBeVisible();
+    await expect(card.getByTestId("result-title")).toBeVisible();
 
     const expanded = await viewportWidths(page);
     expect(expanded.scrollWidth, `${viewport.width} 宽度下展开后仍不应横向溢出`).toBe(
@@ -481,4 +481,102 @@ test("AC-C-6 375px 与 320px 下创作区不横向溢出，展开与收起可键
     await page.keyboard.press("Enter");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   }
+});
+
+test("AC-C-7 原始素材页签只有原图与来源信息，进度与结果都在「AI 创作结果」页签", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120_000);
+
+  const collectionId = await createCollection(request, 2);
+  const created = await createTask(request, collectionId);
+  await waitForTerminal(request, created.id, "succeeded");
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${collectionId}`);
+
+  // 原始素材：只有原图网格与来源信息。
+  await expect(page.getByTestId("image-thumbnail")).toHaveCount(2);
+  await expect(page.getByRole("term").filter({ hasText: "来源平台" })).toBeVisible();
+  await expect(page.getByRole("definition").filter({ hasText: "原始文案" })).toBeVisible();
+
+  // 进度、失败任务、结果卡片一个都不在这里（MKACG-933 范围 3）。
+  await expect(page.getByTestId("creation-running-task")).toHaveCount(0);
+  await expect(page.getByTestId("creation-troubled-task")).toHaveCount(0);
+  await expect(page.getByTestId("result-card")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "正在创作" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "创作结果" })).toHaveCount(0);
+
+  // 「AI 创作结果」页签里才有结果。
+  await page.goto(`/collections/${collectionId}?tab=results`);
+  await expect(page.getByTestId("result-card")).toHaveCount(1);
+});
+
+test("AC-C-8 AC-C-9 AC-C-10 图片在站内弹窗看原图，键盘可达，关闭后焦点回到缩略图", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120_000);
+
+  const collectionId = await createCollection(request, 1);
+  const created = await createTask(request, collectionId);
+  const done = await waitForTerminal(request, created.id, "succeeded");
+  expect(done.resultId).toBeTruthy();
+
+  await loginInBrowser(page);
+  // 统计 window.open：任何图片点击都不该开新窗口（AC-C-8）。
+  await page.addInitScript(() => {
+    const state = window as unknown as { __openCount?: number };
+    state.__openCount = 0;
+    const open = window.open.bind(window);
+    window.open = (...args: Parameters<typeof window.open>) => {
+      state.__openCount = (state.__openCount ?? 0) + 1;
+      return open(...args);
+    };
+  });
+  const openCount = (): Promise<number> =>
+    page.evaluate(() => (window as unknown as { __openCount?: number }).__openCount ?? 0);
+
+  // 原始素材：缩略图是按钮，点开在站内弹窗加载原图并显示文件名（AC-C-9）。
+  await page.goto(`/collections/${collectionId}`);
+  const assetThumb = page.getByTestId("image-thumbnail").first();
+  await expect(assetThumb).toHaveJSProperty("tagName", "BUTTON");
+  expect(await assetThumb.locator("img").getAttribute("src")).toContain("?w=");
+
+  await assetThumb.click();
+  const lightbox = page.getByTestId("image-lightbox");
+  await expect(lightbox).toBeVisible();
+  await expect(page.getByTestId("image-lightbox-filename")).toHaveText("a.png");
+  const assetSrc = await page.getByTestId("image-lightbox-image").getAttribute("src");
+  expect(assetSrc).toContain(`/api/files/${collectionId}/`);
+  expect(assetSrc).not.toContain("?w=");
+
+  await page.keyboard.press("Escape");
+  await expect(lightbox).toHaveCount(0);
+  await expect(assetThumb).toBeFocused();
+
+  // 整个页面没有 target="_blank" 的图片链接，也没有开过新窗口（AC-C-8）。
+  expect(await page.locator('a[target="_blank"] img').count()).toBe(0);
+  expect(await openCount()).toBe(0);
+
+  // 提取图缩略图同样：Tab 聚焦、Enter 打开、关闭后焦点回来（AC-C-10）。
+  await page.goto(`/collections/${collectionId}?tab=results`);
+  const resultThumb = page
+    .getByTestId("result-card")
+    .first()
+    .getByTestId("image-thumbnail")
+    .first();
+  await resultThumb.focus();
+  await expect(resultThumb).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("image-lightbox")).toBeVisible();
+  const generatedSrc = await page.getByTestId("image-lightbox-image").getAttribute("src");
+  expect(generatedSrc).toContain(`/api/files/generated/${done.resultId}/`);
+  expect(generatedSrc).not.toContain("?w=");
+
+  await page.getByTestId("image-lightbox-close").click();
+  await expect(page.getByTestId("image-lightbox")).toHaveCount(0);
+  await expect(resultThumb).toBeFocused();
+  expect(await openCount()).toBe(0);
 });

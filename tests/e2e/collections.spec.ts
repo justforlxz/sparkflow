@@ -7,7 +7,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import { ACCOUNT, ensureAccount } from "./support/auth";
+import { ensureAccount, loginInBrowser } from "./support/auth";
 
 /**
  * 媒体资源夹与原始文件的端到端验收（docs/prd/01-media-collection.md AC-01-1 ~ AC-01-7，
@@ -68,15 +68,6 @@ function png(name: string) {
 }
 
 const BASE_URL = `http://127.0.0.1:${process.env.E2E_PORT ?? 3100}`;
-
-/** 浏览器上下文与 `request` 各自持有 cookie：页面用页面上登录，接口用 ensureAccount。 */
-async function loginInBrowser(page: Page): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel("邮箱").fill(ACCOUNT.email);
-  await page.getByLabel("密码").fill(ACCOUNT.password);
-  await page.getByRole("button", { name: "登录" }).click();
-  await expect(page).toHaveURL("/");
-}
 
 /** 建一个资源夹（带一张原图）。 */
 async function createCollection(

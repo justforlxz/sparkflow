@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 /** e2e 共用的测试账号。首个注册用例用它建号，其余用例用它登录。 */
 export const ACCOUNT = {
@@ -30,4 +30,13 @@ export async function ensureAccount(request: APIRequestContext): Promise<void> {
   }
 
   await loginAs(request);
+}
+
+/** 浏览器上下文与 `request` 各自持有 cookie：页面在页面上登录，接口用 ensureAccount。 */
+export async function loginInBrowser(page: Page): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("邮箱").fill(ACCOUNT.email);
+  await page.getByLabel("密码").fill(ACCOUNT.password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page).toHaveURL("/");
 }

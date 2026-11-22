@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { ACCOUNT, ensureAccount } from "./support/auth";
+import { ensureAccount, loginInBrowser } from "./support/auth";
 
 /**
  * 设计系统落地的端到端验收（MKACG-913 AC-D-4 / AC-D-5 / AC-D-7）。
@@ -21,14 +21,6 @@ const PNG_ONE_PIXEL = Buffer.from(
 const createdIds: string[] = [];
 
 const VIEWPORT = { width: 375, height: 812 };
-
-async function loginInBrowser(page: Page): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel("邮箱").fill(ACCOUNT.email);
-  await page.getByLabel("密码").fill(ACCOUNT.password);
-  await page.getByRole("button", { name: "登录" }).click();
-  await expect(page).toHaveURL("/");
-}
 
 async function createCollection(request: APIRequestContext): Promise<string> {
   const response = await request.post("/api/collections", {

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { MOCK_SCRIPT_HINTS } from "../../src/modules/image-generation/mock-script";
+import { loginInBrowser } from "./support/auth";
 import {
   cleanupLibraryData,
   createCollection,
@@ -8,7 +9,6 @@ import {
   listLibrary,
   listRuns,
   listVersions,
-  loginInBrowser,
   prepareAgents,
   uniqueName,
   waitForRun,

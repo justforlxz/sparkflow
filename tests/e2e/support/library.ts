@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, type APIRequestContext } from "@playwright/test";
 import pg from "pg";
 import { EXTRACTION_TERMINAL_STATUSES } from "../../../src/modules/extraction/constants";
-import { ACCOUNT, ensureAccount } from "./auth";
+import { ensureAccount } from "./auth";
 
 /**
  * 素材库 / 提取运行 / 文案版本共用的端到端预备动作。
@@ -194,15 +194,6 @@ export async function waitForVersion(
   if (!latest) throw new Error(`文案版本 ${versionId} 没有出现在列表里`);
   expect(latest.status, `生成失败：${latest.error?.message ?? "未知原因"}`).toBe("succeeded");
   return latest;
-}
-
-/** 浏览器上下文与 `request` 各自持有 cookie：页面在页面上登录，接口用 ensureAccount。 */
-export async function loginInBrowser(page: Page): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel("邮箱").fill(ACCOUNT.email);
-  await page.getByLabel("密码").fill(ACCOUNT.password);
-  await page.getByRole("button", { name: "登录" }).click();
-  await expect(page).toHaveURL("/");
 }
 
 /** 界面用例的数据准备走接口：发起一次提取并等它进入终态，断言只看界面。 */

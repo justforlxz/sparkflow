@@ -2,13 +2,13 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import pg from "pg";
 import { MOCK_COPY_TEXT } from "../../src/modules/copy-generation/adapters/mock";
 import { formatPublishText, parseTagInput } from "../../src/modules/publish/text";
+import { loginInBrowser } from "./support/auth";
 import {
   cleanupLibraryData,
   createCollection,
   createGateway,
   extractAndWait,
   listLibrary,
-  loginInBrowser,
   prepareAgents,
   uniqueName,
   waitForVersion,

@@ -9,13 +9,15 @@ import { isAppError } from "@/lib/errors";
 import { StageError } from "@/lib/job-failure";
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import {
+  createVisionClient,
   getGatewayExecutionTarget,
   type GatewayExecutionTarget,
 } from "@/modules/gateway/service";
+import type { VisionAnalyzer } from "@/modules/gateway/vision";
 import { MagpieImageGenerator } from "./adapters/magpie-mcp";
 import { MockImageGenerator } from "./adapters/mock";
+import { MockVisionAnalyzer } from "./adapters/mock-vision";
 import { IMAGE_ERROR_CODES, type ImageGenerator } from "./adapters/types";
-
 /** 图片 Agent 必须绑在 magpie 的图片 MCP 网关上（docs/prd/02「接口形状」）。 */
 export const MAGPIE_IMAGE_PROTOCOL = "magpie-mcp";
 
@@ -83,4 +85,17 @@ export async function resolveImageGenerator(snapshot: AgentSnapshot): Promise<Im
     baseUrl: target.baseUrl,
     apiKey: target.apiKey,
   });
+}
+
+/**
+ * 挑出这次两段式判定要用的视觉客户端（ADR 0011 第 2 条）。
+ *
+ * `null` 表示没有配置可用的图片理解网关：调用方必须按「无法判定」失败，
+ * **不得**退化成「直接提取」（MUST NOT 跳过判定直接提取，会产生幻觉素材）。
+ *
+ * mock 模式按补充要求里的脚本标记回答，不调上游（docs/acceptance.md 第 3 节）。
+ */
+export async function resolveVisionAnalyzer(extraPrompt: string | null): Promise<VisionAnalyzer | null> {
+  if (getEnv().GENERATION_ADAPTER === "mock") return new MockVisionAnalyzer(extraPrompt);
+  return createVisionClient();
 }

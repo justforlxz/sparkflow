@@ -1,38 +1,49 @@
 /**
- * 提取处理器（docs/prd/12 MUST 2）：勾选的原图 × 选中的类别，逐项调一次上游。
+ * 提取处理器（docs/prd/12 MUST 2、MUST 2b / 2c / 2d、ADR 0011）：
+ * 勾选的原图 × 选中的类别，逐项**先判定再提取**。
  *
  * 边界：
- * 1. 提取粒度 = 原图 × 类别：N 张原图、M 个类别 → 最多 N×M 次调用，`progress.total` 就是 N×M；
- * 2. 单项失败不丢弃其它项：有产出的照常交出，失败项连同原因一起交出去（整体记 partial）；
- * 3. `model` 只取自 Agent 快照；快照里没有就省略，不自造模型名；
- * 4. 落盘与写库不在这里（提取模块的 runner 负责），本文件只交图片与失败清单。
+ * 1. 提取粒度 = 原图 × 类别：N 张原图、M 个类别 → 最多 N×M 个条目，`progress.total` 就是 N×M；
+ * 2. **两段式**：每个条目先调视觉模型判定「这张图里有没有这个目标」，判定不存在就记 `skipped`
+ *    并保存模型原话，**不发起图生图**（MUST NOT 跳过判定直接提取，会产生幻觉素材）；
+ * 3. 单项失败不丢弃其它项：有产出的照常交出，失败项连同原因一起交出去（整体记 partial）；
+ * 4. `model` 只取自 Agent 快照；快照里没有就省略，不自造模型名；
+ * 5. 输出比例跟随原图（`deriveExtractionSize`），不再固定 1024×1536；
+ * 6. 落盘与写库不在这里（提取模块的 runner 负责），本文件只交图片、跳过项与失败清单。
  */
 import { logger } from "@/lib/logger";
 import { StageError } from "@/lib/job-failure";
+import type { VisionAnalyzer } from "@/modules/gateway/vision";
 import type { ImageGenerator } from "./adapters/types";
-import { compressForReferenceImage } from "./compress";
+import { compressForReferenceImage, readImageDimensions } from "./compress";
 import { describeStageFailure } from "./failure";
 import { buildImagePrompt } from "./prompt";
-import { resolveImageGenerator } from "./service";
-import { DEFAULT_IMAGE_SIZE, findExtractRequirement } from "./styles";
+import { resolveImageGenerator, resolveVisionAnalyzer } from "./service";
+import { buildExistencePrompt, deriveExtractionSize, parseExistenceVerdict } from "./vision-judgment";
 import { IMAGE_ERROR_CODES } from "./adapters/types";
-import {
-  EXTRACTION_ERROR_CODES,
-} from "@/modules/extraction/constants";
+import { EXTRACTION_ERROR_CODES, LIBRARY_COPY } from "@/modules/extraction/constants";
 import type {
   ExtractedImage,
   ExtractionContext,
   ExtractionFailure,
   ExtractionHandler,
   ExtractionOutcome,
+  ExtractionSkip,
   SourceAssetRef,
 } from "@/modules/extraction/types";
 
 export interface ExtractionHandlerDeps {
   /** 单测注入：跳过网关密钥查询与真实上游。 */
   generator?: ImageGenerator;
+  /**
+   * 单测注入：两段式判定用的视觉客户端。`null` 表示没有可用的理解网关。
+   * 不传时按 `GENERATION_ADAPTER` 现取（mock 模式给脚本化的假实现）。
+   */
+  vision?: VisionAnalyzer | null;
   /** 单测注入：跳过 sharp，直接把原图字节当成 base64 用。 */
   compress?: (bytes: Buffer) => Promise<string>;
+  /** 单测注入：跳过 sharp，直接给出原图像素尺寸。 */
+  readSize?: (bytes: Buffer) => Promise<{ width: number; height: number }>;
 }
 
 function errorCodeOf(error: unknown): string {
@@ -49,6 +60,53 @@ function selectedAssets(context: ExtractionContext): SourceAssetRef[] {
     if (asset) selected.push(asset);
   }
   return selected;
+}
+
+/**
+ * 第一段：问视觉模型「这张图里有没有这个目标」。
+ *
+ * 没有理解网关、上游报错、回复里没有「存在 / 不存在」的结论，都按失败处理 ——
+ * 猜一个结论的代价是产出一张不存在的图案，比失败更糟（ADR 0011 第 2 条）。
+ */
+async function judgeExistence(
+  vision: VisionAnalyzer | null,
+  image: string,
+  category: string,
+  signal: AbortSignal,
+): Promise<{ exists: boolean; reason: string }> {
+  if (!vision) {
+    throw new StageError(
+      EXTRACTION_ERROR_CODES.visionFailed,
+      "没有配置图片理解网关（magpie-vision），无法判定目标是否存在；请到设置页添加该网关",
+    );
+  }
+
+  let text: string;
+  try {
+    text = await vision.analyzeImage({ image, prompt: buildExistencePrompt(category) }, { signal });
+  } catch (error) {
+    // 视觉客户端的消息已经是中文可读说明（`VisionError`），原样交给失败清单。
+    throw new StageError(
+      EXTRACTION_ERROR_CODES.visionFailed,
+      error instanceof Error ? error.message : "图片理解网关没能完成判定",
+      { cause: error },
+    );
+  }
+
+  const verdict = parseExistenceVerdict(text);
+  if (!verdict) {
+    throw new StageError(
+      EXTRACTION_ERROR_CODES.visionFailed,
+      `${LIBRARY_COPY.undecidedVerdict}（模型原话：${text.trim().slice(0, 200)}）`,
+    );
+  }
+  return verdict;
+}
+
+/** 一张原图准备好的一次性输入：字节压缩结果与按长宽比推导的尺寸，同一张原图的多个类别共用。 */
+interface PreparedSource {
+  image: string;
+  size: string;
 }
 
 /**
@@ -72,55 +130,83 @@ export async function extractImages(
   }
 
   const generator = deps.generator ?? (await resolveImageGenerator(context.agent));
+  const vision = deps.vision !== undefined ? deps.vision : await resolveVisionAnalyzer(context.extraPrompt);
   const compress = deps.compress ?? compressForReferenceImage;
-  // 尺寸取自提取要求的登记表（docs/prd/05 SHOULD）；上游可选，省缺就用它的默认。
-  const size = findExtractRequirement(context.requirement)?.size ?? DEFAULT_IMAGE_SIZE;
+  const readSize = deps.readSize ?? readImageDimensions;
   const model = context.agent.modelId ?? null;
   const total = assets.length * categories.length;
 
   const images: ExtractedImage[] = [];
   const failures: ExtractionFailure[] = [];
+  const skipped: ExtractionSkip[] = [];
   let done = 0;
 
   await context.reportProgress({ done, total });
 
   for (const [offset, asset] of assets.entries()) {
+    // 原图字节每张只读一次：同一张原图的多个类别共用压缩结果与尺寸。
+    let prepared: PreparedSource | null = null;
+    let prepareError: unknown = null;
+    try {
+      const source = await context.readSourceImage(asset.id);
+      const [image, dimensions] = await Promise.all([compress(source.bytes), readSize(source.bytes)]);
+      prepared = { image, size: deriveExtractionSize(dimensions.width, dimensions.height) };
+    } catch (error) {
+      prepareError = error;
+    }
+
     for (const category of categories) {
       // 运行被中止（超时、服务停止）时不再继续下一项：否则要等 N×M 次上游超时。
       if (context.signal.aborted) {
         throw new StageError(EXTRACTION_ERROR_CODES.timeout, "提取已中止，停止继续调用");
       }
 
-      const prompt = buildImagePrompt({
-        agents: context.agent,
-        category,
-        extractRequirement: context.requirement,
-        extraPrompt: context.extraPrompt,
-      });
-
       try {
-        const source = await context.readSourceImage(asset.id);
-        const image = await compress(source.bytes);
-        const generated = await generator.generate(
-          { prompt, image, size, model },
-          { signal: context.signal },
-        );
-
-        const first = generated[0];
-        if (!first) {
+        if (prepareError) throw prepareError;
+        if (!prepared) {
           throw new StageError(
-            IMAGE_ERROR_CODES.rejected,
-            `上游没有返回原图「${asset.fileName}」的提取图`,
+            EXTRACTION_ERROR_CODES.jobFailed,
+            `读不到原图「${asset.fileName}」的字节`,
           );
         }
 
-        images.push({
-          ...first,
-          category,
-          sourceAssetId: asset.id,
-          // 序号用原图位置：同一张原图的多个类别共用同一个序号，界面据此对上来源原图。
-          sortOrder: offset + 1,
-        });
+        // 第一段：判定目标是否存在。不存在就记 skipped，不消耗生图调用（MUST 2b、AC-LIB-11）。
+        const verdict = await judgeExistence(vision, prepared.image, category, context.signal);
+        if (!verdict.exists) {
+          skipped.push({
+            category,
+            sourceAssetId: asset.id,
+            reason: verdict.reason,
+          });
+        } else {
+          // 第二段：判定存在才发起图生图，提示词按该类别描述拼装。
+          const prompt = buildImagePrompt({
+            agents: context.agent,
+            category,
+            extractRequirement: context.requirement,
+            extraPrompt: context.extraPrompt,
+          });
+          const generated = await generator.generate(
+            { prompt, image: prepared.image, size: prepared.size, model },
+            { signal: context.signal },
+          );
+
+          const first = generated[0];
+          if (!first) {
+            throw new StageError(
+              IMAGE_ERROR_CODES.rejected,
+              `上游没有返回原图「${asset.fileName}」的提取图`,
+            );
+          }
+
+          images.push({
+            ...first,
+            category,
+            sourceAssetId: asset.id,
+            // 序号用原图位置：同一张原图的多个类别共用同一个序号，界面据此对上来源原图。
+            sortOrder: offset + 1,
+          });
+        }
       } catch (error) {
         if (context.signal.aborted) {
           throw new StageError(EXTRACTION_ERROR_CODES.timeout, "提取已中止，停止继续调用");
@@ -153,10 +239,11 @@ export async function extractImages(
     model,
     total,
     succeeded: images.length,
+    skipped: skipped.length,
     failed: failures.length,
   });
 
-  return { images, failures };
+  return { images, failures, skipped };
 }
 
 /**

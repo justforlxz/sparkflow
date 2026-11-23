@@ -12,7 +12,7 @@ import { extractRequirementLabel, findExtractRequirement } from "./styles";
 export interface ImagePromptInput {
   /** 图片提取 Agent 的配置快照。 */
   agents: AgentSnapshot;
-  /** 本次要提取的类别 key（material / border），登记在 `extraction/categories.ts`。 */
+  /** 本次要提取的类别 key（topdown / texture / graphic），登记在 `extraction/categories.ts`。 */
   category: string;
   /** 提取要求 key（faithful / flatten / dereflect）。 */
   extractRequirement: string;

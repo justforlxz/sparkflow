@@ -37,3 +37,32 @@ export async function compressForReferenceImage(bytes: Buffer): Promise<string> 
 
   return `data:${REFERENCE_IMAGE_MIME};base64,${compressed.toString("base64")}`;
 }
+
+/** 一张图的像素尺寸。 */
+export interface ImageDimensions {
+  width: number;
+  height: number;
+}
+
+/**
+ * EXIF `Orientation` 为 5–8 时图像被旋转了 90° 或 270°：文件头里的宽高是**未摆正**的，
+ * 需要交换才是人眼看到的宽高。
+ */
+function isQuarterTurn(orientation: number | undefined): boolean {
+  return orientation !== undefined && orientation >= 5 && orientation <= 8;
+}
+
+/**
+ * 读一张图的**摆正后**像素尺寸（docs/prd/12 MUST 2d、AC-LIB-13）：输出比例按原图长宽比推导，
+ * 素材库记录产物的实际尺寸。读不到时给 0，由调用方退回正方形。
+ *
+ * 必须与 `compressForReferenceImage` 同向：那边先 `.rotate()` 摆正再压缩，所以传给上游的参考图
+ * 已经是摆正后的方向。`metadata()` 只读文件头、不套用任何图像操作，因此这里按 EXIF 方向交换宽高 ——
+ * 否则手机竖拍（Orientation 6）的照片会被当成横图，请求出与参考图相反的长宽比，俯视图被裁切或压扁。
+ */
+export async function readImageDimensions(bytes: Buffer): Promise<ImageDimensions> {
+  const metadata = await sharp(bytes).metadata();
+  const width = metadata.width ?? 0;
+  const height = metadata.height ?? 0;
+  return isQuarterTurn(metadata.orientation) ? { width: height, height: width } : { width, height };
+}

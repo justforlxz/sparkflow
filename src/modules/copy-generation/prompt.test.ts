@@ -9,9 +9,9 @@ const AGENT = {
 };
 
 const SELECTED: SelectedAssetRef[] = [
-  { id: "asset-1", category: "material", fileName: "a.png", mimeType: "image/png" },
-  { id: "asset-2", category: "material", fileName: "b.png", mimeType: "image/png" },
-  { id: "asset-3", category: "border", fileName: "c.png", mimeType: "image/png" },
+  { id: "asset-1", category: "topdown", fileName: "a.png", mimeType: "image/png" },
+  { id: "asset-2", category: "topdown", fileName: "b.png", mimeType: "image/png" },
+  { id: "asset-3", category: "graphic", fileName: "c.png", mimeType: "image/png" },
 ];
 
 /** 提示词拼装（docs/prd/06「输入拼装」）：四部分各自独立可断言。 */
@@ -44,10 +44,10 @@ describe("文案提示词", () => {
     expect(user).toContain("平台：小红书");
     expect(user).toContain("原始标题：原始标题");
     expect(user).toContain("张数：3");
-    expect(user).toContain("材质纹理 2 张、边框样式 1 张");
+    expect(user).toContain("桌面俯视图 2 张、形象设计 1 张");
     // 每张素材一条描述，按素材顺序编号。
-    expect(user).toContain("1. [材质纹理] 有布纹");
-    expect(user).toContain("3. [边框样式] 细边框");
+    expect(user).toContain("1. [桌面俯视图] 有布纹");
+    expect(user).toContain("3. [形象设计] 细边框");
     expect(user).toContain("文案风格：故事分享");
     expect(user).toContain("补充要求：强调耐用");
   });

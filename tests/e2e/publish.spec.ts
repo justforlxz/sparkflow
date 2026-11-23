@@ -90,7 +90,7 @@ test("AC-LIB-5 AC-P-1 界面：选 3 张素材生成 v1；再选另 2 张生成 
   await createGateway(request, "magpie-mcp", "image");
   await createGateway(request, "openai-chat", "copy");
   const collection = await createCollection(request, uniqueName("AC-LIB-5-ui"), 2);
-  await extractAndWait(request, collection, { categories: ["material", "border"] });
+  await extractAndWait(request, collection, { categories: ["topdown", "texture"] });
   const assetIds = await libraryAssetIds(request, collection.id);
   expect(assetIds).toHaveLength(4);
 
@@ -161,7 +161,7 @@ test("AC-LIB-6 界面：删掉 v1 引用的素材后，v1 仍能打开，那张�
   await createGateway(request, "magpie-mcp", "image");
   await createGateway(request, "openai-chat", "copy");
   const collection = await createCollection(request, uniqueName("AC-LIB-6-ui"), 1);
-  await extractAndWait(request, collection, { categories: ["material", "border"] });
+  await extractAndWait(request, collection, { categories: ["topdown", "texture"] });
   const assetIds = await libraryAssetIds(request, collection.id);
   await createVersion(request, collection.id, assetIds);
 
@@ -184,7 +184,7 @@ test("AC-LIB-7 界面：删掉 v2 后再次生成，界面显示 v3（编号不�
   await createGateway(request, "magpie-mcp", "image");
   await createGateway(request, "openai-chat", "copy");
   const collection = await createCollection(request, uniqueName("AC-LIB-7-ui"), 1);
-  await extractAndWait(request, collection, { categories: ["material", "border"] });
+  await extractAndWait(request, collection, { categories: ["topdown", "texture"] });
   const assetIds = await libraryAssetIds(request, collection.id);
 
   await createVersion(request, collection.id, assetIds);
@@ -224,7 +224,7 @@ test("AC-LIB-8 界面：同一版本重复标记发布，发布记录仍 1 条�
   await createGateway(request, "openai-chat", "copy");
   const collectionName = uniqueName("AC-LIB-8-ui");
   const collection = await createCollection(request, collectionName, 1);
-  await extractAndWait(request, collection, { categories: ["material", "border"] });
+  await extractAndWait(request, collection, { categories: ["topdown", "texture"] });
   const assetIds = await libraryAssetIds(request, collection.id);
   await createVersion(request, collection.id, assetIds);
 
@@ -267,7 +267,7 @@ test("AC-P-2 界面：复制文案的文本格式为「标题 / 空行 / 正文 
   await createGateway(request, "magpie-mcp", "image");
   await createGateway(request, "openai-chat", "copy");
   const collection = await createCollection(request, uniqueName("AC-P-2-ui"), 1);
-  await extractAndWait(request, collection, { categories: ["material"] });
+  await extractAndWait(request, collection, { categories: ["topdown"] });
   const assetIds = await libraryAssetIds(request, collection.id);
   await createVersion(request, collection.id, assetIds);
 
@@ -306,7 +306,7 @@ test("AC-LIB-5 界面：当前版本文案可原地保存，刷新后是新值�
   await createGateway(request, "magpie-mcp", "image");
   await createGateway(request, "openai-chat", "copy");
   const collection = await createCollection(request, uniqueName("AC-LIB-5-save"), 1);
-  await extractAndWait(request, collection, { categories: ["material"] });
+  await extractAndWait(request, collection, { categories: ["topdown"] });
   const assetIds = await libraryAssetIds(request, collection.id);
   await createVersion(request, collection.id, assetIds);
 
@@ -344,7 +344,7 @@ test("AC-LIB-5 界面：当前版本文案可原地保存，刷新后是新值�
 test("AC-P-3 界面：未选素材时「生成文案」置灰并给出提示", async ({ page, request }) => {
   await createGateway(request, "magpie-mcp", "image");
   const collection = await createCollection(request, uniqueName("AC-P-3-ui"), 1);
-  await extractAndWait(request, collection, { categories: ["material"] });
+  await extractAndWait(request, collection, { categories: ["topdown"] });
 
   await openPublishTab(page, collection.id);
 

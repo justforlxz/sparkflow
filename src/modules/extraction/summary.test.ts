@@ -11,8 +11,8 @@ function run(overrides: Partial<ExtractionRunView> = {}): ExtractionRunView {
     statusLabel: "已完成",
     requirement: "faithful",
     requirementLabel: "忠实还原",
-    categories: ["material"],
-    categoryLabels: ["材质纹理"],
+    categories: ["topdown"],
+    categoryLabels: ["桌面俯视图"],
     sourceAssetIds: ["asset-1"],
     progress: null,
     error: null,
@@ -101,7 +101,7 @@ describe("失败项数量", () => {
         code: "EXTRACTION_PARTIAL",
         message: "已保留 3/4 条素材",
         at: "2026-11-21T01:01:00.000Z",
-        failures: [failure("border", "a.png")],
+        failures: [failure("texture", "a.png")],
       },
     });
     expect(runFailureCount(partial)).toBe(1);

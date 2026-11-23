@@ -9,6 +9,7 @@ import path from "node:path";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { assertStorageSegment, resolveStoragePath } from "@/lib/storage";
+import { readImageDimensions } from "@/modules/image-generation/compress";
 import { LIBRARY_STORAGE_PREFIX } from "./constants";
 import type { LibraryWriter } from "./store";
 import type { ExtractedImage, LibraryAssetInput } from "./types";
@@ -50,15 +51,19 @@ export async function writeLibraryImages(
     const target = resolveStoragePath(storageKey);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, image.bytes);
-
     const sortOrder = image.sortOrder || index + 1;
+    const dimensions =
+      image.width && image.height
+        ? { width: image.width, height: image.height }
+        : await readImageDimensions(image.bytes);
     stored.push({
       storageKey,
       // 展示文件名与 sort_order 取同一个值：同一张原图下的多个类别不会错位。
       fileName: image.fileName?.trim() || `${sortOrder}.${path.extname(storageKey).slice(1)}`,
       mimeType: image.mimeType,
-      width: image.width ?? null,
-      height: image.height ?? null,
+      // 素材库记录产物的**实际**尺寸（MUST 2d）：上游没给就当场从字节里读，不写 null。
+      width: dimensions.width,
+      height: dimensions.height,
       category: image.category,
       sourceAssetId: image.sourceAssetId,
       sortOrder,

@@ -1,21 +1,25 @@
-// 提取运行与素材库（docs/adr/0010-提取与文案拆两段并引入素材库与版本.md、docs/prd/12-asset-library.md）。
+// 提取运行、提取条目与素材库
+// （docs/adr/0010-提取与文案拆两段并引入素材库与版本.md、docs/adr/0011-三类提取与两段式判定.md、
+// docs/prd/12-asset-library.md）。
 //
-// 一次「AI 处理」是一条 `extraction_run`：勾选的原图 × 选中的类别，逐项调用上游，
+// 一次「AI 处理」是一条 `extraction_run`：勾选的原图 × 选中的类别，逐项先判定再提取，
 // 成功的产物各写一条 `library_asset`。提取粒度是「原图 × 类别」，因此一次运行最多产
 // 原图数 × 类别数 条素材，`progress.total` 就是这个乘积（MUST 2）。
 //
 // 失败不阻断：成功的照常入库，整体状态记 `partial`（MUST 2）。运行与素材都不允许重跑覆盖旧数据 ——
 // 再跑一次就是新的一条运行，旧素材留在库里（MUST 1、MUST 3）。
 //
-// `collectionId` 用外键指向 `media_collection` 并级联删除：删资源夹时运行与素材一并删除（MUST 8）。
+// 全部条目都判定为不存在时记 `empty`：不是失败，也没有素材产出（MUST 2c）。
+//
+// `collectionId` 用外键指向 `media_collection` 并级联删除：删资源夹时运行、条目与素材一并删除（MUST 8）。
 model ExtractionRun {
   id             String          @id @default(uuid())
   collectionId   String          @map("collection_id")
-  // queued | running | succeeded | partial | failed，取值登记在 src/modules/extraction/constants.ts。
+  // queued | running | succeeded | partial | failed | empty，取值登记在 src/modules/extraction/constants.ts。
   status         String          @default("queued")
   // 提取要求：faithful | flatten | dereflect，登记在 image-generation/styles.ts。
   requirement    String
-  // material | border | other，登记在 extraction/categories.ts。
+  // topdown | texture | graphic | other，登记在 extraction/categories.ts。
   categories     String[]        @default([])
   sourceAssetIds String[]        @default([]) @map("source_asset_ids")
   // { done, total }：total = 原图数 × 类别数，按时逐项累加 done（MUST 2）。
@@ -27,10 +31,37 @@ model ExtractionRun {
   finishedAt     DateTime?       @map("finished_at")
   collection     MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
   assets         LibraryAsset[]
+  items          ExtractionItem[]
 
   @@index([collectionId, createdAt])
   @@index([status])
   @@map("extraction_run")
+}
+
+// 一条 = 一次（原图 × 类别）的尝试（ADR 0011 第 3 条、docs/prd/12「概念」表）。
+//
+// 三种结局都要留痕：`succeeded` 指向产出的素材，`skipped` 保存视觉模型的原话（判定依据），
+// `failed` 保存可读原因。界面据此在对应组内显示「判定为不存在」与模型原话。
+//
+// `libraryAssetId` 不声明外键：素材可以被手动删除（PRD 12 MAY），条目要保留「当时确实产出了」的事实。
+model ExtractionItem {
+  id              String        @id @default(uuid())
+  extractionRunId String        @map("extraction_run_id")
+  sourceAssetId   String        @map("source_asset_id")
+  category        String
+  // succeeded | skipped | failed，取值登记在 src/modules/extraction/constants.ts。
+  status          String
+  libraryAssetId  String?       @map("library_asset_id")
+  // 判定为不存在时保存的模型原话（ADR 0011「风险」：误判要能在界面看出来）。
+  skipReason      String?       @map("skip_reason")
+  // { code, message, at }：判定存在但图生图失败时的可读原因。
+  error           Json?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  extractionRun   ExtractionRun @relation(fields: [extractionRunId], references: [id], onDelete: Cascade)
+
+  @@index([extractionRunId])
+  @@index([extractionRunId, status])
+  @@map("extraction_item")
 }
 
 // 素材库里的一张产物。`category` 与 `sourceAssetId` 都不可为空（MUST 3）。

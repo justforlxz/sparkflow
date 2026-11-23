@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, type APIRequestContext } from "@playwright/test";
 import pg from "pg";
+import sharp from "sharp";
 import { EXTRACTION_TERMINAL_STATUSES } from "../../../src/modules/extraction/constants";
 import { ensureAccount } from "./auth";
 
@@ -24,17 +25,38 @@ export interface LibraryAsset {
   categoryLabel: string;
   sourceAssetId: string;
   sourceAssetIndex: number | null;
+  width: number | null;
+  height: number | null;
   url: string;
+}
+
+/** 判定为不存在的条目（AC-LIB-11）：挂在对应组里，带模型原话。 */
+export interface SkippedItem {
+  id: string;
+  category: string;
+  categoryLabel: string;
+  sourceAssetId: string;
+  sourceAssetIndex: number | null;
+  reason: string;
 }
 
 export interface LibraryBody {
   ok: true;
-  data: { groups: Array<{ category: string; label: string; items: LibraryAsset[] }>; total: number };
+  data: {
+    groups: Array<{
+      category: string;
+      label: string;
+      items: LibraryAsset[];
+      skipped: SkippedItem[];
+    }>;
+    total: number;
+  };
 }
 
 export interface ExtractionRun {
   id: string;
   status: string;
+  statusLabel: string;
   progress: { done: number; total: number } | null;
   error: { code: string; message: string; failures: unknown[] } | null;
 }
@@ -57,20 +79,31 @@ export function uniqueName(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
+/** 生成一张指定尺寸的纯色 PNG：AC-LIB-13 要断言「3:2 原图产出 3:2 图」，源图比例必须真实。 */
+export async function pngOfSize(width: number, height: number): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 3, background: { r: 200, g: 180, b: 160 } } })
+    .png()
+    .toBuffer();
+}
+
 export async function createCollection(
   request: APIRequestContext,
   name: string,
   imageCount: number,
+  options: { imageSize?: { width: number; height: number } } = {},
 ): Promise<{ id: string; assetIds: string[] }> {
   const multipart: Record<string, string | { name: string; mimeType: string; buffer: Buffer }> = {
     name,
     platform: "小红书",
   };
+  const bytes = options.imageSize
+    ? await pngOfSize(options.imageSize.width, options.imageSize.height)
+    : PNG_ONE_PIXEL;
   for (let index = 0; index < imageCount; index += 1) {
     multipart[`images-${index}`] = {
       name: `a${index}.png`,
       mimeType: "image/png",
-      buffer: PNG_ONE_PIXEL,
+      buffer: bytes,
     };
   }
 
@@ -205,7 +238,7 @@ export async function extractAndWait(
   const response = await request.post(`/api/collections/${collection.id}/extractions`, {
     data: {
       sourceAssetIds: collection.assetIds,
-      categories: options.categories ?? ["material"],
+      categories: options.categories ?? ["topdown"],
       requirement: "faithful",
       extraPrompt: options.extraPrompt,
     },

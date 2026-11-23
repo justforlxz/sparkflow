@@ -30,8 +30,11 @@ import type {
   ExtractionErrorRecord,
   ExtractionFailure,
   ExtractionHandler,
+  ExtractionItemInput,
   ExtractionRunRecord,
   ExtractionOutcome,
+  ExtractionSkip,
+  LibraryAssetRecord,
   SourceImageBytes,
 } from "./types";
 
@@ -68,14 +71,20 @@ function describeFailure(failure: ExtractionFailure, position: number): string {
   return `第 ${position} 项（${failure.fileName} · 类别 ${failure.category}）失败：${failure.message}`;
 }
 
-/** 部分失败的整段说明：逐项点名，并说明保留了几条（AC-LIB-2）。 */
+/**
+ * 部分失败的整段说明：逐项点名，并说明保留了几条（AC-LIB-2）。
+ *
+ * `attempted` 是**发起过图生图的条目数**（成功 + 失败），不含 `skipped` ——
+ * 判定为不存在的条目按设计不产出素材，把它算进分母会让「已保留 2/3」读起来像丢了一条。
+ * 因此这里的分母与 `progress.total` 口径不同：后者是全部条目（含 skipped）。
+ */
 export function describePartialFailure(
   failures: readonly ExtractionFailure[],
-  total: number,
+  attempted: number,
   kept: number,
 ): string {
   const parts = failures.map((failure, index) => describeFailure(failure, index + 1));
-  return `${parts.join("；")}。已保留 ${kept}/${total} 条素材`;
+  return `${parts.join("；")}。已保留 ${kept}/${attempted} 条素材`;
 }
 
 /** 全部失败的整段说明：同样逐项点名，并说明没有素材入库。 */
@@ -120,6 +129,54 @@ export function createExtractionRunner(options: ExtractionRunnerOptions): Extrac
     return failures.length > 0 ? { ...record, failures } : record;
   }
 
+  /**
+   * 把这一批的三种结局都写成提取条目（ADR 0011 第 3 条）：
+   * 成功的指向产出的素材，跳过的保存模型原话，失败的保存可读原因。
+   *
+   * 条目写库失败只记日志：运行终态是主记录，不能因为条目没写就把已经入库的素材说成失败。
+   */
+  async function recordItems(
+    runId: string,
+    stored: readonly LibraryAssetRecord[],
+    failures: readonly ExtractionFailure[],
+    skipped: readonly ExtractionSkip[],
+  ): Promise<void> {
+    if (stored.length === 0 && failures.length === 0 && skipped.length === 0) return;
+
+    const at = now().toISOString();
+    const items: ExtractionItemInput[] = [
+      ...stored.map((asset) => ({
+        sourceAssetId: asset.sourceAssetId,
+        category: asset.category,
+        status: "succeeded" as const,
+        libraryAssetId: asset.id,
+        skipReason: null,
+        error: null,
+      })),
+      ...skipped.map((skip) => ({
+        sourceAssetId: skip.sourceAssetId,
+        category: skip.category,
+        status: "skipped" as const,
+        libraryAssetId: null,
+        skipReason: skip.reason,
+        error: null,
+      })),
+      ...failures.map((failure) => ({
+        sourceAssetId: failure.sourceAssetId,
+        category: failure.category,
+        status: "failed" as const,
+        libraryAssetId: null,
+        skipReason: null,
+        error: { code: failure.code, message: failure.message, at },
+      })),
+    ];
+
+    try {
+      await store.saveItems(runId, items);
+    } catch (error) {
+      logger.error("提取条目写库失败，运行终态已写出", { runId, error });
+    }
+  }
   async function runOnce(): Promise<ExtractionRunOutcome> {
     const run = await store.claimNextRun(now());
     if (!run) return { ran: false };
@@ -184,8 +241,17 @@ export function createExtractionRunner(options: ExtractionRunnerOptions): Extrac
 
     const images = outcome.images;
     const failures = outcome.failures;
+    const skipped = outcome.skipped;
+
+    // 全部条目都判定为不存在：不是失败，也没有素材产出（MUST 2c、AC-LIB-12）。
+    if (images.length === 0 && failures.length === 0 && skipped.length > 0) {
+      await recordItems(run.id, [], [], skipped);
+      logger.info("提取运行没有可提取内容", { runId: run.id, skipped: skipped.length });
+      return finish(run, "empty", null);
+    }
 
     if (images.length === 0) {
+      await recordItems(run.id, [], failures, skipped);
       const record = failureRecord(
         failures[0]?.code ?? EXTRACTION_ERROR_CODES.allFailed,
         failures.length > 0
@@ -197,20 +263,25 @@ export function createExtractionRunner(options: ExtractionRunnerOptions): Extrac
       return finish(run, "failed", withFailures(record, failures));
     }
 
+    let stored: LibraryAssetRecord[];
     try {
-      const stored = await files.write(run.id, images);
-      if (stored.length > 0) await store.saveAssets(run.id, run.collectionId, stored);
+      const written = await files.write(run.id, images);
+      stored = written.length > 0 ? await store.saveAssets(run.id, run.collectionId, written) : [];
       logger.info("提取运行完成", {
         runId: run.id,
         kept: stored.length,
         failed: failures.length,
+        skipped: skipped.length,
       });
     } catch (error) {
       // 落盘或写库失败：如实失败，不能把没写进去的产出说成成功。
+      await recordItems(run.id, [], failures, skipped);
       const record = failureFrom(error, now(), EXTRACTION_ERROR_CODES.jobFailed);
       logger.error("提取结果写库失败", { runId: run.id, error });
       return finish(run, "failed", record);
     }
+
+    await recordItems(run.id, stored, failures, skipped);
 
     if (failures.length === 0) return finish(run, "succeeded", null);
 

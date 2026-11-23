@@ -61,7 +61,7 @@ function orPlaceholder(value: string | null, placeholder: string): string {
   return trimmed ? trimmed : placeholder;
 }
 
-/** 类别分布：「材质纹理 2 张、边框样式 1 张」。 */
+/** 类别分布：「桌面俯视图 2 张、基本纹理 1 张」。 */
 function describeCategories(selected: readonly SelectedAssetRef[]): string {
   const counts = new Map<string, number>();
   for (const asset of selected) {

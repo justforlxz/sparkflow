@@ -24,6 +24,8 @@ export const EXTRACTION_STATUS_TONE: Record<ExtractionStatus, PillTone> = {
   succeeded: "published",
   partial: "pendingPublish",
   failed: "danger",
+  /** 「未发现可提取内容」不是失败：用中性色，不显示为错误（MUST 2c）。 */
+  empty: "neutral",
 };
 
 /** 文案版本状态（`queued` / `running` / `succeeded` / `failed`）。 */

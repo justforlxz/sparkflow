@@ -37,6 +37,18 @@ export interface AnalyzeImageInput {
   prompt: string;
 }
 
+/**
+ * 「能识别一张图」的最小契约（docs/prd/06「视觉提取」）。
+ * 真实实现是 `MagpieVisionClient`；提取的两段式判定与文案的视觉提取都只依赖这一个接口，
+ * 单测与 mock 适配器各给一份实现。
+ */
+export interface VisionAnalyzer {
+  analyzeImage(
+    input: AnalyzeImageInput,
+    options?: { signal?: AbortSignal },
+  ): Promise<string>;
+}
+
 /** 识别失败：消息是中文可读说明，不含上游原文与密钥。 */
 export class VisionError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -64,7 +76,7 @@ function requestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-export class MagpieVisionClient {
+export class MagpieVisionClient implements VisionAnalyzer {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;

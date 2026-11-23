@@ -12,6 +12,7 @@ import { getEnv } from "@/lib/env";
 import { isAppError } from "@/lib/errors";
 import { StageError } from "@/lib/job-failure";
 import { createVisionClient, getGatewayExecutionTarget } from "@/modules/gateway/service";
+import type { VisionAnalyzer } from "@/modules/gateway/vision";
 import { findTextGenerator } from "./adapters";
 import { createMockTextGenerator } from "./adapters/mock";
 import { MOCK_SCRIPT_HINTS, hasMockHint } from "@/modules/image-generation/mock-script";
@@ -23,7 +24,6 @@ import type { CopyContext, CopyHandler, CopyOutcome } from "./types";
 import {
   extractVisualDescriptions,
   VISUAL_EXTRACTION_STATES,
-  type VisionAnalyzer,
   type VisualExtractionState,
 } from "./visual";
 

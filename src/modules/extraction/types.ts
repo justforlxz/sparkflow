@@ -7,7 +7,7 @@
  */
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import type { FailureRecord } from "@/lib/job-failure";
-import type { ExtractionStatus } from "./constants";
+import type { ExtractionItemStatus, ExtractionStatus } from "./constants";
 
 /** 一张原图，只给标识与展示信息；字节按需单独读取。 */
 export interface SourceAssetRef {
@@ -80,9 +80,21 @@ export interface ExtractionContext {
   reportProgress(progress: ExtractionProgress): Promise<void>;
 }
 
+/**
+ * 一项被视觉判定为「不存在」（原图 × 类别，ADR 0011 第 2 条）：
+ * 不发起图生图，`reason` 保存模型原话（判定依据，AC-LIB-11）。
+ */
+export interface ExtractionSkip {
+  category: string;
+  sourceAssetId: string;
+  reason: string;
+}
+
 export interface ExtractionOutcome {
   images: ExtractedImage[];
   failures: ExtractionFailure[];
+  /** 判定为不存在、没有发起图生图的条目。 */
+  skipped: ExtractionSkip[];
   meta?: Record<string, unknown>;
 }
 
@@ -109,6 +121,25 @@ export interface ExtractionRunRecord {
   extraPrompt: string | null;
   createdAt: Date;
   finishedAt: Date | null;
+}
+
+/**
+ * 一条提取条目（原图 × 类别）的落库形状（ADR 0011 第 3 条）。
+ * 三种结局共用一行：`libraryAssetId` 只在 `succeeded` 时有值，`skipReason` 只在 `skipped` 时有值。
+ */
+export interface ExtractionItemInput {
+  sourceAssetId: string;
+  category: string;
+  status: ExtractionItemStatus;
+  libraryAssetId: string | null;
+  skipReason: string | null;
+  error: FailureRecord | null;
+}
+
+export interface ExtractionItemRecord extends ExtractionItemInput {
+  id: string;
+  extractionRunId: string;
+  createdAt: Date;
 }
 
 export interface LibraryAssetInput {

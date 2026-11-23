@@ -1,8 +1,9 @@
 /**
  * mock 适配器的脚本标记（`GENERATION_ADAPTER=mock`，docs/acceptance.md 第 3 节）。
  *
- * 失败路径按脚本触发：请求的补充要求（`extraPrompt`）里带上下面某个标记，对应调用就按约定失败，
- * 这样 e2e 能用真实请求驱动「整批失败」「某一项失败」，不需要测试接口或改环境变量。
+ * 失败路径与「判定为不存在」都按脚本触发：请求的补充要求（`extraPrompt`）里带上下面某个标记，
+ * 对应调用就按约定失败或判定，这样 e2e 能用真实请求驱动「整批失败」「某一项失败」
+ * 「某个类别判定为不存在」，不需要测试接口或改环境变量。
  *
  * 标记集中在这里：适配器与用例都从这一份取，改一处即可。
  */
@@ -13,17 +14,31 @@ export const MOCK_SCRIPT_HINTS = {
   failImageAt: "mock:fail-image-at",
   /** 文案生成直接失败：验证失败原因与「不产生版本内容」。 */
   failCopy: "mock:fail-copy",
+  /** 每一次视觉判定都回「不存在」：验证 AC-LIB-12 的 `empty` 终态。 */
+  visionAbsentAll: "mock:vision-absent-all",
+  /** 只让第 n 次视觉判定回「不存在」（后面接 `-<n>`）：验证 AC-LIB-11 的 `skipped`。 */
+  visionAbsentAt: "mock:vision-absent-at",
 } as const;
+
+/** 从提示词里读「让第几次调用失败」或「让第几次判定为不存在」。 */
+function mockIndexAt(prompt: string, hint: string): number | null {
+  const matched = new RegExp(`${hint}-(\\d+)`).exec(prompt);
+  if (!matched) return null;
+  const index = Number.parseInt(matched[1] ?? "", 10);
+  return Number.isInteger(index) && index > 0 ? index : null;
+}
 
 /**
  * 从提示词里读「让第几次调用失败」。
  * 与 `failImage` 是两条独立标记：`mock:fail-image-at-2` 只让第 2 次失败，不会被当成整体失败。
  */
 export function mockFailImageAt(prompt: string): number | null {
-  const matched = new RegExp(`${MOCK_SCRIPT_HINTS.failImageAt}-(\\d+)`).exec(prompt);
-  if (!matched) return null;
-  const index = Number.parseInt(matched[1] ?? "", 10);
-  return Number.isInteger(index) && index > 0 ? index : null;
+  return mockIndexAt(prompt, MOCK_SCRIPT_HINTS.failImageAt);
+}
+
+/** 从补充要求里读「让第几次视觉判定回不存在」。 */
+export function mockVisionAbsentAt(prompt: string | null | undefined): number | null {
+  return prompt ? mockIndexAt(prompt, MOCK_SCRIPT_HINTS.visionAbsentAt) : null;
 }
 
 /** 补充要求里是否带了这个标记。 */

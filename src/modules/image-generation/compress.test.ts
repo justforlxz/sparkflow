@@ -5,6 +5,7 @@ import {
   MAX_SOURCE_EDGE,
   REFERENCE_IMAGE_MIME,
   compressForReferenceImage,
+  readImageDimensions,
 } from "./compress";
 
 /**
@@ -68,5 +69,51 @@ describe("AC-05-3 传给上游前的原图压缩", () => {
 
     expect(bytesOf(encoded).length).toBeLessThan(source.length);
     expect(JPEG_QUALITY).toBe(85);
+  });
+});
+
+/**
+ * 输出比例必须与参考图同向（docs/prd/12 MUST 2d、AC-LIB-13）：
+ * 手机竖拍的照片通常存成「横向像素 + EXIF Orientation 6」，不按 EXIF 摆正就会把竖图当横图。
+ */
+describe("AC-LIB-13 尺寸推导与参考图同向（EXIF 方向）", () => {
+  /** 造一张带 EXIF Orientation 的 JPEG：像素是 900×600，`orientation` 决定人眼看到的方向。 */
+  async function jpegWithOrientation(orientation: number): Promise<Buffer> {
+    return sharp({ create: { width: 900, height: 600, channels: 3, background: { r: 10, g: 20, b: 30 } } })
+      .jpeg()
+      .withMetadata({ orientation })
+      .toBuffer();
+  }
+
+  it("Orientation 1（不旋转）：宽高原样给出", async () => {
+    expect(await readImageDimensions(await jpegWithOrientation(1))).toEqual({
+      width: 900,
+      height: 600,
+    });
+  });
+
+  it("Orientation 6（顺时针 90°）：交换宽高，与摆正后的参考图同向", async () => {
+    const source = await jpegWithOrientation(6);
+
+    // 摆正后的参考图是竖的（600×900 的比例）。
+    const reference = await sharp(bytesOf(await compressForReferenceImage(source))).metadata();
+    expect(reference.height).toBeGreaterThan(reference.width ?? 0);
+
+    // 尺寸推导也必须读成竖图，否则请求出与参考图相反的长宽比。
+    expect(await readImageDimensions(source)).toEqual({ width: 600, height: 900 });
+  });
+
+  it("Orientation 8（逆时针 90°）：同样交换宽高", async () => {
+    expect(await readImageDimensions(await jpegWithOrientation(8))).toEqual({
+      width: 600,
+      height: 900,
+    });
+  });
+
+  it("Orientation 3（旋转 180°）：宽高不变", async () => {
+    expect(await readImageDimensions(await jpegWithOrientation(3))).toEqual({
+      width: 900,
+      height: 600,
+    });
   });
 });

@@ -3,7 +3,14 @@
  * 状态枚举、错误码、上限、超时与界面文案集中在这里（AGENTS.md 硬性规则 1）。
  */
 
-export const EXTRACTION_STATUSES = ["queued", "running", "succeeded", "partial", "failed"] as const;
+export const EXTRACTION_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "partial",
+  "failed",
+  "empty",
+] as const;
 
 export type ExtractionStatus = (typeof EXTRACTION_STATUSES)[number];
 
@@ -13,13 +20,26 @@ export const EXTRACTION_STATUS_LABELS: Record<ExtractionStatus, string> = {
   succeeded: "已完成",
   partial: "部分失败",
   failed: "失败",
+  /** 全部条目都被判定为不存在：不是失败，也没有素材产出（MUST 2c、AC-LIB-12）。 */
+  empty: "未发现可提取内容",
 };
 
-/** 无法推进的终态；`partial` 也是终态（成功的已入库，失败的记了原因）。 */
-export const EXTRACTION_TERMINAL_STATUSES = ["succeeded", "partial", "failed"] as const;
+/** 无法推进的终态；`partial` 与 `empty` 也是终态（成功的已入库，失败的记了原因）。 */
+export const EXTRACTION_TERMINAL_STATUSES = ["succeeded", "partial", "failed", "empty"] as const;
 
 /** 还没进终态的运行：界面在有这些运行时按 `EXTRACTION_POLL_INTERVAL_MS` 轮询进度。 */
 export const EXTRACTION_ACTIVE_STATUSES = ["queued", "running"] as const;
+
+/**
+ * 提取条目（原图 × 类别）的状态（ADR 0011 第 3 条）：
+ * - `succeeded`：判定存在且图生图成功，产出一条素材；
+ * - `skipped`：视觉判定为不存在，不发起图生图，`skipReason` 保存模型原话；
+ * - `failed`：判定存在但图生图失败，`error` 记录可读原因。
+ */
+export const EXTRACTION_ITEM_STATUSES = ["succeeded", "skipped", "failed"] as const;
+
+export type ExtractionItemStatus = (typeof EXTRACTION_ITEM_STATUSES)[number];
+
 
 /** 作业错误的业务子码（写进 `extraction_run.error.code`）。 */
 export const EXTRACTION_ERROR_CODES = {
@@ -35,6 +55,8 @@ export const EXTRACTION_ERROR_CODES = {
   allFailed: "EXTRACTION_ALL_FAILED",
   /** 部分项失败：成功的已入库，整体记 partial。 */
   partial: "EXTRACTION_PARTIAL",
+  /** 视觉判定失败（没有理解网关、上游报错、回复里没有「存在 / 不存在」的结论）。 */
+  visionFailed: "EXTRACTION_VISION_FAILED",
 } as const;
 
 /** 单次提取运行的总超时：一图一类别一次调用，随勾选量增长。 */
@@ -94,4 +116,12 @@ export const LIBRARY_COPY = {
   deleteConfirmBody: "已经引用它的文案版本仍能打开，被删的素材会显示为「已删除素材」。",
   confirmDelete: "确认删除",
   historyGroupLabel: "其他（历史）",
+  /** 被视觉判定为不存在的条目（ADR 0011 第 3 条）：组内如实说明，模型原话可折叠展开。 */
+  skippedLabel: "判定为不存在",
+  skipReasonLabel: "模型原话",
+  /** 视觉判定没给出「存在 / 不存在」的结论时，如实记失败，不猜。 */
+  undecidedVerdict: "视觉判定没有给出「存在」或「不存在」的结论",
+  /** 判定提示词里要求模型回答的两个词（解析器与提示词共用一份）。 */
+  verdictPresent: "存在",
+  verdictAbsent: "不存在",
 } as const;

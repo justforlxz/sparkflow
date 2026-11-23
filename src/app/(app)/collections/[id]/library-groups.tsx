@@ -4,13 +4,16 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { CHECKBOX_CLASS } from "@/components/ui/styles";
 import { LIBRARY_COPY } from "@/modules/extraction/constants";
-import type { LibraryAssetView, LibraryView } from "@/modules/extraction/view";
+import type { LibraryAssetView, LibraryView, SkippedItemView } from "@/modules/extraction/view";
 import type { CollectionDetailView } from "@/modules/media-collection/service";
 
 /**
- * 素材库的分组网格（docs/prd/12「页面结构」MUST 3、SHOULD）：
+ * 素材库的分组网格（docs/prd/12「页面结构」MUST 3、SHOULD、AC-LIB-11）：
  * 按类别分组（组内生成时间倒序），每组给出数量；每条显示来源原图的小缩略图，
  * 点击在站内弹窗预览。
+ *
+ * 判定为不存在的条目不是素材，但在组内如实显示「判定为不存在」与模型原话（可折叠）——
+ * 视觉判定可能误判，误判要能在界面看出来（ADR 0011「风险」）。
  *
  * 「素材库」页签与「发布」页签共用这一份：分组规则、来源标签与缩略图行为只写一次，
  * 两个页签只决定勾选去做什么（删除 / 交给文案 Agent）。
@@ -35,7 +38,8 @@ export function LibraryGroups({
   selectLabel,
   emptyMessage,
 }: LibraryGroupsProps) {
-  if (library.total === 0) return <EmptyState message={emptyMessage} />;
+  // 只有「判定为不存在」的组也要渲染：否则用户看不到「为什么这次什么都没提取到」。
+  if (library.groups.length === 0) return <EmptyState message={emptyMessage} />;
 
   const sources = new Map(sourceAssets.map((asset) => [asset.id, asset]));
 
@@ -68,11 +72,21 @@ export function LibraryGroups({
                 onToggle={() => onToggle(asset.id)}
               />
             ))}
+            {group.skipped.map((item) => (
+              <SkippedItem key={item.id} item={item} />
+            ))}
           </ul>
         </section>
       ))}
     </div>
   );
+}
+
+/** 来源原图的读法：「原图 N」；原图被解除关联时如实说明，不猜编号。 */
+function sourceLabelOf(sourceAssetIndex: number | null): string {
+  return sourceAssetIndex === null
+    ? LIBRARY_COPY.noSourceAssetLabel
+    : `${LIBRARY_COPY.sourceAssetLabelPrefix} ${sourceAssetIndex}`;
 }
 
 interface LibraryItemProps {
@@ -86,10 +100,7 @@ interface LibraryItemProps {
 
 function LibraryItem({ asset, source, checked, selectLabel, onToggle }: LibraryItemProps) {
   // 来源原图的序号取自服务端视图（原图被移除时是 null），界面不自己推编号。
-  const sourceLabel =
-    asset.sourceAssetIndex === null
-      ? LIBRARY_COPY.noSourceAssetLabel
-      : `${LIBRARY_COPY.sourceAssetLabelPrefix} ${asset.sourceAssetIndex}`;
+  const sourceLabel = sourceLabelOf(asset.sourceAssetIndex);
 
   return (
     <li data-testid="library-item" className="space-y-1 text-caption text-ink-tertiary">
@@ -118,8 +129,33 @@ function LibraryItem({ asset, source, checked, selectLabel, onToggle }: LibraryI
             className="h-6 w-6 shrink-0 rounded-sm border border-line object-cover"
           />
         ) : null}
-        <span className="min-w-0 truncate">{sourceLabel}</span>
+        <span className="block min-w-0 truncate">{sourceLabel}</span>
       </p>
+    </li>
+  );
+}
+
+/**
+ * 一条「判定为不存在」的条目：没有图片可预览，也没有勾选框（它不是素材）。
+ * 模型原话折叠在 `<details>` 里，展开才看得到依据。
+ */
+function SkippedItem({ item }: { item: SkippedItemView }) {
+  return (
+    <li
+      data-testid="library-skipped-item"
+      className="space-y-1 rounded-md border border-dashed border-line p-2 text-caption text-ink-tertiary"
+    >
+      <p className="text-body text-ink-secondary">{LIBRARY_COPY.skippedLabel}</p>
+      <p className="truncate">{sourceLabelOf(item.sourceAssetIndex)}</p>
+      <details>
+        <summary className="cursor-pointer select-none">{LIBRARY_COPY.skipReasonLabel}</summary>
+        <p
+          data-testid="library-skipped-reason"
+          className="mt-1 whitespace-pre-wrap break-words"
+        >
+          {item.reason}
+        </p>
+      </details>
     </li>
   );
 }

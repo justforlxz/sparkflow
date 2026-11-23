@@ -54,7 +54,7 @@ async function createLibraryAsset(collectionId: string, index: number): Promise<
       collectionId,
       status: "succeeded",
       requirement: "faithful",
-      categories: ["material"],
+      categories: ["topdown"],
       sourceAssetIds: [],
       progress: { done: 1, total: 1 },
       finishedAt: new Date(),
@@ -66,7 +66,7 @@ async function createLibraryAsset(collectionId: string, index: number): Promise<
       collectionId,
       extractionRunId: run.id,
       sourceAssetId: `source-${index}`,
-      category: "material",
+      category: "topdown",
       storageKey: `library-assets/${run.id}/${index}.png`,
       fileName: `${index}.png`,
       mimeType: "image/png",
@@ -154,7 +154,7 @@ describe("AC-LIB-1 进度总数 = 原图数 × 类别数（接口层给得出）
 
     const run = await createExtraction(id, {
       sourceAssetIds: assetIds,
-      categories: ["material", "border"],
+      categories: ["topdown", "texture"],
       requirement: "faithful",
     });
 
@@ -170,7 +170,7 @@ describe("AC-LIB-1 进度总数 = 原图数 × 类别数（接口层给得出）
     await expect(
       createExtraction(otherId, {
         sourceAssetIds: [`${id}-not-an-asset`],
-        categories: ["material"],
+        categories: ["topdown"],
         requirement: "faithful",
       }),
     ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
@@ -202,7 +202,7 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
 
     await createExtraction(id, {
       sourceAssetIds: assetIds,
-      categories: ["material", "border"],
+      categories: ["topdown", "texture"],
       requirement: "faithful",
     });
 
@@ -213,7 +213,7 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
         const images: ExtractedImage[] = [];
         const failures = [];
         for (const [assetIndex, assetId] of assetIds.entries()) {
-          for (const category of ["material", "border"]) {
+          for (const category of ["topdown", "texture"]) {
             if (call === 2) {
               failures.push({
                 category,
@@ -234,7 +234,7 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
             call += 1;
           }
         }
-        return { images, failures };
+        return { images, failures, skipped: [] };
       },
     };
 
@@ -279,7 +279,7 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
 
     const library = await listLibrary(id);
     expect(library.total).toBe(3);
-    expect(library.groups.map((group) => group.category).sort()).toEqual(["border", "material"]);
+    expect(library.groups.map((group) => group.category).sort()).toEqual(["texture", "topdown"]);
   });
 });
 
@@ -309,7 +309,7 @@ describe("AC-LIB-4 两条作业链互不触发", () => {
       },
       loadCollection: async () => ({ id, platform: null, sourceTitle: null, sourceBody: null }),
       loadAssets: async () => [
-        { id: assetId, category: "material", fileName: "1.png", mimeType: "image/png" },
+        { id: assetId, category: "topdown", fileName: "1.png", mimeType: "image/png" },
       ],
       loadAssetImage: async () => ({ bytes: Buffer.from(""), mimeType: "image/png" }),
     });
@@ -334,7 +334,7 @@ describe("AC-LIB-4 两条作业链互不触发", () => {
 
     await createExtraction(id, {
       sourceAssetIds: assetIds,
-      categories: ["material"],
+      categories: ["topdown"],
       requirement: "faithful",
     });
 
@@ -360,12 +360,13 @@ describe("AC-LIB-4 两条作业链互不触发", () => {
               {
                 bytes: Buffer.from("png"),
                 mimeType: "image/png",
-                category: "material",
+                category: "topdown",
                 sourceAssetId: assetIds[0] as string,
                 sortOrder: 1,
               },
             ],
             failures: [],
+            skipped: [],
           };
         },
       },

@@ -9,6 +9,8 @@ import type { ExtractionStore } from "./store";
 import type { ExtractionStatus } from "./constants";
 import type {
   ExtractionErrorRecord,
+  ExtractionItemInput,
+  ExtractionItemRecord,
   ExtractionProgress,
   ExtractionRunRecord,
   LibraryAssetInput,
@@ -78,6 +80,44 @@ const LIBRARY_SELECT = {
   sortOrder: true,
   createdAt: true,
 } as const;
+
+const ITEM_SELECT = {
+  id: true,
+  extractionRunId: true,
+  sourceAssetId: true,
+  category: true,
+  status: true,
+  libraryAssetId: true,
+  skipReason: true,
+  error: true,
+  createdAt: true,
+} as const;
+
+interface RawItemRow {
+  id: string;
+  extractionRunId: string;
+  sourceAssetId: string;
+  category: string;
+  status: string;
+  libraryAssetId: string | null;
+  skipReason: string | null;
+  error: unknown;
+  createdAt: Date;
+}
+
+function toItemRecord(row: RawItemRow): ExtractionItemRecord {
+  return {
+    id: row.id,
+    extractionRunId: row.extractionRunId,
+    sourceAssetId: row.sourceAssetId,
+    category: row.category,
+    status: row.status as ExtractionItemRecord["status"],
+    libraryAssetId: row.libraryAssetId,
+    skipReason: row.skipReason,
+    error: (row.error as ExtractionItemRecord["error"]) ?? null,
+    createdAt: row.createdAt,
+  };
+}
 
 export interface NewRunInput {
   collectionId: string;
@@ -187,14 +227,17 @@ export async function failRunningRuns(
   return count;
 }
 
-/** 成功的产出入库：同一批一次写入，素材与运行分开两笔（素材先到，终态后写）。 */
+/**
+ * 成功的产出入库：同一批一次写入，素材与运行分开两笔（素材先到，终态后写）。
+ * 返回落库后的记录 —— 提取条目要用它拿到 `library_asset_id`（ADR 0011 第 3 条）。
+ */
 export async function saveAssets(
   runId: string,
   collectionId: string,
   assets: readonly LibraryAssetInput[],
-): Promise<void> {
-  if (assets.length === 0) return;
-  await getDb().libraryAsset.createMany({
+): Promise<LibraryAssetRecord[]> {
+  if (assets.length === 0) return [];
+  const rows = await getDb().libraryAsset.createManyAndReturn({
     data: assets.map((asset) => ({
       id: randomUUID(),
       collectionId,
@@ -208,7 +251,44 @@ export async function saveAssets(
       height: asset.height,
       sortOrder: asset.sortOrder,
     })),
+    select: LIBRARY_SELECT,
   });
+  return rows as LibraryAssetRecord[];
+}
+
+/** 写这一批提取条目：三种结局各一条，一次写入（ADR 0011 第 3 条）。 */
+export async function saveItems(
+  runId: string,
+  items: readonly ExtractionItemInput[],
+): Promise<void> {
+  if (items.length === 0) return;
+  await getDb().extractionItem.createMany({
+    data: items.map((item) => ({
+      id: randomUUID(),
+      extractionRunId: runId,
+      sourceAssetId: item.sourceAssetId,
+      category: item.category,
+      status: item.status,
+      libraryAssetId: item.libraryAssetId,
+      skipReason: item.skipReason,
+      error: jsonOrDbNull(item.error),
+    })),
+  });
+}
+
+/**
+ * 素材库里「判定为不存在」的条目（AC-LIB-11）：界面在对应组内显示「判定为不存在」与模型原话。
+ * 组内按生成时间倒序，与素材同一顺序。
+ */
+export async function listSkippedItemsByCollection(
+  collectionId: string,
+): Promise<ExtractionItemRecord[]> {
+  const rows = await getDb().extractionItem.findMany({
+    where: { status: "skipped", extractionRun: { collectionId } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: ITEM_SELECT,
+  });
+  return (rows as RawItemRow[]).map(toItemRecord);
 }
 
 /** 素材库：组内按生成时间倒序（docs/prd/12 SHOULD）。 */
@@ -281,4 +361,5 @@ export const extractionStore: ExtractionStore = {
   finishRun,
   failRunningRuns,
   saveAssets,
+  saveItems,
 };

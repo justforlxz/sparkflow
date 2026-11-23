@@ -119,12 +119,20 @@ export async function listExtractionRuns(collectionId: string): Promise<Extracti
   return runs.map(toExtractionRunView);
 }
 
-/** 素材库：按类别分组（`GET .../library`）。来源原图序号取自资源夹当前的原图顺序。 */
+/**
+ * 素材库：按类别分组（`GET .../library`）。来源原图序号取自资源夹当前的原图顺序。
+ *
+ * 同时取「判定为不存在」的条目：它们不是素材（`total` 不计），但要在组内显示判定依据（AC-LIB-11）。
+ */
 export async function listLibrary(collectionId: string): Promise<LibraryView> {
   const collection = await getCollection(collectionId);
-  const assets = await repo.listLibraryByCollection(collectionId);
+  const [assets, skipped] = await Promise.all([
+    repo.listLibraryByCollection(collectionId),
+    repo.listSkippedItemsByCollection(collectionId),
+  ]);
   return toLibraryView(
     assets,
+    skipped,
     collection.assets.map((asset) => asset.id),
   );
 }

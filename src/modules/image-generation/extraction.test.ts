@@ -6,6 +6,8 @@ import type {
   ExtractionProgress,
   SourceAssetRef,
 } from "@/modules/extraction/types";
+import { findCategory } from "@/modules/extraction/categories";
+import type { VisionAnalyzer } from "@/modules/gateway/vision";
 import { StageError } from "@/lib/job-failure";
 import type { GenerateImageInput, ImageGenerator } from "./adapters/types";
 import { extractImages } from "./extraction";
@@ -42,7 +44,32 @@ function countingGenerator(failAt?: number): Counted {
       if (failAt !== undefined && calls.length === failAt) {
         throw new StageError("UPSTREAM_REJECTED", "上游不接受这个模型");
       }
-      return [{ bytes: Buffer.from("png"), mimeType: "image/png", width: 1024, height: 1536 }];
+      return [{ bytes: Buffer.from("png"), mimeType: "image/png", width: 1536, height: 1024 }];
+    },
+  };
+}
+
+/**
+ * 假视觉判定：默认每个条目都「存在」；`absent` 里的类别 key 回「不存在」。
+ * 记录每次判定的提示词，用来断言判定确实发生在图生图之前。
+ *
+ * 按 `presenceQuestion` 认类别（MUST 2b-1：判定问的是主体存不存在，不是产物形态）。
+ */
+interface CountedVision extends VisionAnalyzer {
+  prompts: string[];
+}
+
+function vision(absent: readonly string[] = []): CountedVision {
+  const prompts: string[] = [];
+  return {
+    prompts,
+    async analyzeImage(input) {
+      prompts.push(input.prompt);
+      const missing = absent.some((value) => {
+        const question = findCategory(value)?.presenceQuestion;
+        return question !== undefined && input.prompt.includes(question);
+      });
+      return missing ? "不存在：画面里没有这个目标" : "存在：目标位于画面中央";
     },
   };
 }
@@ -75,27 +102,33 @@ function context(
   };
 }
 
+/** 单测注入：跳过 sharp，直接给出固定的原图尺寸（3:2）。 */
+const readSize = async () => ({ width: 900, height: 600 });
+const compress = async () => "data:image/jpeg;base64,AA==";
+
+function deps(generator: ImageGenerator, absent: readonly string[] = []) {
+  return { generator, vision: vision(absent), compress, readSize };
+}
+
 /** 提取粒度 = 原图 × 类别（docs/prd/12 MUST 2、AC-LIB-1、AC-LIB-2）。 */
 describe("提取处理器", () => {
   it("2 张原图 × 2 个类别 = 4 次调用，进度 total 也是 4", async () => {
     const generator = countingGenerator();
     const progress: ExtractionProgress[] = [];
 
-    const outcome = await extractImages(context(["material", "border"], progress), {
-      generator,
-      compress: async () => "data:image/jpeg;base64,AA==",
-    });
+    const outcome = await extractImages(context(["topdown", "texture"], progress), deps(generator));
 
     expect(generator.calls).toHaveLength(4);
     expect(outcome.images).toHaveLength(4);
     expect(outcome.failures).toEqual([]);
+    expect(outcome.skipped).toEqual([]);
     expect(progress.at(-1)).toEqual({ done: 4, total: 4 });
     // 每条素材都带来源原图与类别（MUST 3）。
     expect(outcome.images.map((image) => image.category).sort()).toEqual([
-      "border",
-      "border",
-      "material",
-      "material",
+      "texture",
+      "texture",
+      "topdown",
+      "topdown",
     ]);
     expect(new Set(outcome.images.map((image) => image.sourceAssetId))).toEqual(
       new Set(["asset-1", "asset-2"]),
@@ -109,16 +142,14 @@ describe("提取处理器", () => {
     const generator = countingGenerator(2);
     const progress: ExtractionProgress[] = [];
 
-    const outcome = await extractImages(context(["material", "border"], progress), {
-      generator,
-      compress: async () => "data:image/jpeg;base64,AA==",
-    });
+    const outcome = await extractImages(context(["topdown", "texture"], progress), deps(generator));
 
+    // 第 2 次调用抛错：4 次调用都发生了，但只有 3 条产出。
     expect(generator.calls).toHaveLength(4);
     expect(outcome.images).toHaveLength(3);
     expect(outcome.failures).toHaveLength(1);
     expect(outcome.failures[0]).toMatchObject({
-      category: "border",
+      category: "texture",
       sourceAssetId: "asset-1",
       fileName: "a.png",
       code: "UPSTREAM_REJECTED",
@@ -126,29 +157,112 @@ describe("提取处理器", () => {
     expect(progress.at(-1)).toEqual({ done: 4, total: 4 });
   });
 
-  it("提示词按类别拼装，并带上提取要求与补充要求", async () => {
+  it("生图提示词按类别拼装：带 description（产物形态）、提取要求与补充要求", async () => {
     const generator = countingGenerator();
-    await extractImages(context(["material"], [], "mock:强调耐用"), {
-      generator,
-      compress: async () => "data:image/jpeg;base64,AA==",
-    });
+    await extractImages(context(["topdown"], [], "mock:强调耐用"), deps(generator));
 
     const prompt = generator.calls[0]?.prompt ?? "";
-    expect(prompt).toContain("材质纹理");
+    expect(prompt).toContain("桌面俯视图");
+    // `description` 只留在生图提示词里（MUST 2b-1）：它描述的是产物形态。
+    expect(prompt).toContain(findCategory("topdown")?.description);
     expect(prompt).toContain("忠实还原");
     expect(prompt).toContain("补充要求：mock:强调耐用");
     // 只带当前这一张原图，不是整个资源夹（一图一类别一次调用）。
     expect(generator.calls[0]?.image).toBe("data:image/jpeg;base64,AA==");
   });
 
+  it("尺寸按原图长宽比推导：3:2 原图请求 1536x1024（AC-LIB-13）", async () => {
+    const generator = countingGenerator();
+    await extractImages(context(["topdown"]), deps(generator));
+
+    expect(generator.calls[0]?.size).toBe("1536x1024");
+  });
+
+  it("判定为不存在：记 skipped、保存模型原话、不发起图生图（AC-LIB-11）", async () => {
+    const generator = countingGenerator();
+    const progress: ExtractionProgress[] = [];
+
+    const outcome = await extractImages(
+      context(["graphic"], progress),
+      deps(generator, ["graphic"]),
+    );
+
+    // 关键断言：图生图调用计数为 0。
+    expect(generator.calls).toHaveLength(0);
+    expect(outcome.images).toEqual([]);
+    expect(outcome.failures).toEqual([]);
+    expect(outcome.skipped).toHaveLength(2);
+    expect(outcome.skipped[0]).toMatchObject({
+      category: "graphic",
+      sourceAssetId: "asset-1",
+      reason: "不存在：画面里没有这个目标",
+    });
+    // 跳过的条目也算处理完：进度照常推进到总数。
+    expect(progress.at(-1)).toEqual({ done: 2, total: 2 });
+  });
+
+  it("先判定再提取：每个条目都先问一次视觉模型，存在时才调图生图", async () => {
+    const generator = countingGenerator();
+    const judge = vision(["texture"]);
+
+    const outcome = await extractImages(context(["topdown", "texture"]), {
+      generator,
+      vision: judge,
+      compress,
+      readSize,
+    });
+
+    // 2 张原图 × 2 个类别 = 4 次判定；只有 topdown 的 2 条发起图生图。
+    expect(judge.prompts).toHaveLength(4);
+    expect(generator.calls).toHaveLength(2);
+    expect(outcome.skipped.map((skip) => skip.category)).toEqual(["texture", "texture"]);
+    // 判定提示词要求模型用固定的两个词回答。
+    expect(judge.prompts[0]).toContain("只回答「存在」或「不存在」");
+    // 判定问的是原图里有没有主体，不是产物形态（MUST 2b-1、AC-LIB-16）。
+    expect(judge.prompts[0]).toContain(findCategory("topdown")?.presenceQuestion);
+    expect(judge.prompts[0]).not.toContain(findCategory("topdown")?.description);
+  });
+
+  it("没有可用的理解网关：按失败处理，不跳过判定直接提取", async () => {
+    const generator = countingGenerator();
+    const outcome = await extractImages(context(["topdown"]), {
+      generator,
+      vision: null,
+      compress,
+      readSize,
+    });
+
+    expect(generator.calls).toHaveLength(0);
+    expect(outcome.images).toEqual([]);
+    expect(outcome.failures[0]).toMatchObject({
+      category: "topdown",
+      code: EXTRACTION_ERROR_CODES.visionFailed,
+    });
+    expect(outcome.failures[0]?.message).toContain("magpie-vision");
+  });
+
+  it("判定回复里没有「存在 / 不存在」：如实失败，不替模型下结论", async () => {
+    const generator = countingGenerator();
+    const outcome = await extractImages(context(["topdown"]), {
+      generator,
+      vision: { analyzeImage: async () => "看起来像是有的" },
+      compress,
+      readSize,
+    });
+
+    expect(generator.calls).toHaveLength(0);
+    expect(outcome.failures[0]?.code).toBe(EXTRACTION_ERROR_CODES.visionFailed);
+    expect(outcome.failures[0]?.message).toContain("看起来像是有的");
+  });
+
   it("勾选的原图都已被移除：直接失败，不调上游", async () => {
     const generator = countingGenerator();
-    const base = context(["material"]);
+    const base = context(["topdown"]);
 
     await expect(
       extractImages(
         { ...base, sourceAssetIds: ["gone"], collection: { ...base.collection, assets: ASSETS } },
-        { generator, compress: async () => "" },
+        deps(generator),
       ),
     ).rejects.toMatchObject({ code: EXTRACTION_ERROR_CODES.jobFailed });
     expect(generator.calls).toHaveLength(0);
@@ -157,7 +271,7 @@ describe("提取处理器", () => {
   it("被中止时不再继续下一项：不把剩下所有上游超时都等一遍", async () => {
     const controller = new AbortController();
     const generator = countingGenerator();
-    const base = context(["material", "border"]);
+    const base = context(["topdown", "texture"]);
     const slowGenerator: ImageGenerator = {
       async generate(input) {
         await generator.generate(input);
@@ -169,7 +283,7 @@ describe("提取处理器", () => {
     await expect(
       extractImages(
         { ...base, signal: controller.signal },
-        { generator: slowGenerator, compress: async () => "" },
+        { generator: slowGenerator, vision: vision(), compress, readSize },
       ),
     ).rejects.toMatchObject({ code: EXTRACTION_ERROR_CODES.timeout });
     expect(generator.calls).toHaveLength(1);
@@ -178,23 +292,23 @@ describe("提取处理器", () => {
   it("mock 适配器的脚本标记能驱动单项失败", async () => {
     // 标记本身与用例共用一份常量：改一处即可。
     expect(MOCK_SCRIPT_HINTS.failImageAt).toBe("mock:fail-image-at");
+    expect(MOCK_SCRIPT_HINTS.visionAbsentAll).toBe("mock:vision-absent-all");
   });
 
   it("进度从这个运行的 total 起步，先写 done = 0", async () => {
     const progress: ExtractionProgress[] = [];
-    await extractImages(context(["material", "border"], progress), {
-      generator: countingGenerator(),
-      compress: async () => "",
-    });
+    await extractImages(context(["topdown", "texture"], progress), deps(countingGenerator()));
     expect(progress[0]).toEqual({ done: 0, total: 4 });
   });
 
   it("不发任何文案请求：提取处理器只依赖出图适配器", async () => {
     // 用调用计数锁住：一次提取只调图片生成，次数等于 原图数 × 类别数。
     const generator = vi.fn(countingGenerator().generate);
-    await extractImages(context(["material", "border"]), {
+    await extractImages(context(["topdown", "texture"]), {
       generator: { generate: generator },
-      compress: async () => "",
+      vision: vision(),
+      compress,
+      readSize,
     });
     expect(generator).toHaveBeenCalledTimes(4);
   });

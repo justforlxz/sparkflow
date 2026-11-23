@@ -12,11 +12,12 @@
 import { logger } from "@/lib/logger";
 import { categoryLabel } from "@/modules/extraction/categories";
 import { compressForReferenceImage } from "@/modules/image-generation/compress";
+import type { VisionAnalyzer } from "@/modules/gateway/vision";
 import type { AssetImageBytes, SelectedAssetRef } from "./types";
 
 /**
  * 每张素材的一条指令：聚焦素材本身的特征。
- * 类别决定问什么 —— 材质纹理问质感，边框样式问线宽与转角。
+ * 类别决定问什么 —— 桌面俯视图问整体构图，基本纹理问质感，形象设计问图案。
  */
 export function buildVisualExtractionInstruction(category: string): string {
   return `用中文写出这张「${categoryLabel(category)}」素材的材质、纹理、图案与颜色，两句话以内。`;
@@ -24,14 +25,6 @@ export function buildVisualExtractionInstruction(category: string): string {
 
 /** 单条描述的长度上限：只防超长输出，不改变语义。 */
 export const MAX_VISUAL_DESCRIPTION_LENGTH = 500;
-
-/** 「能识别一张图」的最小契约：真实实现是 `MagpieVisionClient`（网关模块），单测注入假实现。 */
-export interface VisionAnalyzer {
-  analyzeImage(
-    input: { image: string; prompt: string },
-    options?: { signal?: AbortSignal },
-  ): Promise<string>;
-}
 
 /**
  * 视觉提取的三种结局，写进 `copy_version.agent_snapshot` 之外的调用摘要：

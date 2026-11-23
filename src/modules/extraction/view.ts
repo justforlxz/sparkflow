@@ -6,7 +6,12 @@ import { extractRequirementLabel } from "@/modules/image-generation/styles";
 import { DEFAULT_THUMBNAIL_WIDTH } from "@/modules/media-collection/constants";
 import { EXTRACTION_CATEGORIES, categoryLabel } from "./categories";
 import { EXTRACTION_STATUS_LABELS, type ExtractionStatus } from "./constants";
-import type { ExtractionErrorRecord, ExtractionRunRecord, LibraryAssetRecord } from "./types";
+import type {
+  ExtractionErrorRecord,
+  ExtractionItemRecord,
+  ExtractionRunRecord,
+  LibraryAssetRecord,
+} from "./types";
 
 /** 素材图片的鉴权读取地址（docs/architecture.md「文件」）。 */
 export function libraryAssetUrl(assetId: string, width?: number): string {
@@ -26,9 +31,27 @@ export interface LibraryAssetView {
   sourceAssetIndex: number | null;
   fileName: string;
   mimeType: string;
+  /** 产物的实际像素尺寸（MUST 2d：界面按实际尺寸展示，不假设固定比例）。 */
+  width: number | null;
+  height: number | null;
   /** 鉴权读取素材图片的地址，可直接渲染。 */
   url: string;
   thumbnailUrl: string;
+  createdAt: string;
+}
+
+/**
+ * 一条「判定为不存在」的提取条目（ADR 0011 第 3 条、AC-LIB-11）：
+ * 组内显示「判定为不存在」与模型原话，让误判能在界面看出来。
+ */
+export interface SkippedItemView {
+  id: string;
+  category: string;
+  categoryLabel: string;
+  sourceAssetId: string;
+  sourceAssetIndex: number | null;
+  /** 视觉模型的原话（判定依据）。 */
+  reason: string;
   createdAt: string;
 }
 
@@ -36,11 +59,14 @@ export interface LibraryGroupView {
   category: string;
   label: string;
   items: LibraryAssetView[];
+  /** 这一组里判定为不存在的条目；没有就是空数组。 */
+  skipped: SkippedItemView[];
 }
 
 /** 素材库按类别分组返回（docs/prd/12 接口表：`GET /api/collections/[id]/library`）。 */
 export interface LibraryView {
   groups: LibraryGroupView[];
+  /** 素材条数（不含跳过的条目）。 */
   total: number;
 }
 
@@ -135,36 +161,65 @@ export function toLibraryAssetView(
     sourceAssetIndex: sourceAssetIndex(asset.sourceAssetId, orderedSourceAssetIds),
     fileName: asset.fileName,
     mimeType: asset.mimeType,
+    width: asset.width,
+    height: asset.height,
     url: libraryAssetUrl(asset.id),
     thumbnailUrl: libraryAssetUrl(asset.id, DEFAULT_THUMBNAIL_WIDTH),
     createdAt: asset.createdAt.toISOString(),
   };
 }
 
+export function toSkippedItemView(
+  item: ExtractionItemRecord,
+  orderedSourceAssetIds: readonly string[],
+): SkippedItemView {
+  return {
+    id: item.id,
+    category: item.category,
+    categoryLabel: categoryLabel(item.category),
+    sourceAssetId: item.sourceAssetId,
+    sourceAssetIndex: sourceAssetIndex(item.sourceAssetId, orderedSourceAssetIds),
+    reason: item.skipReason ?? "",
+    createdAt: item.createdAt.toISOString(),
+  };
+}
+
 /**
- * 按类别分组：分组顺序取登记表顺序（材质纹理 / 边框样式 / 其他（历史）），
+ * 按类别分组：分组顺序取登记表顺序（桌面俯视图 / 基本纹理 / 形象设计 / 其他（历史）），
  * 空组不返回；组内顺序沿用查询结果（按生成时间倒序）。
+ *
+ * 只有「判定为不存在」条目的组也要返回 —— 否则用户看不到「为什么这次什么都没提取到」（AC-LIB-12）。
  */
 export function toLibraryView(
   assets: readonly LibraryAssetRecord[],
+  skipped: readonly ExtractionItemRecord[],
   orderedSourceAssetIds: readonly string[],
 ): LibraryView {
-  const byCategory = new Map<string, LibraryAssetView[]>();
+  const itemsByCategory = new Map<string, LibraryAssetView[]>();
   for (const asset of assets) {
-    const views = byCategory.get(asset.category) ?? [];
+    const views = itemsByCategory.get(asset.category) ?? [];
     views.push(toLibraryAssetView(asset, orderedSourceAssetIds));
-    byCategory.set(asset.category, views);
+    itemsByCategory.set(asset.category, views);
+  }
+
+  const skippedByCategory = new Map<string, SkippedItemView[]>();
+  for (const item of skipped) {
+    const views = skippedByCategory.get(item.category) ?? [];
+    views.push(toSkippedItemView(item, orderedSourceAssetIds));
+    skippedByCategory.set(item.category, views);
   }
 
   const known: string[] = EXTRACTION_CATEGORIES.map((entry) => entry.value);
-  const order = [...known, ...[...byCategory.keys()].filter((value) => !known.includes(value))];
+  const present = [...itemsByCategory.keys(), ...skippedByCategory.keys()];
+  const order = [...known, ...present.filter((value) => !known.includes(value))];
   const groups = order
-    .filter((category) => (byCategory.get(category)?.length ?? 0) > 0)
     .map((category) => ({
       category,
       label: categoryLabel(category),
-      items: byCategory.get(category) ?? [],
-    }));
+      items: itemsByCategory.get(category) ?? [],
+      skipped: skippedByCategory.get(category) ?? [],
+    }))
+    .filter((group) => group.items.length > 0 || group.skipped.length > 0);
 
   return { groups, total: assets.length };
 }

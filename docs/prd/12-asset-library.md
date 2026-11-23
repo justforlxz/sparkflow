@@ -13,6 +13,7 @@
 | 概念 | 含义 |
 | --- | --- |
 | 提取运行（Extraction Run） | 一次「AI 处理」：选中的原图 × 选中的类别，产出若干素材 |
+| 提取条目（Extraction Item） | 一次（原图 × 类别）的尝试：成功入库 / 判定不存在（skipped）/ 失败 |
 | 素材（Library Asset） | 素材库里的一张产物，带类别（材质纹理 / 边框样式 / 其他）与来源原图 |
 | 文案版本（Copy Version） | 一次「生成文案」的产物：标题、正文、标签，以及当时选中的素材清单 |
 
@@ -21,16 +22,22 @@
 ```
 extraction_run
   id, collection_id,
-  status: queued | running | succeeded | partial | failed,
+  status: queued | running | succeeded | partial | failed | empty,
   requirement: faithful | flatten | dereflect,
-  categories: text[]   -- material | border | other
+  categories: text[]   -- topdown | texture | graphic | other
   source_asset_ids: text[]  -- 本次参与提取的原图
   progress: jsonb      -- { done, total }，按 原图×类别 计
   error: jsonb, extra_prompt: text, created_at, finished_at
 
+extraction_item
+  id, extraction_run_id, source_asset_id,
+  category: topdown | texture | graphic | other,
+  status: succeeded | skipped | failed,
+  library_asset_id (成功时), skip_reason text, error jsonb, created_at
+
 library_asset
   id, collection_id, extraction_run_id, source_asset_id,
-  category: material | border | other,
+  category: topdown | texture | graphic | other,
   storage_key, file_name, mime_type, width, height, sort_order, created_at
 
 copy_version
@@ -51,8 +58,15 @@ publish_record
 
 1. **两个动作互不依赖地可重跑**：提取可以反复跑（同一张原图同一类别可产出多个素材，都留在库里）；
    文案可以反复生成（每次一个新版本）。跑文案不触发提取，跑提取不触发文案。
-2. **提取粒度 = 原图 × 类别**：勾选 N 张原图、M 个类别 → 最多 N×M 次上游调用，`progress.total = N×M`。
+2. **提取粒度 = 原图 × 类别**：勾选 N 张原图、M 个类别 → N×M 个条目，`progress.total = N×M`。
    单条失败不影响其他条，成功的照常入库，整体按 `partial` 记录。
+2b. **两段式判定（ADR 0011）**：每个条目先用视觉模型（`magpie-vision` 的 `analyze_image`）判定
+   「该类别在这张原图里是否存在」，只有「存在」才发起图生图；「不存在」记 `skipped` 并保存模型原话，
+   **不消耗生图调用**。禁止跳过判定直接提取（会产生幻觉素材）。
+2c. **终态 `empty`**：全部条目都是 `skipped` 时，运行状态记 `empty`，产出 0 条素材，
+   界面显示「未发现可提取内容」，**不算失败**。
+2d. **输出比例跟随原图**：`size` 由原图长宽比推导（长边 1536，短边按比例取整），
+   不固定 1024×1536；界面按实际尺寸展示，不假设固定比例。
 3. **素材必须带类别与来源**：`category` 与 `source_asset_id` 都不可为空，界面按类别分组展示。
 4. **文案版本固化两样东西**：生成出来的三段文案，以及当时选中的素材 id 列表；之后素材被删，
    版本里仍能看出当时选了什么（展示为「已删除素材」而不是丢数据）。
@@ -99,7 +113,7 @@ publish_record
 | 页签 | 内容 |
 | --- | --- |
 | 原始素材 | 原图网格（可勾选）+ 来源信息 + 提取目标 + 提取要求 + 「AI 处理」按钮 + 进行中提取的进度 |
-| 素材库 | 提取产物，按类别分组（材质纹理 / 边框样式 / 其他），可多选、可删除、可点开预览 |
+| 素材库 | 提取产物，按类别分组（桌面俯视图 / 基本纹理 / 形象设计 / 其他（历史）），可多选、可删除、可点开预览；`skipped` 的条目在对应组内显示「判定为不存在」与模型原话 |
 | 发布 | ① 从素材库分组选素材 ②「生成文案」③ 当前版本文案（可编辑、可复制）④ 历史版本列表 ⑤ 标记已发布 |
 
 图片一律在站内弹窗预览（`docs/prd/07`「图片预览」）。
@@ -110,6 +124,9 @@ publish_record
 | --- | --- |
 | AC-LIB-1 | 勾选 2 张原图 + 2 个类别发起提取，`progress.total = 4`，成功后素材库出现 4 条素材（2 类各 2 条），每条都带来源原图 |
 | AC-LIB-2 | 其中 1 条失败：其余 3 条正常入库，运行状态为 `partial`，失败项有可读原因 |
+| AC-LIB-11 | 某类别判定为不存在时记 `skipped` 且**不发起图生图**（用调用计数断言），界面显示模型原话 |
+| AC-LIB-12 | 全部类别都判定不存在时，运行状态为 `empty`、素材 0 条、界面提示「未发现可提取内容」 |
+| AC-LIB-13 | 输出尺寸按原图长宽比：3:2 原图产出长边 1536 的 3:2 图，不出现拉伸 |
 | AC-LIB-3 | 同一资源夹再跑一次提取，素材总数增加而不是覆盖；旧素材仍在 |
 | AC-LIB-4 | 生成文案不触发任何提取调用；提取也不产生文案版本（用调用计数断言） |
 | AC-LIB-5 | 选 3 张素材生成文案 → 产生 v1，`selected_asset_ids` 正好是这 3 张；再选另外 2 张生成 → v2，两版并存 |

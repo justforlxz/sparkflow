@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
  * 卡片容器（docs/prd/09-dashboard.md MUST 4）：页面上的区块统一用它包一层，
  * 不再各自写 `rounded-lg border border-line bg-panel`。
  *
+ * 标题栏的内边距固定 `10px 14px`，三栏工作区的三块面板因此逐项一致（MKACG-974 AC-UI-4）。
  * 有 `title` 或 `actions` 时渲染一条带分隔线的标题栏；列表项这类没有标题的卡片
  * 直接用 `children`：卡片自身的外观（圆角 14、边框、底色、唯一的阴影档）只由这里决定，
  * `className` 补外层、`bodyClassName` 补内容层、`padded={false}` 让内容贴边。
@@ -17,6 +18,8 @@ export interface PanelProps {
   bodyClassName?: string;
   /** 内容区是否带内边距，默认带；图片卡片这类需要内容贴边时传 `false`。 */
   padded?: boolean;
+  /** 卡片根节点的 `data-testid`：验收用例要量三栏面板的计算样式，靠它取到同一个节点。 */
+  testId?: string;
   children?: ReactNode;
 }
 
@@ -27,6 +30,7 @@ export function Panel({
   className,
   bodyClassName,
   padded = true,
+  testId,
   children,
 }: PanelProps) {
   const classes = ["rounded-lg border border-line bg-panel shadow-panel", className ?? ""]
@@ -35,9 +39,9 @@ export function Panel({
   const hasHeader = Boolean(title || description || actions);
 
   return (
-    <div className={classes}>
+    <div data-testid={testId} className={classes}>
       {hasHeader ? (
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-3.5 py-2.5">
           <div className="space-y-0.5">
             {title ? <h2 className="text-heading font-semibold text-ink">{title}</h2> : null}
             {description ? <p className="text-footnote text-ink-tertiary">{description}</p> : null}

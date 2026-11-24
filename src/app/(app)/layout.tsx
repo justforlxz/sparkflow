@@ -77,7 +77,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </aside>
 
         <main className="ml-16 min-[720px]:ml-60">
-          <div className="mx-auto w-full max-w-5xl px-4 py-8 min-[720px]:px-6 min-[720px]:py-10">
+          {/*
+            宽度由页面自己定，外壳只给统一的内边距：资源夹详情是 1200px（全站唯一例外，
+            ADR 0012 第 4 条），其余页面 1024px。放在外壳里的话，客户端路由切换时
+            外层布局不会重新渲染，宽度换不过来。
+          */}
+          <div className="w-full px-4 py-8 min-[720px]:px-6 min-[720px]:py-10">
             {children}
           </div>
         </main>

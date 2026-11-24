@@ -18,7 +18,15 @@ export const MOCK_SCRIPT_HINTS = {
   visionAbsentAll: "mock:vision-absent-all",
   /** 只让第 n 次视觉判定回「不存在」（后面接 `-<n>`）：验证 AC-LIB-11 的 `skipped`。 */
   visionAbsentAt: "mock:vision-absent-at",
+  /**
+   * 每次图片调用先等 n 毫秒（后面接 `-<n>`）：验证界面上的进度条能真的走起来。
+   * mock 出图只花几毫秒，不加延时的话一次多图提取在界面上抓不到「中间进度」。
+   */
+  delayImageMs: "mock:delay-image-ms",
 } as const;
+
+/** 延时上限：脚本标记只用于测试，不让人把一次提取拖成几分钟。 */
+const MAX_MOCK_DELAY_MS = 5_000;
 
 /** 从提示词里读「让第几次调用失败」或「让第几次判定为不存在」。 */
 function mockIndexAt(prompt: string, hint: string): number | null {
@@ -39,6 +47,17 @@ export function mockFailImageAt(prompt: string): number | null {
 /** 从补充要求里读「让第几次视觉判定回不存在」。 */
 export function mockVisionAbsentAt(prompt: string | null | undefined): number | null {
   return prompt ? mockIndexAt(prompt, MOCK_SCRIPT_HINTS.visionAbsentAt) : null;
+}
+
+/**
+ * 从提示词里读「每次图片调用先等多少毫秒」（`mock:delay-image-ms-250`）。
+ * 超过上限按上限算；读不出来时返回 0，调用方不需要额外判断。
+ */
+export function mockDelayMs(prompt: string): number {
+  const matched = new RegExp(`${MOCK_SCRIPT_HINTS.delayImageMs}-(\\d+)`).exec(prompt);
+  if (!matched) return 0;
+  const value = Number.parseInt(matched[1] ?? "", 10);
+  return Number.isInteger(value) && value > 0 ? Math.min(value, MAX_MOCK_DELAY_MS) : 0;
 }
 
 /** 补充要求里是否带了这个标记。 */

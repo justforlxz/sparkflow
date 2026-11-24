@@ -75,11 +75,16 @@ async function createVersion(
   return created;
 }
 
-/** 打开一个资源夹的「发布」页签。 */
+/**
+ * 打开一个资源夹的「发布」视图。
+ *
+ * MKACG-974 把资源夹详情改成三栏工作区（素材 / 结果 / 设置），页签没有了；
+ * 文案与发布是下一个节点（MKACG-976）要下线的东西，在那之前用 `?view=publish` 保留入口，
+ * 这几条验收在功能被删除前仍然成立。
+ */
 async function openPublishTab(page: Page, collectionId: string): Promise<void> {
   await loginInBrowser(page);
-  await page.goto(`/collections/${collectionId}`);
-  await page.getByTestId("tab-publish").click();
+  await page.goto(`/collections/${collectionId}?view=publish`);
   await expect(page.getByTestId("panel-publish")).toBeVisible();
 }
 
@@ -324,7 +329,6 @@ test("AC-LIB-5 界面：当前版本文案可原地保存，刷新后是新值�
 
   // 刷新页面从服务端重新读：三段确实落库，版本号与版本条数不变（编辑不产生新版本）。
   await page.reload();
-  await page.getByTestId("tab-publish").click();
   await expect(page.getByTestId("publish-version-label")).toHaveText("v1");
   await expect(page.getByTestId("publish-title")).toHaveValue("改过的标题");
   await expect(page.getByTestId("publish-body")).toHaveValue("改过的正文\n\n第二段");

@@ -54,7 +54,7 @@ export default async function DashboardPage() {
   const stats = await getDashboardStats();
 
   return (
-    <section className="space-y-6">
+    <section className="mx-auto w-full max-w-5xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className={PAGE_TITLE_CLASS}>{DASHBOARD_COPY.title}</h1>

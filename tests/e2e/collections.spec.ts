@@ -155,8 +155,8 @@ test("AC-01-1 创建资源夹并上传 2 张图片后，列表与详情都能看
   // 详情：两张原图都在，顺序与上传一致。
   await page.getByRole("link").filter({ hasText: name }).first().click();
   await expect(page).toHaveURL(/\/collections\/[0-9a-f-]{36}$/);
-  await expect(page.getByAltText("a.png")).toBeVisible();
-  await expect(page.getByAltText("b.png")).toBeVisible();
+  await expect(sourceColumn(page).getByAltText("a.png")).toBeVisible();
+  await expect(sourceColumn(page).getByAltText("b.png")).toBeVisible();
   await expect(page.getByText("原图 2 张")).toBeVisible();
 
   const found = await findByName(request, name);
@@ -194,7 +194,7 @@ test("AC-01-2 没有图片也能保存成功；详情显示引导态", async ({
   // 详情页：0 张图是引导态，不是空网格。
   await page.goto(`/collections/${created.id}`);
   await expect(page.getByText("这个资源夹还没有原始图片。")).toBeVisible();
-  await expect(page.getByText("先点「编辑」把收集到的图片上传进来", { exact: false })).toBeVisible();
+  await expect(page.getByText("先点「添加」把收集到的图片上传进来", { exact: false })).toBeVisible();
   await expect(page.locator("img[alt]")).toHaveCount(0);
 
 });
@@ -275,8 +275,8 @@ test("AC-01-4 编辑资源夹只改来源信息时，已有图片全部保留", 
   await dialog.getByRole("button", { name: "保存" }).click();
   await expect(dialog).toBeHidden();
 
-  await expect(page.getByAltText("a.png")).toBeVisible();
-  await expect(page.getByAltText("b.png")).toBeVisible();
+  await expect(sourceColumn(page).getByAltText("a.png")).toBeVisible();
+  await expect(sourceColumn(page).getByAltText("b.png")).toBeVisible();
 
   const detail = await getDetail(request, created.id);
   expect(detail.sourceTitle).toBe("改过的原始标题");
@@ -306,8 +306,8 @@ test("AC-01-5 解除某张原图关联后，该图从详情消失，其余图片
 
   // 详情只剩另一张；重新加载后依然如此。
   await page.reload();
-  await expect(page.getByAltText("b.png")).toBeVisible();
-  await expect(page.getByAltText("a.png")).toHaveCount(0);
+  await expect(sourceColumn(page).getByAltText("b.png")).toBeVisible();
+  await expect(sourceColumn(page).getByAltText("a.png")).toHaveCount(0);
   await expect(page.getByText("原图 1 张")).toBeVisible();
 
   const detail = await getDetail(request, created.id);
@@ -370,7 +370,16 @@ test("AC-01-7 图片字节通过 /api/files 返回，content-type 正确；未�
 
 /* ---------- 编辑整组保存（MKACG-870）：一次请求、整组成功或整组不变 ---------- */
 
-/** 页面上已保存原图的顺序（详情页与编辑弹窗的图片都带 alt=文件名）。 */
+/**
+ * 页面上显示的原图文件名。
+ *
+ * 三栏工作区里同一张原图会出现两次：左栏「原始材料」的缩略图，以及中栏结果卡的卡头。
+ * 断言「详情里显示哪些原图」时只看左栏，避免把同一张图数成两张。
+ */
+function sourceColumn(page: Page): Locator {
+  return page.getByTestId("column-source");
+}
+
 async function shownFileNames(scope: Page | Locator): Promise<Array<string | null>> {
   return scope.locator("img[alt]").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("alt")),
@@ -403,9 +412,9 @@ test("AC-FIX-1 2 张原图全标待移除 + 添加 1 张新图：保存成功，
   await expect(dialog).toBeHidden();
 
   await expect(page.getByText("原图 1 张")).toBeVisible();
-  await expect(page.getByAltText("c.png")).toBeVisible();
-  await expect(page.getByAltText("a.png")).toHaveCount(0);
-  await expect(page.getByAltText("b.png")).toHaveCount(0);
+  await expect(sourceColumn(page).getByAltText("c.png")).toBeVisible();
+  await expect(sourceColumn(page).getByAltText("a.png")).toHaveCount(0);
+  await expect(sourceColumn(page).getByAltText("b.png")).toHaveCount(0);
 
   const detail = await getDetail(request, created.id);
   expect(detail.assets.map((asset) => asset.fileName)).toEqual(["c.png"]);
@@ -441,7 +450,7 @@ test("AC-FIX-2 新图非法时保存失败，原图数量/顺序与来源字段�
   // 取消后重新加载：图片与来源字段都和保存前一样（磁盘无新增文件由集成测试断言）。
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   await page.reload();
-  expect(await shownFileNames(page)).toEqual(["a.png", "b.png"]);
+  expect(await shownFileNames(sourceColumn(page))).toEqual(["a.png", "b.png"]);
   await expect(page.getByText("原图 2 张")).toBeVisible();
 
   const detail = await getDetail(request, created.id);
@@ -472,7 +481,7 @@ test("AC-FIX-8 保存后 sort_order 与界面顺序一致，重新打开详情�
   await expect(dialog).toBeHidden();
 
   await page.reload();
-  expect(await shownFileNames(page)).toEqual(["b.png", "c.png"]);
+  expect(await shownFileNames(sourceColumn(page))).toEqual(["b.png", "c.png"]);
 
   const detail = await getDetail(request, created.id);
   expect(detail.assets.map((asset) => asset.fileName)).toEqual(["b.png", "c.png"]);

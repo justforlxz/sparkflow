@@ -75,33 +75,53 @@ export const LIBRARY_STORAGE_PREFIX = "library-assets";
 export const MAX_SOURCE_ASSETS = 50;
 export const MAX_CATEGORIES = 10;
 
-/** 界面轮询未终态运行的间隔（docs/prd/07 MUST 4）。 */
+/** 界面轮询未终态运行的间隔：`docs/prd/07-results.md` MUST 4 规定 3 秒，不按界面观感改小。 */
 export const EXTRACTION_POLL_INTERVAL_MS = 3000;
 
 /** 素材库与提取运行的界面文案（AGENTS.md 硬性规则 1）。 */
 export const LIBRARY_COPY = {
-  assetsTab: "原始素材",
   libraryTab: "素材库",
   publishTab: "发布",
-  runsTitle: "提取运行",
-  emptyRuns: "这个资源夹还没有提取运行。",
-  emptyLibrary: "还没有素材；先勾选原图并处理。",
-  progressLabel: "正在提取",
-  /** 进度数值的读法固定为「完成 / 总数」，与 `progress.{done,total}` 一一对应。 */
-  progressFraction: (progress: { done: number; total: number }) =>
-    `${progress.done}/${progress.total}`,
-  requirementLabel: "提取要求",
-  categoryLabel: "类别",
-  extractAction: "AI 处理",
-  extractingLabel: "发起中…",
+  oneClickExtract: "一键提取",
+  submittingLabel: "发起中…",
+  /** 三栏页的四块面板标题（ADR 0012 第 4 条）。 */
+  sourcePanelTitle: "原始材料",
+  resultsPanelTitle: "处理结果",
+  settingsPanelTitle: "提取设置",
+  /** 左栏「添加」与它的弹窗。 */
+  addAction: "添加",
+  addDialogTitle: (collectionName: string) => `添加到「${collectionName}」`,
+  uploadTab: "本地上传",
+  poolTab: "从总资源库添加",
+  dropHint: "把图片拖到这里",
+  chooseFilesAction: "选择文件",
+  pasteHint: "也可以按 ⌘V 粘贴剪贴板里的图片",
+  poolEmpty: "总资源库还没有照片。先在总资源库上传几张，再回来添加。",
+  /** 已经在夹里的照片：置灰、不可选，并标出原因。 */
+  alreadyInCollection: "已加",
+  removePendingFile: "不要这张",
+  selectedSourceCount: (selected: number, total: number) => `已选 ${selected}/${total} 张`,
+  addSummary: (total: number, local: number, pool: number) =>
+    `合计 ${total} 张（本地上传 ${local} 张 · 从资源库 ${pool} 张）`,
+  addConfirmAction: (total: number) => `添加 ${total} 张`,
+  /** 右栏「提取设置」。 */
+  conditionLabel: "条件",
+  extraPromptLabel: "额外补充",
+  extraPromptPlaceholder: "例如：只保留干净背景",
+  fixedCategoriesLabel: "固定三类",
+  inlineProgressLabel: "提取中",
+  /** 结果卡的格子状态与操作。 */
+  retryAction: "重试",
+  retryingLabel: "重试中",
+  rerunAction: "重跑",
+  absentLabel: "不存在",
+  idleCellLabel: "未提取",
+  emptyResults: "还没有处理结果。选好原始材料与条件后点「一键提取」。",
   selectAllLabel: "勾选全部原图",
   sourceAssetSelectLabel: "选择这张原图",
   librarySelectLabel: "选择这条素材",
-  selectedAssetsLabel: "已选原图",
   selectedLibraryLabel: "已选素材",
   clearSelection: "清空选择",
-  deleteSelectedAction: "删除选中",
-  deletingLabel: "删除中…",
   cancelAction: "取消",
   viewImage: "查看大图",
   closePreview: "关闭",
@@ -109,13 +129,7 @@ export const LIBRARY_COPY = {
   /** 来源原图已被解除关联时如实说明，不猜编号。 */
   noSourceAssetLabel: "原图已解除关联",
   failureCountLabel: "失败项",
-  imageCountSuffix: "张",
   itemCountSuffix: "条",
-  deleteAction: "删除",
-  deleteConfirmTitle: "删除这条素材？",
-  deleteConfirmBody: "已经引用它的文案版本仍能打开，被删的素材会显示为「已删除素材」。",
-  confirmDelete: "确认删除",
-  historyGroupLabel: "其他（历史）",
   /** 被视觉判定为不存在的条目（ADR 0011 第 3 条）：组内如实说明，模型原话可折叠展开。 */
   skippedLabel: "判定为不存在",
   skipReasonLabel: "模型原话",

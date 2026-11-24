@@ -54,7 +54,7 @@ export default async function PublishedPage({ searchParams }: PageProps) {
   const lastPage = Math.max(1, Math.ceil(list.total / list.pageSize));
 
   return (
-    <section className="space-y-6">
+    <section className="mx-auto w-full max-w-5xl space-y-6">
       <div className="space-y-1">
         <h1 className={PAGE_TITLE_CLASS}>{PUBLISH_COPY.pageTitle}</h1>
         <p className={`max-w-2xl ${PAGE_SUBTITLE_CLASS}`}>{PUBLISH_COPY.pageSubtitle}</p>

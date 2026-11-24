@@ -21,9 +21,13 @@ export class ApiError extends Error {
 }
 
 export async function fetchJson<T>(url: string, init: RequestInit = {}): Promise<T> {
+  // `FormData` 的 `content-type` 必须由浏览器自己写（要带 boundary），手写 JSON 头会把上传打坏。
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
   const response = await fetch(url, {
     ...init,
-    headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+    headers: isFormData
+      ? { ...(init.headers ?? {}) }
+      : { "content-type": "application/json", ...(init.headers ?? {}) },
   });
 
   const body = (await response.json().catch(() => null)) as ApiEnvelope<T> | null;

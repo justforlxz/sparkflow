@@ -157,3 +157,38 @@ body {
     outline-offset: 2px;
   }
 }
+
+/*
+ * 「处理中」的扫光（MKACG-974 AC-UI-7、AC-UI-9）：一条半透明亮带从左扫到右。
+ * 标题下方的进度条与结果格里「重试中」的格子共用这一条动画，只写一次。
+ * 两条用法都只是装饰：`prefers-reduced-motion` 下直接关掉，不影响进度百分比与文字。
+ */
+@keyframes sparkflow-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 55%), transparent);
+  animation: sparkflow-sweep 900ms linear infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer::after {
+    animation: none;
+    opacity: 0;
+  }
+}

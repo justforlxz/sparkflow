@@ -12,24 +12,15 @@ export function isActiveRun(run: Pick<ExtractionRunView, "status">): boolean {
   return (EXTRACTION_ACTIVE_STATUSES as readonly string[]).includes(run.status);
 }
 
-/** 把运行拆成「进行中」与「已结束」两组，各自保持传入顺序。 */
-export function splitRuns(runs: readonly ExtractionRunView[]): {
-  active: ExtractionRunView[];
-  finished: ExtractionRunView[];
-} {
-  const active: ExtractionRunView[] = [];
-  const finished: ExtractionRunView[] = [];
-  for (const run of runs) (isActiveRun(run) ? active : finished).push(run);
-  return { active, finished };
-}
 
 /**
- * 进行中运行的进度文案：「正在提取 1/4」。
- * 终态运行时 `progress` 已被清空，返回 null，界面不显示这一行。
+ * 进度条用的百分比：`done / total` 四舍五入到整数，夹在 0~100。
+ * 没有进度（终态）或总数为 0 时给 0，界面据此不画进度条。
  */
-export function runProgressText(run: Pick<ExtractionRunView, "progress">): string | null {
-  if (!run.progress) return null;
-  return `${LIBRARY_COPY.progressLabel} ${LIBRARY_COPY.progressFraction(run.progress)}`;
+export function progressPercent(progress: { done: number; total: number } | null): number {
+  if (!progress || progress.total <= 0) return 0;
+  const percent = Math.round((progress.done / progress.total) * 100);
+  return Math.min(100, Math.max(0, percent));
 }
 
 /** 失败项数量：`error.failures` 为空（或没有 error）时为 0。 */

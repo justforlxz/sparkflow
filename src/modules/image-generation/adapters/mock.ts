@@ -11,7 +11,7 @@
  */
 import sharp from "sharp";
 import { StageError } from "@/lib/job-failure";
-import { MOCK_SCRIPT_HINTS, mockFailImageAt } from "../mock-script";
+import { MOCK_SCRIPT_HINTS, mockDelayMs, mockFailImageAt } from "../mock-script";
 import type { GeneratedImage } from "./types";
 import { IMAGE_ERROR_CODES, type GenerateImageInput, type ImageGenerator } from "./types";
 
@@ -40,6 +40,10 @@ export class MockImageGenerator implements ImageGenerator {
     if (failAt !== null && failAt === this.calls) {
       throw new StageError(IMAGE_ERROR_CODES.rejected, `mock：按脚本让第 ${failAt} 张原图失败`);
     }
+
+    // 脚本要求放慢时先等一会儿：界面上的进度条才有中间态可看（只用于端到端验收）。
+    const delayMs = mockDelayMs(input.prompt);
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
 
     const { width, height } = parseMockSize(input.size);
     const bytes = await sharp({

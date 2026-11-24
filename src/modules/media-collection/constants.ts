@@ -45,7 +45,7 @@ export const COLLECTION_COPY = {
   emptySearch: "没有匹配的资源夹。换个关键词或清空筛选试试。",
   /** 0 张图时的引导态：说明「先建夹后收集素材」是正常路径，并指出下一步做什么（AC-01-2）。 */
   emptyAssets: "这个资源夹还没有原始图片。",
-  emptyAssetsHint: "先点「编辑」把收集到的图片上传进来，之后再发起 AI 处理。",
+  emptyAssetsHint: "先点「添加」把收集到的图片上传进来，之后再发起一键提取。",
   createAction: "新建媒体资源夹",
   editAction: "编辑",
   deleteAction: "删除",

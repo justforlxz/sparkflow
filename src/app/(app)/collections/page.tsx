@@ -38,7 +38,7 @@ export default async function CollectionsPage({ searchParams }: PageProps) {
   const isFiltered = Boolean(query.q || query.status);
 
   return (
-    <section className="space-y-6">
+    <section className="mx-auto w-full max-w-5xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className={PAGE_TITLE_CLASS}>{COLLECTION_COPY.listTitle}</h1>

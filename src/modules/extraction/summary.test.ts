@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isActiveRun, runFailureCount, runFailureText, runProgressText, splitRuns } from "./summary";
+import {
+  isActiveRun,
+  progressPercent,
+  runFailureCount,
+  runFailureText,
+} from "./summary";
 import type { ExtractionRunView } from "./view";
 
 /** 只填本文件关心的字段：界面派生读法只看状态、进度与失败清单。 */
@@ -47,42 +52,6 @@ describe("运行是否还需要轮询", () => {
   });
 });
 
-describe("运行分组", () => {
-  it("进行中与已结束各自保持传入顺序", () => {
-    const split = splitRuns([
-      run({ id: "a", status: "succeeded" }),
-      run({ id: "b", status: "running" }),
-      run({ id: "c", status: "failed" }),
-      run({ id: "d", status: "queued" }),
-    ]);
-
-    expect(split.active.map((entry) => entry.id)).toEqual(["b", "d"]);
-    expect(split.finished.map((entry) => entry.id)).toEqual(["a", "c"]);
-  });
-
-  it("没有运行时不返回空组", () => {
-    expect(splitRuns([])).toEqual({ active: [], finished: [] });
-  });
-});
-
-describe("进度文案", () => {
-  it("进行中运行读成「正在提取 完成/总数」", () => {
-    expect(runProgressText(run({ status: "running", progress: { done: 2, total: 4 } }))).toBe(
-      "正在提取 2/4",
-    );
-  });
-
-  it("刚排队的运行也有进度读数", () => {
-    expect(runProgressText(run({ status: "queued", progress: { done: 0, total: 4 } }))).toBe(
-      "正在提取 0/4",
-    );
-  });
-
-  it("终态没有进度读数", () => {
-    expect(runProgressText(run({ status: "partial", progress: null }))).toBeNull();
-  });
-});
-
 describe("失败项数量", () => {
   it("没有 error 或没有逐项失败时为 0，不显示失败项文案", () => {
     expect(runFailureCount(run())).toBe(0);
@@ -106,5 +75,25 @@ describe("失败项数量", () => {
     });
     expect(runFailureCount(partial)).toBe(1);
     expect(runFailureText(partial)).toBe("失败项 1 条");
+  });
+});
+
+describe("进度百分比", () => {
+  it("按 done / total 四舍五入", () => {
+    expect(progressPercent({ done: 0, total: 4 })).toBe(0);
+    expect(progressPercent({ done: 1, total: 4 })).toBe(25);
+    expect(progressPercent({ done: 1, total: 3 })).toBe(33);
+    expect(progressPercent({ done: 2, total: 3 })).toBe(67);
+    expect(progressPercent({ done: 4, total: 4 })).toBe(100);
+  });
+
+  it("没有进度或总数为 0 时给 0，不出现 NaN 或负数", () => {
+    expect(progressPercent(null)).toBe(0);
+    expect(progressPercent({ done: 0, total: 0 })).toBe(0);
+  });
+
+  it("夹在 0~100，进度异常时不画出界", () => {
+    expect(progressPercent({ done: 9, total: 4 })).toBe(100);
+    expect(progressPercent({ done: -1, total: 4 })).toBe(0);
   });
 });

@@ -23,7 +23,7 @@ export default async function SettingsPage() {
   const gatewayOptions = gateways.map(({ id, name }) => ({ id, name }));
 
   return (
-    <div className="space-y-10">
+    <div className="mx-auto w-full max-w-5xl space-y-10">
       <header className="space-y-2">
         <h1 className={PAGE_TITLE_CLASS}>设置</h1>
         <p className={`max-w-2xl ${PAGE_SUBTITLE_CLASS}`}>

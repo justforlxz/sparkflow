@@ -3,7 +3,11 @@
 > 依赖：骨架与数据/API 契约 ｜ 产出：总资源库与资源夹的持久化能力
 >
 > **模型已变**（ADR 0012）：照片先进入**总资源库**（照片池），再通过关联表归到资源夹（相册）。
-> `media_asset` 不再有 `collection_id`；一张照片可以同时属于多个资源夹；删资源夹只删关联，不删照片。
+> 一张照片可以同时属于多个资源夹；删资源夹只删关联，不删照片。
+>
+> **两版发布**（`AGENTS.md` 硬性规则 3「删列/改名拆两个版本」）：本版只建关联表并搬数据，
+> `media_asset.collection_id` 与 `sort_order` 两列**暂时保留**，作为回滚到上一版镜像的兼容列
+> （新代码不写不读）；删这两列在下一版 `MKACG-981`。
 
 ## 目标
 
@@ -25,6 +29,7 @@
 
 - 页面交互细节（列表、弹窗、图片网格的三种状态）属于「媒体资源夹页面」功能。
 - 从外部平台抓取图片。
+- 删掉 `media_asset` 的两列兼容列（`collection_id`、`sort_order`）：留到下一版 `MKACG-981`。
 
 ## 设计契约
 
@@ -32,14 +37,19 @@
 
 1. **资源夹允许没有图片**：用户可能先建夹再慢慢收集素材。保存时不校验图片数量；
    「至少要有一张原图」只在**发起创作**时校验（见 `docs/prd/04-generation-task.md`）。
-2. 上传文件落盘路径由服务端生成（`<UPLOAD_DIR>/media-assets/<collectionId>/<uuid>.<ext>`），
-   原始文件名只作为展示字段保存，绝不参与路径拼接。
+2. 上传文件落盘路径由服务端生成（`<UPLOAD_DIR>/media-assets/<assetId>.<ext>`），
+   原始文件名只作为展示字段保存，绝不参与路径拼接。路径里没有资源夹这一层：
+   照片属于总资源库，一张照片可以同时属于多个资源夹（ADR 0012 第 1 条）。
 3. 上传必须校验 MIME 类型与大小：只接受 `image/jpeg`、`image/png`、`image/webp`，
    单张不超过 `MAX_UPLOAD_BYTES`（默认 10 MiB）。判断类型以文件内容为准，不以扩展名为准。
 4. `storage_key` 与业务记录解耦：解除图片与资源夹的关联不得删除磁盘文件，只删除关联记录；
    历史任务与结果引用的文件必须仍然可读。
-5. 删除资源夹时，其任务、结果、发布记录随数据库外键级联删除；磁盘文件删除失败不得让请求失败，
-   只记录日志，避免留下不可删除的脏记录。
+5. 删除资源夹时，其任务、结果、发布记录随数据库外键级联删除；**原图记录与磁盘文件都保留**，
+   因为照片属于总资源库（ADR 0012 第 1 条）。只有从总资源库显式删除照片才删文件；
+   磁盘删除失败不得让请求失败，只记录日志，避免留下不可删除的脏记录。
+   落实方式是两条外键动作各管一半：`collection_asset.collection_id` 用 `ON DELETE CASCADE` 删关联行，
+   `media_asset.collection_id` 必须用 `ON DELETE SET NULL`——迁移来的历史照片带着旧归属，
+   用 `CASCADE` 会在删夹时把它们整批删掉（AC-POOL-8）。
 6. 任何资源夹或图片读取接口都必须校验会话（走统一门禁），返回 404 而不是 403 以避免泄露存在性。
 
 ### SHOULD
@@ -69,10 +79,14 @@
 | GET | `/api/collections/[id]` | 详情（含资产列表、任务数、结果数、状态） |
 | PATCH | `/api/collections/[id]` | 编辑来源信息 |
 | POST | `/api/collections/[id]/save` | 编辑保存：来源信息、**提取目标**与图片变更一次提交（multipart） |
-| DELETE | `/api/collections/[id]` | 删除，级联清理 |
-| POST | `/api/collections/[id]/assets` | 追加图片（multipart，可多张） |
-| DELETE | `/api/collections/[id]/assets/[assetId]` | 解除关联 |
-| GET | `/api/files/[collectionId]/[assetId]` | 鉴权读取原图字节 |
+| DELETE | `/api/collections/[id]` | 删除，级联清理（照片留在总资源库） |
+| POST | `/api/collections/[id]/assets` | 从总资源库加入资源夹（JSON `{ assetIds }`，幂等） |
+| POST | `/api/collections/[id]/assets/upload` | 夹内上传：入池 + 建关联，一次事务（multipart） |
+| DELETE | `/api/collections/[id]/assets/[assetId]` | 从夹里移除（只删关联，不删照片） |
+| GET | `/api/library` | 总资源库列表（分页，每张照片带 `collectionIds` / `collectionNames`） |
+| POST | `/api/library/assets` | 上传到总资源库（只入池，不建关联，multipart） |
+| DELETE | `/api/library/assets/[id]` | 从总资源库删除（删关联行与磁盘文件） |
+| GET | `/api/files/assets/[assetId]` | 鉴权读取原图字节 |
 
 编辑保存只有一个入口：`POST /api/collections/[id]/save`。表单里 `fields` 是整体替换的来源信息 JSON，
 `assets` 是有序图片清单（`keep` / `remove` / `add`，顺序即新的 `sort_order`），每个 `add` 对应一个
@@ -101,6 +115,15 @@
 | AC-01-7 | 图片字节通过 `/api/files/...` 返回，`content-type` 正确；未登录（启用口令时）返回 302 或 401 | 同上 |
 | AC-01-8 | 0 张图的资源夹调用 `POST /api/collections/[id]/tasks` 返回 `VALIDATION_FAILED`，不建任务 | 同上 |
 | AC-01-9 | 提取目标可保存、可编辑、可在详情页看到；空提取目标时发起创作被拒绝（`VALIDATION_FAILED`） | 同上 |
+
+总资源库（照片池）与资源夹关联的验收编号 `AC-POOL-1` ~ `AC-POOL-8` 定义在
+`MKACG-973` 的 issue 描述里（本文件不重复它们，避免两处口径各改各的）。它们的自动化用例是：
+
+| 编号 | 自动化用例 |
+| --- | --- |
+| AC-POOL-1 | `tests/integration/migration-pool.test.ts` |
+| AC-POOL-2 ~ AC-POOL-7 | `tests/integration/media-collection.test.ts`、`tests/e2e/library-pool.spec.ts` |
+| AC-POOL-8 | `tests/integration/media-collection.test.ts`（用 `collection_id` 非空的旧形状数据）、`tests/integration/migration-pool.test.ts` |
 
 ## 验证方式
 

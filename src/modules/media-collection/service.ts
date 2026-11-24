@@ -1,8 +1,14 @@
 /**
- * 媒体资源夹服务（docs/prd/01-media-collection.md）。页面与接口只调用这里的函数。
+ * 媒体资源夹与总资源库服务（docs/prd/01-media-collection.md、
+ * docs/adr/0012-总资源库与资源夹的相册模型.md 第 1 条）。页面与接口只调用这里的函数。
+ *
+ * 两条上传入口（ADR 0012 第 1 条）：
+ * - `uploadPoolAssets`：只入池，不建关联（总资源库直接上传）；
+ * - `uploadCollectionAssets`：入池 + 建关联，一次事务（夹内上传）。
  *
  * 落盘与写库的顺序：先写文件再写记录。写库失败会留下没人引用的文件，
  * 但这是 ADR 明确接受的方向 —— 不引入引用计数或垃圾回收（MUST NOT）。
+ * 例外是「本次请求自己新写的文件」：失败时逐个删掉，不留孤儿（AC-POOL-6）。
  */
 import { randomUUID } from "node:crypto";
 import { getEnv } from "@/lib/env";
@@ -12,18 +18,19 @@ import { countCollectionVersions } from "@/modules/copy-generation/service";
 import { countCollectionUsage, countDraftCollections } from "@/modules/extraction/service";
 import { countCollectionPublishRecords } from "@/modules/publish/counts";
 import { DEFAULT_THUMBNAIL_WIDTH, type CollectionStatus } from "./constants";
-import { readAssetFile, removeAssetFile, removeCollectionFiles, writeAssetBytes } from "./files";
+import { readAssetFile, removeAssetFile, writeAssetBytes } from "./files";
 import * as repo from "./repo";
 import { assertCollectionMutable, COLLECTION_ERROR_MESSAGES } from "./rules";
 import type {
   CollectionEditAssetInput,
   CollectionFieldsInput,
   ListCollectionsQuery,
+  ListPoolAssetsQuery,
 } from "./schema";
 import { buildAssetStorageKey } from "./storage-key";
 import { deriveCollectionStatus, type CollectionCounts } from "./status";
 import { scaleImage } from "./thumbnails";
-import { prepareImages, type IncomingFile } from "./uploads";
+import { prepareImages, type IncomingFile, type PreparedImage } from "./uploads";
 
 export interface CollectionAssetView {
   id: string;
@@ -35,6 +42,26 @@ export interface CollectionAssetView {
   url: string;
   /** 网格用的缩略图地址（`?w=400`）：弹窗里加载 `url` 原图（docs/prd/07 SHOULD）。 */
   thumbnailUrl: string;
+}
+
+/** 总资源库里的一张照片：多带它被归到了哪些资源夹（AC-POOL-2）。 */
+export interface PoolAssetView {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  url: string;
+  thumbnailUrl: string;
+  collectionIds: string[];
+  collectionNames: string[];
+}
+
+export interface PoolAssetList {
+  items: PoolAssetView[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface CollectionSummaryView {
@@ -97,8 +124,12 @@ async function relatedCounts(collectionId: string): Promise<CollectionCounts> {
   };
 }
 
-export function assetFileUrl(collectionId: string, assetId: string, width?: number): string {
-  const base = `/api/files/${collectionId}/${assetId}`;
+/**
+ * 原图字节的鉴权地址。路径里没有资源夹：照片属于总资源库，一张照片可以同时属于多个夹，
+ * 把夹 id 放进 URL 会让同一张照片在不同夹下变成不同地址（ADR 0012 第 1 条）。
+ */
+export function assetFileUrl(assetId: string, width?: number): string {
+  const base = `/api/files/assets/${assetId}`;
   return width ? `${base}?w=${width}` : base;
 }
 
@@ -117,19 +148,35 @@ function toSummary(row: repo.CollectionRow, counts: CollectionCounts): Collectio
     extractionRunCount: counts.extractionRuns,
     libraryAssetCount: counts.libraryAssets,
     copyVersionCount: counts.copyVersions,
-    coverUrl: row.coverAssetId ? assetFileUrl(row.id, row.coverAssetId, DEFAULT_THUMBNAIL_WIDTH) : null,
+    coverUrl: row.coverAssetId
+      ? assetFileUrl(row.coverAssetId, DEFAULT_THUMBNAIL_WIDTH)
+      : null,
   };
 }
 
-function toAssetView(collectionId: string, asset: repo.AssetRow): CollectionAssetView {
+function toAssetView(asset: repo.CollectionAssetRow): CollectionAssetView {
   return {
     id: asset.id,
     fileName: asset.fileName,
     mimeType: asset.mimeType,
     size: asset.size,
     sortOrder: asset.sortOrder,
-    url: assetFileUrl(collectionId, asset.id),
-    thumbnailUrl: assetFileUrl(collectionId, asset.id, DEFAULT_THUMBNAIL_WIDTH),
+    url: assetFileUrl(asset.id),
+    thumbnailUrl: assetFileUrl(asset.id, DEFAULT_THUMBNAIL_WIDTH),
+  };
+}
+
+function toPoolAssetView(asset: repo.PoolAssetRow): PoolAssetView {
+  return {
+    id: asset.id,
+    fileName: asset.fileName,
+    mimeType: asset.mimeType,
+    size: asset.size,
+    createdAt: asset.createdAt.toISOString(),
+    url: assetFileUrl(asset.id),
+    thumbnailUrl: assetFileUrl(asset.id, DEFAULT_THUMBNAIL_WIDTH),
+    collectionIds: asset.collections.map((collection) => collection.id),
+    collectionNames: asset.collections.map((collection) => collection.name),
   };
 }
 
@@ -180,8 +227,56 @@ export async function getCollection(id: string): Promise<CollectionDetailView> {
   const row = await repo.findCollection(id);
   if (!row) throw AppError.notFound("资源夹不存在");
 
-  const [assets, counts] = await Promise.all([repo.listAssets(id), relatedCounts(id)]);
-  return { ...toSummary(row, counts), assets: assets.map((asset) => toAssetView(id, asset)) };
+  const [assets, counts] = await Promise.all([repo.listAssetsByCollection(id), relatedCounts(id)]);
+  return { ...toSummary(row, counts), assets: assets.map(toAssetView) };
+}
+
+/** 校验通过的一张待落库照片：`id` 先定好，`storage_key` 要用它做文件名。 */
+interface PreparedAsset extends PreparedImage {
+  id: string;
+  storageKey: string;
+}
+
+function prepareAssets(images: readonly PreparedImage[]): PreparedAsset[] {
+  return images.map((image) => {
+    const id = randomUUID();
+    return { ...image, id, storageKey: buildAssetStorageKey(image.mimeType, id) };
+  });
+}
+
+function toNewAsset(asset: PreparedAsset): repo.NewAsset {
+  return {
+    id: asset.id,
+    storageKey: asset.storageKey,
+    fileName: asset.fileName,
+    mimeType: asset.mimeType,
+    size: asset.bytes.length,
+  };
+}
+
+/**
+ * 写盘 + 写库，任一步失败都把本次新写的文件删掉（AC-POOL-6：写库失败时磁盘不留孤儿文件）。
+ *
+ * 写盘中途失败与写库失败走同一条回滚路径，对外统一转成 500 —— 调用方拿到的永远是
+ * 「库与磁盘都回到请求前的状态」，不需要区分是哪一步出的问题。
+ */
+async function commitAssets<T>(
+  assets: readonly PreparedAsset[],
+  persist: () => Promise<T>,
+  failure: { message: string; log: string; details?: Record<string, unknown> },
+): Promise<T> {
+  const written: string[] = [];
+  try {
+    for (const asset of assets) {
+      await writeAssetBytes(asset.storageKey, asset.bytes);
+      written.push(asset.storageKey);
+    }
+    return await persist();
+  } catch (error) {
+    for (const storageKey of written) await removeAssetFile(storageKey);
+    logger.error(failure.log, { ...failure.details, error });
+    throw new AppError("INTERNAL", failure.message, { cause: error });
+  }
 }
 
 /**
@@ -192,28 +287,19 @@ export async function createCollection(
   fields: CollectionFieldsInput,
   files: readonly IncomingFile[],
 ): Promise<CollectionDetailView> {
-  const images = prepareImages(files, getEnv().MAX_UPLOAD_BYTES);
+  const prepared = prepareAssets(prepareImages(files, getEnv().MAX_UPLOAD_BYTES));
 
-  // 先定 id：storage_key 要用它做目录名（MUST 2），新建时还没有图片也不影响这一步。
+  // 先定 id：storage_key 要用它做文件名（MUST 2），新建时还没有图片也不影响这一步。
   const collectionId = randomUUID();
-  const prepared = images.map((image) => ({
-    ...image,
-    storageKey: buildAssetStorageKey(collectionId, image.mimeType),
-  }));
 
-  for (const asset of prepared) {
-    await writeAssetBytes(asset.storageKey, asset.bytes);
-  }
-
-  await repo.createCollection(
-    collectionId,
-    fields,
-    prepared.map((asset) => ({
-      storageKey: asset.storageKey,
-      fileName: asset.fileName,
-      mimeType: asset.mimeType,
-      size: asset.bytes.length,
-    })),
+  await commitAssets(
+    prepared,
+    () => repo.createCollection(collectionId, fields, prepared.map(toNewAsset)),
+    {
+      message: COLLECTION_ERROR_MESSAGES.saveFailed,
+      log: "创建资源夹失败，已回滚本次新写的文件",
+      details: { collectionId },
+    },
   );
 
   return getCollection(collectionId);
@@ -229,38 +315,95 @@ export async function updateCollectionFields(
   return getCollection(id);
 }
 
-export async function addCollectionAssets(
+/** 总资源库列表（AC-POOL-2）：每张照片带它被归到的资源夹。 */
+export async function listPoolAssets(query: ListPoolAssetsQuery): Promise<PoolAssetList> {
+  const { rows, total } = await repo.listPoolAssets(query.page, query.pageSize);
+  return {
+    items: rows.map(toPoolAssetView),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+  };
+}
+
+/**
+ * 上传到总资源库（只入池，不建关联）。
+ * 写库失败时删掉本次新写的文件，不留孤儿（AC-POOL-6 同口径）。
+ */
+export async function uploadPoolAssets(
+  files: readonly IncomingFile[],
+): Promise<PoolAssetView[]> {
+  const prepared = prepareAssets(prepareImages(files, getEnv().MAX_UPLOAD_BYTES));
+
+  const created = await commitAssets(
+    prepared,
+    () => repo.createPoolAssets(prepared.map(toNewAsset)),
+    {
+      message: COLLECTION_ERROR_MESSAGES.poolUploadFailed,
+      log: "上传到总资源库失败，已回滚本次新写的文件",
+    },
+  );
+
+  return created.map((asset) => toPoolAssetView({ ...asset, collections: [] }));
+}
+
+/**
+ * 从总资源库删除照片（AC-POOL-7）：关联行随外键级联删除，磁盘文件一并删除。
+ * 这是唯一会删原图文件的入口 —— 从夹里移除与删夹都不删文件。
+ */
+export async function deletePoolAsset(assetId: string): Promise<void> {
+  const asset = await repo.findAsset(assetId);
+  if (!asset) throw AppError.notFound("图片不存在");
+
+  await repo.deletePoolAsset(assetId);
+  await removeAssetFile(asset.storageKey);
+}
+
+/**
+ * 从总资源库挑照片加入资源夹（AC-POOL-2、AC-POOL-5）。
+ * 幂等：已经在夹里的照片跳过，第二次调用返回成功但关联行不增加。
+ */
+export async function addAssetsToCollection(
+  id: string,
+  assetIds: readonly string[],
+): Promise<CollectionDetailView> {
+  if (!(await repo.collectionExists(id))) throw AppError.notFound("资源夹不存在");
+  assertCollectionMutable((await relatedCounts(id)).runningExtractions);
+
+  const unique = [...new Set(assetIds)];
+  const found = await repo.findAssetsByIds(unique);
+  if (found.length !== unique.length) {
+    throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.unknownPoolAsset);
+  }
+
+  await repo.addAssetsToCollection(id, unique);
+  return getCollection(id);
+}
+
+/**
+ * 夹内上传（AC-POOL-6）：入池 + 建关联，一次事务。
+ * 写库失败时删掉本次新写的文件，库与磁盘都回到上传前的状态。
+ */
+export async function uploadCollectionAssets(
   id: string,
   files: readonly IncomingFile[],
 ): Promise<CollectionDetailView> {
   if (!(await repo.collectionExists(id))) throw AppError.notFound("资源夹不存在");
   assertCollectionMutable((await relatedCounts(id)).runningExtractions);
 
-  const images = prepareImages(files, getEnv().MAX_UPLOAD_BYTES);
-  const prepared = images.map((image) => ({
-    ...image,
-    storageKey: buildAssetStorageKey(id, image.mimeType),
-  }));
+  const prepared = prepareAssets(prepareImages(files, getEnv().MAX_UPLOAD_BYTES));
 
-  for (const asset of prepared) {
-    await writeAssetBytes(asset.storageKey, asset.bytes);
-  }
-
-  await repo.appendAssets(
-    id,
-    prepared.map((asset) => ({
-      storageKey: asset.storageKey,
-      fileName: asset.fileName,
-      mimeType: asset.mimeType,
-      size: asset.bytes.length,
-    })),
-  );
+  await commitAssets(prepared, () => repo.appendAssetsToCollection(id, prepared.map(toNewAsset)), {
+    message: COLLECTION_ERROR_MESSAGES.saveFailed,
+    log: "夹内上传失败，已回滚本次新写的文件",
+    details: { collectionId: id },
+  });
 
   return getCollection(id);
 }
 
 /**
- * 解除单张原图（AC-01-5）：只删关联记录，磁盘文件保留（MUST 4）。
+ * 从夹里移除单张原图（AC-01-5、AC-POOL-3）：只删关联记录，照片与磁盘文件都保留（MUST 4）。
  * 允许移除到最后一张——资源夹允许没有图片，之后补图即可（AC-01-2）。
  */
 export async function removeCollectionAsset(
@@ -270,7 +413,9 @@ export async function removeCollectionAsset(
   if (!(await repo.collectionExists(id))) throw AppError.notFound("资源夹不存在");
   assertCollectionMutable((await relatedCounts(id)).runningExtractions);
 
-  if (!(await repo.deleteAsset(id, assetId))) throw AppError.notFound("图片不存在");
+  if (!(await repo.removeAssetFromCollection(id, assetId))) {
+    throw AppError.notFound("图片不存在");
+  }
   return getCollection(id);
 }
 
@@ -292,7 +437,7 @@ export interface CollectionEditPayload {
  * 5. 事务内改字段、删关联、插新增、更新保留项顺序；6. 成功后返回最终列表。
  * 保存后的图片张数不设下限：全部移除等于得到一个 0 张图的资源夹（AC-01-2）。
  * 任何一步失败都不动数据库；写盘之后失败会补偿删除本次新写的文件，返回 500。
- * 被移除的原图文件保留在磁盘（MUST 4）。
+ * 被移除的原图只解除关联，照片还留在总资源库（AC-POOL-3）。
  */
 export async function saveCollectionEdit(
   id: string,
@@ -300,7 +445,7 @@ export async function saveCollectionEdit(
 ): Promise<CollectionDetailView> {
   if (!(await repo.collectionExists(id))) throw AppError.notFound("资源夹不存在");
 
-  const existingIds = new Set((await repo.listAssets(id)).map((asset) => asset.id));
+  const existingIds = new Set((await repo.listAssetsByCollection(id)).map((asset) => asset.id));
   const keep: Array<{ assetId: string; sortOrder: number }> = [];
   const remove: string[] = [];
   const adds: Array<{ tempKey: string; sortOrder: number }> = [];
@@ -337,54 +482,37 @@ export async function saveCollectionEdit(
     if (!file) throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.missingUpload);
     return file;
   });
-  const images = prepareImages(incoming, getEnv().MAX_UPLOAD_BYTES);
+  const preparedAdds = prepareAssets(prepareImages(incoming, getEnv().MAX_UPLOAD_BYTES)).map(
+    (asset, index) => ({ ...asset, sortOrder: adds[index].sortOrder }),
+  );
 
-  const preparedAdds = adds.map((add, index) => {
-    const image = images[index];
-    return {
-      sortOrder: add.sortOrder,
-      storageKey: buildAssetStorageKey(id, image.mimeType),
-      fileName: image.fileName,
-      mimeType: image.mimeType,
-      size: image.bytes.length,
-      bytes: image.bytes,
-    };
-  });
-
-  const written: string[] = [];
-  try {
-    for (const asset of preparedAdds) {
-      await writeAssetBytes(asset.storageKey, asset.bytes);
-      written.push(asset.storageKey);
-    }
-
-    await repo.saveCollectionEdit(id, payload.fields, {
-      keep,
-      remove,
-      adds: preparedAdds.map((asset) => ({
-        storageKey: asset.storageKey,
-        fileName: asset.fileName,
-        mimeType: asset.mimeType,
-        size: asset.size,
-        sortOrder: asset.sortOrder,
-      })),
-    });
-  } catch (error) {
-    for (const storageKey of written) await removeAssetFile(storageKey);
-    logger.error("资源夹整组保存失败，已回滚本次新写的文件", { collectionId: id, error });
-    throw new AppError("INTERNAL", COLLECTION_ERROR_MESSAGES.saveFailed, { cause: error });
-  }
+  await commitAssets(
+    preparedAdds,
+    () =>
+      repo.saveCollectionEdit(id, payload.fields, {
+        keep,
+        remove,
+        adds: preparedAdds.map((asset) => ({ ...toNewAsset(asset), sortOrder: asset.sortOrder })),
+      }),
+    {
+      message: COLLECTION_ERROR_MESSAGES.saveFailed,
+      log: "资源夹整组保存失败，已回滚本次新写的文件",
+      details: { collectionId: id },
+    },
+  );
 
   return getCollection(id);
 }
 
-/** 删除资源夹（MUST 5）：先删记录（外键级联到任务/结果/发布记录），再尽力清理磁盘；清理失败只记日志。 */
+/**
+ * 删除资源夹（AC-POOL-4）：只删资源夹行，关联行随外键级联删除；
+ * **照片行与磁盘文件都保留** —— 它们属于总资源库，别的夹可能也在用（ADR 0012 第 1 条）。
+ */
 export async function deleteCollection(id: string): Promise<void> {
   if (!(await repo.collectionExists(id))) throw AppError.notFound("资源夹不存在");
   assertCollectionMutable((await relatedCounts(id)).runningExtractions);
 
   await repo.deleteCollection(id);
-  await removeCollectionFiles(id);
 }
 
 /** 资源夹总数：工作台统计与侧栏计数（docs/prd/09 MUST 1、MUST 2），一次聚合查询。 */
@@ -408,12 +536,8 @@ export async function listRecentCollections(limit: number): Promise<CollectionSu
 }
 
 /** 鉴权读取原图字节（AC-01-7）；`width` 有值时当场缩放成缩略图。 */
-export async function getAssetImage(
-  collectionId: string,
-  assetId: string,
-  width?: number,
-): Promise<AssetBytes> {
-  const asset = await repo.findAsset(collectionId, assetId);
+export async function getAssetImage(assetId: string, width?: number): Promise<AssetBytes> {
+  const asset = await repo.findAsset(assetId);
   if (!asset) throw AppError.notFound("图片不存在");
 
   const original = await readAssetFile(asset.storageKey);

@@ -64,7 +64,31 @@ export const listCollectionsQuerySchema = z.object({
 
 export type ListCollectionsQuery = z.infer<typeof listCollectionsQuerySchema>;
 
-/** `GET /api/files/[collectionId]/[assetId]?w=400` 的缩略图宽度。 */
+/**
+ * 总资源库列表（`GET /api/library`）的分页参数。
+ * 与资源夹列表同一套默认值与上限，界面不必记两个数。
+ */
+export const listPoolAssetsQuerySchema = z.object({
+  page: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).default(1)),
+  pageSize: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
+  ),
+});
+
+export type ListPoolAssetsQuery = z.infer<typeof listPoolAssetsQuerySchema>;
+
+/**
+ * `POST /api/collections/[id]/assets` 的请求体：从总资源库挑几张照片加入资源夹。
+ * 语义是「建关联」不是「上传」——上传走 `POST /api/collections/[id]/assets/upload`。
+ */
+export const collectionAssetIdsSchema = z.object({
+  assetIds: z
+    .array(z.string().min(1, "缺少图片标识"))
+    .min(1, "请选择要加入资源夹的照片"),
+});
+
+/** `GET /api/files/assets/[assetId]?w=400` 的缩略图宽度。 */
 export const thumbnailWidthSchema = z.preprocess(
   emptyToUndefined,
   z.coerce.number().int().min(1).max(MAX_THUMBNAIL_WIDTH).optional(),

@@ -75,7 +75,8 @@ tests/e2e/          # 端到端验收
 
 ### 文件
 
-`UPLOAD_DIR` 下两类：`media-assets/<collectionId>/`（原图）、`library-assets/<runId>/`（提取出的素材）。
+`UPLOAD_DIR` 下两类：`media-assets/<assetId>.<ext>`（原图，属于总资源库、不按资源夹分目录）、
+`library-assets/<runId>/`（提取出的素材）。
 文件名服务端生成，数据库只存 `storage_key`。读取统一经鉴权路由（`/api/files/...`），校验会话后返回字节；
 缩略图用 `?w=` 当场处理，不预生成文件。
 

@@ -37,8 +37,8 @@ const COLLECTION: CollectionDetailView = {
       mimeType: "image/png",
       size: 100,
       sortOrder: 1,
-      url: "/api/files/collection-1/asset-1",
-      thumbnailUrl: "/api/files/collection-1/asset-1?w=400",
+      url: "/api/files/assets/asset-1",
+      thumbnailUrl: "/api/files/assets/asset-1?w=400",
     },
   ],
 };

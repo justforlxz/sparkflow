@@ -54,12 +54,12 @@ export async function loadStageCollectionContext(collectionId: string): Promise<
   };
 }
 
-/** 读一张原图的字节（鉴权读取用例走同一条路径）。 */
+/** 读一张原图的字节（鉴权读取用例走同一条路径）。照片属于总资源库，与资源夹无关（ADR 0012）。 */
 export async function loadSourceImage(
-  collectionId: string,
+  _collectionId: string,
   assetId: string,
 ): Promise<SourceImageBytes> {
-  const asset = await getAssetImage(collectionId, assetId);
+  const asset = await getAssetImage(assetId);
   return { bytes: asset.bytes, mimeType: asset.mimeType };
 }
 

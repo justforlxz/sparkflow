@@ -53,8 +53,9 @@
 
 | 对象 | 关键字段 | 关系 |
 | --- | --- | --- |
-| `media_collection` | id、name、platform、source_url、source_title、source_body、created_at、updated_at | 含多张原图、多个任务、多个结果 |
-| `media_asset` | id、collection_id、file_name、storage_key、mime_type、size、sort_order、created_at | 原图；解除关联不等于删除文件 |
+| `media_collection` | id、name、platform、source_url、source_title、source_body、created_at、updated_at | 经关联表挂多张原图（相册语义），另含多个提取运行与素材 |
+| `media_asset` | id、file_name、storage_key、mime_type、size、created_at（另有兼容列 `collection_id`、`sort_order`，下一版删） | 总资源库里的原图，不属于任何单个资源夹；从夹里移除不等于删除文件 |
+| `collection_asset` | collection_id、asset_id、sort_order、added_at | 资源夹 ↔ 原图多对多；删夹只删这张表 |
 | `generation_task` | id、collection_id、visual_style、copy_style、image_count、extra_prompt、agent_snapshot、result_id、created_at | 归属一个资源夹；状态由阶段派生 |
 | `generation_stage` | id、task_id、stage（image/copy）、status、attempts、error、started_at、finished_at | 一个任务两条；可独立重跑 |
 | `generation_result` | id、task_id、collection_id、title、body、tags、visual_style、created_at | 一个任务最多一个 |

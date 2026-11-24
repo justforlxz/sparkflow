@@ -346,20 +346,20 @@ test("AC-01-7 图片字节通过 /api/files 返回，content-type 正确；未�
   const created = await createCollection(request, uniqueName("AC-01-7"), [png("a.png")]);
   const asset = created.assets[0];
 
-  const response = await request.get(`/api/files/${created.id}/${asset.id}`);
+  const response = await request.get(`/api/files/assets/${asset.id}`);
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toBe("image/png");
   expect(Buffer.from(await response.body())).toEqual(PNG_ONE_PIXEL);
 
   // 缩略图参数当场缩放，不改变类型。
-  const thumbnail = await request.get(`/api/files/${created.id}/${asset.id}?w=1`);
+  const thumbnail = await request.get(`/api/files/assets/${asset.id}?w=1`);
   expect(thumbnail.status()).toBe(200);
   expect(thumbnail.headers()["content-type"]).toBe("image/png");
 
   // 没有会话 cookie 时按接口约定返回 401 JSON，而不是图片或 403。
   const anonymous = await playwrightRequest.newContext({ baseURL: BASE_URL });
   try {
-    const denied = await anonymous.get(`/api/files/${created.id}/${asset.id}`);
+    const denied = await anonymous.get(`/api/files/assets/${asset.id}`);
     expect(denied.status()).toBe(401);
     const body = (await denied.json()) as ErrorBody;
     expect(body.error.code).toBe("UNAUTHORIZED");

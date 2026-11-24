@@ -1,4 +1,5 @@
-// 媒体资源夹与原始图片（docs/prd/01-media-collection.md、docs/prd/00-overview.md 第 5 节）。
+// 媒体资源夹、总资源库（照片池）与资源夹关联（docs/prd/01-media-collection.md、
+// docs/adr/0012-总资源库与资源夹的相册模型.md 第 1 条、docs/prd/00-overview.md 第 5 节）。
 //
 // 提取运行、素材库、文案版本、发布记录分属各自的 schema 文件。那些模块在自己的 schema 里用
 // `collectionId` 外键并声明 `onDelete: Cascade`，这样删除资源夹时数据库会一并删掉它们
@@ -6,6 +7,10 @@
 // 关系本身（字段、`onDelete`）在各自模块的 schema 里声明，这里不写它们的列。
 //
 // 没有 `extract_target`：类别（material / border / other）取代了单值提取目标（ADR 0010、MKACG-938）。
+//
+// 本文件里的 `MediaAsset.collectionId` 与 `MediaAsset.sortOrder` 是**兼容列**：它们只为了让上一版
+// 镜像在回滚后还能读到数据而存在，新代码不再写也不再读。删除它们的时间点在 MKACG-981
+// （AGENTS.md 硬性规则 3「删列/改名拆两个版本」、docs/development.md「迁移必须向前兼容」）。
 model MediaCollection {
   id          String   @id @default(uuid())
   name        String
@@ -18,7 +23,10 @@ model MediaCollection {
   // 文案版本号的计数器：只增不减，删除版本后也不回收（docs/prd/12 MUST 5：version_no 不复用）。
   // 单独一列而不是「当前最大版本号 + 1」，是因为删掉最高版本后那种算法会复用编号。
   copyVersionSeq Int    @default(0) @map("copy_version_seq")
-  assets      MediaAsset[]
+  // 兼容反向关系：上一版镜像靠它读「这个夹有哪些照片」。新代码一律走 `collectionAssets`，
+  // 不查这个字段（留着只是因为删列要等 MKACG-981）。
+  assets           MediaAsset[]
+  collectionAssets CollectionAsset[]
   // 以下三组反向关系由各自的 schema 文件声明，删除资源夹时级联。
   extractionRuns ExtractionRun[]
   libraryAssets  LibraryAsset[]
@@ -29,21 +37,48 @@ model MediaCollection {
   @@map("media_collection")
 }
 
-// 原图。`storageKey` 与记录解耦：解除关联只删这一行，磁盘文件保留（MUST 4）。
+// 总资源库（照片池）里的一张原图（ADR 0012 第 1 条）。
+//
+// 照片**不属于**任何资源夹：归属关系在 `collection_asset` 里，一张照片可以同时属于多个资源夹
+// （相册语义）。`storageKey` 与记录解耦：从夹里移除只删关联行，磁盘文件保留（PRD 01 MUST 4）；
+// 只有从总资源库显式删除才删文件。
+//
+// `collectionId` 与 `sortOrder` 是兼容列（见文件顶部说明）：
+// - `collectionId` 可空，新代码写入时为 NULL；迁移来的历史行保留旧值，删除资源夹时被置为 NULL
+//   （`onDelete: SetNull`，AC-POOL-8）。**不能**用 `Cascade`：那会在删夹时把迁移来的照片整批删掉。
+// - `sortOrder` 只有上一版镜像会读，新代码的排序在 `CollectionAsset.sortOrder` 上。
 //
 // 从原图派生的素材（library_asset）不在此声明反向关系：素材只记 `source_asset_id` 字符串，
 // 原图被解除关联后素材要留在库里（docs/prd/12 MUST 4）。
 model MediaAsset {
-  id           String          @id @default(uuid())
-  collectionId String          @map("collection_id")
-  storageKey   String          @map("storage_key")
-  fileName     String          @map("file_name")
-  mimeType     String          @map("mime_type")
+  id           String            @id @default(uuid())
+  collectionId String?           @map("collection_id")
+  sortOrder    Int               @default(0) @map("sort_order")
+  storageKey   String            @map("storage_key")
+  fileName     String            @map("file_name")
+  mimeType     String            @map("mime_type")
   size         Int
-  sortOrder    Int             @default(0) @map("sort_order")
-  createdAt    DateTime        @default(now()) @map("created_at")
-  collection   MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime          @default(now()) @map("created_at")
+  collection   MediaCollection?  @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  collections  CollectionAsset[]
 
   @@index([collectionId, sortOrder])
   @@map("media_asset")
+}
+
+// 资源夹 ↔ 照片 多对多（ADR 0012 第 1 条）。
+//
+// 删除资源夹只级联删这里的关联行，照片行留在池里；删除照片同样级联删关联行。
+// `sortOrder` 是「这张照片在这个夹里的顺序」，所以放在关联行上而不是照片上。
+model CollectionAsset {
+  collectionId String          @map("collection_id")
+  assetId      String          @map("asset_id")
+  sortOrder    Int             @default(0) @map("sort_order")
+  addedAt      DateTime        @default(now()) @map("added_at")
+  collection   MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  asset        MediaAsset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, assetId])
+  @@index([collectionId, sortOrder])
+  @@map("collection_asset")
 }

@@ -19,6 +19,8 @@ import { listPublishRecords, markPublished } from "@/modules/publish/service";
 
 const COLLECTION_IDS: string[] = [];
 const GATEWAY_IDS: string[] = [];
+/** 总资源库里的照片：删资源夹不会带走它们（AC-POOL-4），用例自己清理。 */
+const POOL_ASSET_IDS: string[] = [];
 
 async function createCollectionWithAssets(count: number): Promise<{ id: string; assetIds: string[] }> {
   const db = getDb();
@@ -30,17 +32,20 @@ async function createCollectionWithAssets(count: number): Promise<{ id: string; 
 
   const assetIds: string[] = [];
   for (let index = 0; index < count; index += 1) {
+    // 照片先进总资源库，再建关联（ADR 0012 第 1 条）。
     const asset = await db.mediaAsset.create({
       data: {
-        collectionId: collection.id,
-        storageKey: `media-assets/${collection.id}/asset-${index}.png`,
+        storageKey: `media-assets/asset-${index}-${randomUUID()}.png`,
         fileName: `asset-${index}.png`,
         mimeType: "image/png",
         size: 1,
-        sortOrder: index,
       },
       select: { id: true },
     });
+    await db.collectionAsset.create({
+      data: { collectionId: collection.id, assetId: asset.id, sortOrder: index },
+    });
+    POOL_ASSET_IDS.push(asset.id);
     assetIds.push(asset.id);
   }
   return { id: collection.id, assetIds };
@@ -141,6 +146,9 @@ afterAll(async () => {
   await db.agentConfig.updateMany({ where: { type: "image" }, data: { gatewayId: null } });
   for (const id of COLLECTION_IDS.splice(0)) {
     await db.mediaCollection.deleteMany({ where: { id } });
+  }
+  for (const id of POOL_ASSET_IDS.splice(0)) {
+    await db.mediaAsset.deleteMany({ where: { id } });
   }
   for (const id of GATEWAY_IDS.splice(0)) {
     await db.gateway.deleteMany({ where: { id } });

@@ -59,7 +59,7 @@ export const COLLECTION_COPY = {
   deleteConfirmAction: "确认删除",
   deletingLabel: "删除中…",
   deleteConfirmBody:
-    "删除后，它的提取运行、素材、文案版本与发布记录会一并删除，资源夹内的原始图片文件也会被清理。此操作不可撤销。",
+    "删除后，它的提取运行、素材、文案版本与发布记录会一并删除。原始图片仍留在总资源库，不会被删除。此操作不可撤销。",
   assetStateSaved: "已保存",
   assetStatePendingAdd: "待添加",
   assetStatePendingRemove: "待移除",

@@ -3,7 +3,7 @@ process.env.AUTH_SECRET ||= "unit-test-secret-with-enough-characters-0123";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isAppError } from "@/lib/errors";
-import type { CollectionRow, AssetRow } from "./repo";
+import type { CollectionRow, CollectionAssetRow } from "./repo";
 
 /**
  * 整组保存（`saveCollectionEdit`）的单测：磁盘与数据库都替换成 mock，
@@ -14,7 +14,7 @@ import type { CollectionRow, AssetRow } from "./repo";
 vi.mock("./repo", () => ({
   collectionExists: vi.fn(),
   findCollection: vi.fn(),
-  listAssets: vi.fn(),
+  listAssetsByCollection: vi.fn(),
   createCollection: vi.fn(),
   saveCollectionEdit: vi.fn(),
 }));
@@ -22,7 +22,6 @@ vi.mock("./repo", () => ({
 vi.mock("./files", () => ({
   readAssetFile: vi.fn(),
   removeAssetFile: vi.fn(),
-  removeCollectionFiles: vi.fn(),
   writeAssetBytes: vi.fn(),
 }));
 
@@ -54,14 +53,14 @@ const FIELDS = {
   sourceBody: null,
 };
 
-function assetRow(id: string, sortOrder: number): AssetRow {
+function assetRow(id: string, sortOrder: number): CollectionAssetRow {
   return {
     id,
-    collectionId: COLLECTION_ID,
-    storageKey: `media-assets/${COLLECTION_ID}/${id}.png`,
+    storageKey: `media-assets/${id}.png`,
     fileName: `${id}.png`,
     mimeType: "image/png",
     size: PNG_BYTES.length,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
     sortOrder,
   };
 }
@@ -69,7 +68,7 @@ function assetRow(id: string, sortOrder: number): AssetRow {
 const ASSET_A = assetRow("asset-a", 0);
 const ASSET_B = assetRow("asset-b", 1);
 
-function collectionRow(assets: AssetRow[]): CollectionRow {
+function collectionRow(assets: CollectionAssetRow[]): CollectionRow {
   return {
     id: COLLECTION_ID,
     name: "秋季穿搭",
@@ -103,7 +102,7 @@ function pngFile(name = "c.png") {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(repo.collectionExists).mockResolvedValue(true);
-  vi.mocked(repo.listAssets).mockResolvedValue([ASSET_A, ASSET_B]);
+  vi.mocked(repo.listAssetsByCollection).mockResolvedValue([ASSET_A, ASSET_B]);
   vi.mocked(repo.findCollection).mockResolvedValue(collectionRow([ASSET_A, ASSET_B]));
   vi.mocked(counts.countCollectionUsage).mockResolvedValue({ runs: 0, activeRuns: 0, libraryAssets: 0 });
   vi.mocked(copyCounts.countCollectionVersions).mockResolvedValue(0);
@@ -135,9 +134,7 @@ describe("整组换图成功（AC-FIX-1）", () => {
     expect(plan.keep).toEqual([]);
     expect(plan.adds).toHaveLength(1);
     expect(plan.adds[0]).toMatchObject({ fileName: "c.png", mimeType: "image/png", sortOrder: 2 });
-    expect(plan.adds[0].storageKey).toMatch(
-      new RegExp(`^media-assets/${COLLECTION_ID}/[0-9a-f-]{36}\\.png$`),
-    );
+    expect(plan.adds[0].storageKey).toMatch(/^media-assets\/[0-9a-f-]{36}\.png$/);
   });
 
   it("保留 + 新增混合时，sort_order 取清单下标，不按写入先后（AC-FIX-8）", async () => {

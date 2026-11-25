@@ -95,6 +95,8 @@ function harness(claimed: ExtractionRunRecord | null): Harness {
             width: asset.width,
             height: asset.height,
             sortOrder: asset.sortOrder,
+            watermarkRemoved: asset.watermarkRemoved,
+            watermarkNote: asset.watermarkNote,
             createdAt: new Date("2026-11-21T00:00:00Z"),
           }) satisfies LibraryAssetRecord,
       );
@@ -114,6 +116,8 @@ function harness(claimed: ExtractionRunRecord | null): Harness {
         category: image.category,
         sourceAssetId: image.sourceAssetId,
         sortOrder: image.sortOrder,
+        watermarkRemoved: image.watermarkRemoved,
+        watermarkNote: image.watermarkNote,
       })),
     ),
   };
@@ -127,6 +131,8 @@ function image(sourceAssetId: string, category: string, sortOrder: number): Extr
     category,
     sourceAssetId,
     sortOrder,
+    watermarkRemoved: true,
+    watermarkNote: null,
   };
 }
 

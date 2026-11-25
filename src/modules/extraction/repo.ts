@@ -81,6 +81,8 @@ const LIBRARY_SELECT = {
   width: true,
   height: true,
   sortOrder: true,
+  watermarkRemoved: true,
+  watermarkNote: true,
   createdAt: true,
 } as const;
 
@@ -259,6 +261,8 @@ export async function saveAssets(
       width: asset.width,
       height: asset.height,
       sortOrder: asset.sortOrder,
+      watermarkRemoved: asset.watermarkRemoved,
+      watermarkNote: asset.watermarkNote,
     })),
     select: LIBRARY_SELECT,
   });

@@ -3,6 +3,7 @@
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { Panel } from "@/components/ui/Panel";
+import { Pill } from "@/components/ui/Pill";
 import { buttonClass } from "@/components/ui/styles";
 import { LIBRARY_COPY } from "@/modules/extraction/constants";
 import { extractionItemKey } from "@/modules/extraction/item-key";
@@ -23,6 +24,14 @@ export interface ResultCardsProps {
   retrying: ReadonlySet<string>;
   onRetry(retry: ResultCellRetry): void;
   onRerun(card: ResultCardView): void;
+}
+
+/**
+ * 角标的无障碍名称：可见文字是「含水印」，原因跟在后面。
+ * 没有原因（理论上不会发生：`false` 一定带原因）时只读可见文字，不补编。
+ */
+function watermarkLabel(note: string | null): string {
+  return note ? `${LIBRARY_COPY.watermarkBadge}：${note}` : LIBRARY_COPY.watermarkBadge;
 }
 
 /** 状态圆点与格子的颜色：颜色只从设计变量的 class 取，不写字面色值（AC-D-1）。 */
@@ -117,12 +126,30 @@ function ResultCard({
             <div key={cell.category} className="space-y-1">
               <p className="text-caption text-ink-tertiary">{cell.label}</p>
               {cell.state === "done" && cell.asset ? (
-                <ImageLightbox
-                  image={cell.asset}
-                  openLabel={LIBRARY_COPY.viewImage}
-                  closeLabel={LIBRARY_COPY.closePreview}
-                  thumbnailClassName="h-[72px] w-full rounded-md border border-line object-cover transition-opacity hover:opacity-90"
-                />
+                <div className="relative">
+                  <ImageLightbox
+                    image={cell.asset}
+                    openLabel={LIBRARY_COPY.viewImage}
+                    closeLabel={LIBRARY_COPY.closePreview}
+                    thumbnailClassName="h-[72px] w-full rounded-md border border-line object-cover transition-opacity hover:opacity-90"
+                  />
+                  {/* 没去掉上游水印的产物：角上标「含水印」，原因挂在 title 与 aria-label 上（MKACG-1004）。
+                      角标**不遮指针事件**：`pointer-events-none` 会把命中测试让给下面的缩略图按钮，
+                      它自己的 title（「查看大图」）会顶掉这里的「为什么还带水印」；`tabIndex` 让键盘
+                      与读屏用户也能听到这条原因。 */}
+                  {cell.asset.watermarkRemoved ? null : (
+                    <Pill
+                      data-testid="library-watermark-badge"
+                      tone="warning"
+                      title={cell.asset.watermarkNote ?? undefined}
+                      tabIndex={0}
+                      aria-label={watermarkLabel(cell.asset.watermarkNote)}
+                      className="absolute left-1 top-1"
+                    >
+                      {LIBRARY_COPY.watermarkBadge}
+                    </Pill>
+                  )}
+                </div>
               ) : cell.state === "failed" ? (
                 <div
                   data-testid="result-cell"

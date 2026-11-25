@@ -8,21 +8,51 @@
  * 一次调用只回一张图（一图对一图，ADR 0008），与真实插件一致。
  * 失败路径按脚本触发：提示词里带 `mock:fail-image-all` 时每一次都失败，
  * 带 `mock:fail-image-at-<n>` 时只让第 n 次调用失败（验证 AC-LIB-2 的部分成功）。
+ * 带 `mock:subject-to-bottom` 时把主体画到底边，用来验证「主体贴底就不去水印」（AC-WM-3）。
  */
 import sharp from "sharp";
 import { StageError } from "@/lib/job-failure";
-import { MOCK_SCRIPT_HINTS, mockDelayMs, mockFailImageAt } from "../mock-script";
+import { MOCK_SCRIPT_HINTS, hasMockHint, mockDelayMs, mockFailImageAt } from "../mock-script";
 import type { GeneratedImage } from "./types";
 import { IMAGE_ERROR_CODES, type GenerateImageInput, type ImageGenerator } from "./types";
 
 /** 上游没给尺寸时用的兜底（与真实适配器省略 `size` 时的语义一致）。 */
 const FALLBACK_EDGE = 1024;
 
+/** 纯白底：默认产物，只有尺寸有意义（AC-LIB-13 断言「不拉伸」）。 */
+const MOCK_BACKGROUND = { r: 255, g: 255, b: 255 } as const;
+
+/** 「主体贴底」脚本用的主体色：与白底差得足够远，去水印的安全检测一定拦得住。 */
+const MOCK_SUBJECT = { r: 40, g: 60, b: 90 } as const;
+
+/** 主体压到底边时占的高度比例：比 10% 的裁剪带更宽，保证整条带都是主体。 */
+const MOCK_SUBJECT_BOTTOM_RATIO = 0.2;
+
 /** `"1536x1024"` → `{ width, height }`；解析不出来时退回正方形。 */
 function parseMockSize(size: string | null): { width: number; height: number } {
   const matched = size ? /^(\d+)x(\d+)$/.exec(size.trim()) : null;
   if (!matched) return { width: FALLBACK_EDGE, height: FALLBACK_EDGE };
   return { width: Number(matched[1]), height: Number(matched[2]) };
+}
+
+/**
+ * 按脚本出一张图：默认纯白底；`mock:subject-to-bottom` 时底部画一条实色主体。
+ * 后者让去水印的安全检测拒绝裁切，e2e 才能看到「含水印」角标（AC-WM-3）。
+ */
+async function mockImage(prompt: string, width: number, height: number): Promise<Buffer> {
+  const canvas = sharp({
+    create: { width, height, channels: 3, background: MOCK_BACKGROUND },
+  });
+  if (!hasMockHint(prompt, MOCK_SCRIPT_HINTS.subjectToBottom)) return canvas.png().toBuffer();
+
+  const subjectHeight = Math.max(1, Math.round(height * MOCK_SUBJECT_BOTTOM_RATIO));
+  const subject = await sharp({
+    create: { width, height: subjectHeight, channels: 3, background: MOCK_SUBJECT },
+  })
+    .png()
+    .toBuffer();
+
+  return canvas.composite([{ input: subject, top: height - subjectHeight, left: 0 }]).png().toBuffer();
 }
 
 export class MockImageGenerator implements ImageGenerator {
@@ -46,11 +76,7 @@ export class MockImageGenerator implements ImageGenerator {
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
 
     const { width, height } = parseMockSize(input.size);
-    const bytes = await sharp({
-      create: { width, height, channels: 3, background: { r: 255, g: 255, b: 255 } },
-    })
-      .png()
-      .toBuffer();
+    const bytes = await mockImage(input.prompt, width, height);
 
     return [
       {

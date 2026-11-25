@@ -11,7 +11,9 @@
  * 5. 输出比例跟随原图（`deriveExtractionSize`），不再固定 1024×1536；
  * 6. 图生图前先向视觉模型要一句材质描述，作为 `Material:` 段拼进提示词；拿不到就跳过该段、
  *    **不阻断**提取（MKACG-1000、AC-PROMPT-3）；
- * 7. 落盘与写库不在这里（提取模块的 runner 负责），本文件只交图片、跳过项与失败清单。
+ * 7. 落盘与写库不在这里（提取模块的 runner 负责），本文件只交图片、跳过项与失败清单；
+ * 8. 出图后、交出去之前去一次上游水印（`watermark.ts`）：去不成也交原图并注明原因，
+ *    **不阻断**提取（MKACG-1004、AC-WM-3、AC-WM-4）。
  */
 import { logger } from "@/lib/logger";
 import { StageError } from "@/lib/job-failure";
@@ -23,6 +25,7 @@ import { buildMaterialPrompt, parseMaterialDescription } from "./material";
 import { buildImagePrompt } from "./prompt";
 import { resolveImageGenerator, resolveVisionAnalyzer } from "./service";
 import { buildExistencePrompt, deriveExtractionSize, parseExistenceVerdict } from "./vision-judgment";
+import { WATERMARK_NOTES, removeUpstreamWatermark, type WatermarkRemovalResult } from "./watermark";
 import { IMAGE_ERROR_CODES } from "./adapters/types";
 import { extractionItemKey } from "@/modules/extraction/item-key";
 import { EXTRACTION_ERROR_CODES, LIBRARY_COPY } from "@/modules/extraction/constants";
@@ -46,6 +49,11 @@ export interface ExtractionHandlerDeps {
   vision?: VisionAnalyzer | null;
   /** 单测注入：跳过 sharp，直接把原图字节当成 base64 用。 */
   compress?: (bytes: Buffer) => Promise<string>;
+  /**
+   * 单测注入：产物去水印的后处理。不传时用 `removeUpstreamWatermark`（真 sharp 处理）。
+   * 抛错不阻断提取：调用方保留原图、记 warn、把素材标成「未去水印」（AC-WM-4）。
+   */
+  watermark?: (bytes: Buffer) => Promise<WatermarkRemovalResult>;
   /** 单测注入：跳过 sharp，直接给出原图像素尺寸。 */
   readSize?: (bytes: Buffer) => Promise<{ width: number; height: number }>;
 }
@@ -156,6 +164,44 @@ async function describeMaterial(
   }
 }
 
+/** 一次去水印的结果：`bytes` 是要落盘的字节，`removed`/`note` 原样写进素材记录。 */
+interface WatermarkOutcome {
+  bytes: Buffer;
+  removed: boolean;
+  note: string | null;
+}
+
+/**
+ * 出图后、入库前去一次上游水印（MKACG-1004）。
+ *
+ * 三种结局都不阻断提取：
+ * - 去掉了：用处理后的字节，`note` 为空；
+ * - 安全检测拒绝（主体已进入底部条带）：保留原图，带上原因（AC-WM-3）；
+ * - 后处理抛错（解码失败、格式不受支持）：保留原图，带上原因并记 warn（AC-WM-4）。
+ *
+ * 只记「哪一张、哪个类别、什么原因」，绝不记图片字节与密钥（docs/prd/05 MUST 9）。
+ */
+async function removeWatermark(
+  bytes: Buffer,
+  remove: (source: Buffer) => Promise<WatermarkRemovalResult>,
+  item: { sourceAssetId: string; category: string },
+): Promise<WatermarkOutcome> {
+  try {
+    const result = await remove(bytes);
+    if (result.removed) return { bytes: result.bytes, removed: true, note: null };
+    logger.warn("产物没有去掉上游水印，已保留原图", {
+      ...item,
+      reason: result.note,
+      subjectRatio: result.subjectRatio,
+    });
+    return { bytes, removed: false, note: result.note };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.warn("去水印后处理失败，已保留原图", { ...item, reason });
+    return { bytes, removed: false, note: WATERMARK_NOTES.failed(reason) };
+  }
+}
+
 /** 一张原图准备好的一次性输入：字节压缩结果与按长宽比推导的尺寸，同一张原图的多个类别共用。 */
 interface PreparedSource {
   image: string;
@@ -186,6 +232,7 @@ export async function extractImages(
   const vision = deps.vision !== undefined ? deps.vision : await resolveVisionAnalyzer(context.extraPrompt);
   const compress = deps.compress ?? compressForReferenceImage;
   const readSize = deps.readSize ?? readImageDimensions;
+  const watermark = deps.watermark ?? removeUpstreamWatermark;
   const model = context.agent.modelId ?? null;
   const total = assets.length * categories.length;
 
@@ -255,9 +302,17 @@ export async function extractImages(
               `上游没有返回原图「${asset.fileName}」的提取图`,
             );
           }
+          // 入库前先去掉上游模型自带的水印；去不成也照常交出原图（AC-WM-3、AC-WM-4）。
+          const removal = await removeWatermark(first.bytes, watermark, {
+            sourceAssetId: asset.id,
+            category,
+          });
 
           images.push({
             ...first,
+            bytes: removal.bytes,
+            watermarkRemoved: removal.removed,
+            watermarkNote: removal.note,
             category,
             sourceAssetId: asset.id,
             // 序号用原图位置：同一张原图的多个类别共用同一个序号，界面据此对上来源原图。

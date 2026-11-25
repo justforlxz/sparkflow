@@ -58,6 +58,10 @@ export interface ExtractedImage {
   sourceAssetId: string;
   /** 同一张原图下的序号（从 1 开始），`sort_order` 用它。 */
   sortOrder: number;
+  /** 是否已经去掉上游模型自带的水印（MKACG-1004）：`true` 是处理过，`false` 是保留原图。 */
+  watermarkRemoved: boolean;
+  /** 没去水印的原因；去掉时是 null。界面据此说明为什么带着水印。 */
+  watermarkNote: string | null;
 }
 
 /** 提取执行上下文：与运行相关的输入全都显式给出，处理器不查别的模块的表。 */
@@ -159,6 +163,10 @@ export interface LibraryAssetInput {
   category: string;
   sourceAssetId: string;
   sortOrder: number;
+  /** 是否已经去掉上游水印（MKACG-1004）。 */
+  watermarkRemoved: boolean;
+  /** 没去水印的原因；去掉时是 null。 */
+  watermarkNote: string | null;
 }
 
 export interface LibraryAssetRecord {
@@ -173,5 +181,9 @@ export interface LibraryAssetRecord {
   width: number | null;
   height: number | null;
   sortOrder: number;
+  /** 是否已经去掉上游水印（MKACG-1004）。 */
+  watermarkRemoved: boolean;
+  /** 没去水印的原因；去掉时是 null。 */
+  watermarkNote: string | null;
   createdAt: Date;
 }

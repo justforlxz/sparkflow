@@ -56,15 +56,23 @@ describe("两份固定 Agent（MUST 1）", () => {
 describe("图片 Agent 的默认四项（AC-EX-4、ADR 0009）", () => {
   const image = AGENT_DEFAULTS.image;
 
-  it("四项与 ADR 0009 的定稿逐字一致", () => {
+  it("四项与 ADR 0009 + MKACG-1000 的定稿逐字一致", () => {
     expect(image).toEqual({
       name: "图片提取 Agent",
       role: "你是一名素材提取师：从原始照片里把指定目标（纹理、材质、图案或主体形象）单独提取出来，做成可以直接使用的素材图。",
       systemPrompt:
-        "只做提取，不做重绘：忠实保留目标自身的纹理、材质、图案与颜色，不美化、不改变结构、不添加原图里没有的元素；去掉与目标无关的场景元素（桌面、道具、背景、反光、边缘阴影），把目标拉平成正面视角，四边完整、不带透视畸变；不要添加原图里没有的文字、水印或标识。",
+        "只做提取，不做重绘：忠实保留目标自身的纹理、材质、图案与颜色，不美化、不改变结构、不添加原图里没有的元素。几何要求：perfectly flat orthographic view、zero perspective、zero foreshortening；目标内的长线、格线与纹理走向必须 exactly horizontal or vertical；均匀漫射光，no shadows、无高光、无景深线索。去掉与目标无关的场景元素（桌面、道具、背景、反光、边缘阴影），也不要添加原图里没有的文字、水印或标识。这是材质与图案本身，不是场景（This is a material texture, not a scene）。",
       outputRequirements:
-        "每张原图各输出一张提取图，画面里只包含提取目标本身；目标居中并铺满画面，边缘干净；不拼接、不加边框、不加文字。",
+        "每张原图各输出一张提取图，画面里只包含提取目标本身；保持目标自身的真实长宽比，不要为了填满画布而拉伸或裁切；目标之外留纯色空边即可；不拼接、不加边框、不添加原图里没有的文字或水印。",
     });
+  });
+
+  it("输出要求不再命令模型「铺满画面」——那等于命令它拉伸（AC-PROMPT-1）", () => {
+    expect(image.outputRequirements).not.toContain("铺满画面");
+    expect(image.systemPrompt).not.toContain("铺满画面");
+    // 反过来要写清「保持自身长宽比」与「不拉伸」。
+    expect(image.outputRequirements).toContain("保持目标自身的真实长宽比");
+    expect(image.outputRequirements).toContain("拉伸");
   });
 
   it("不再出现重绘语义的旧措辞", () => {

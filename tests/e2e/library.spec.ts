@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { PROMPT_ONLY_TERMS } from "../../src/modules/extraction/categories";
 import { MOCK_SCRIPT_HINTS } from "../../src/modules/image-generation/mock-script";
 import { loginInBrowser } from "./support/auth";
 import {
@@ -208,6 +209,34 @@ test("AC-LIB-10 三栏各管一件事：左栏只有原图、中栏只有结果�
   await expect(right.getByText("来源平台")).toBeVisible();
   await expect(right.getByTestId("result-card")).toHaveCount(0);
   await expect(right.getByTestId("image-thumbnail")).toHaveCount(0);
+});
+
+test("AC-PROMPT-6 右栏「固定三类」显示简短中文说明，不出现提示词工程术语", async ({
+  page,
+  request,
+}) => {
+  await createGateway(request);
+  const collection = await createCollection(request, uniqueName("AC-PROMPT-6"), 1);
+
+  await loginInBrowser(page);
+  await page.goto(`/collections/${collection.id}`);
+
+  // 常驻可见的右栏列表（MKACG-1000 被打回的那一处）。
+  const fixed = page.getByTestId("column-settings").getByTestId("fixed-categories");
+  for (const label of ["桌面俯视图", "基本纹理", "形象设计"]) {
+    await expect(fixed.getByText(label)).toBeVisible();
+  }
+
+  const text = (await fixed.innerText()).replace(/\s+/g, " ");
+
+  // 提示词工程术语一条都不许漏到界面上。
+  for (const term of PROMPT_ONLY_TERMS) {
+    expect(text, `界面说明里出现了提示词术语「${term}」`).not.toContain(term);
+  }
+  // 界面说明用中文写：夹英文字母就是提示词文本漏出来了。
+  expect(text).not.toMatch(/[A-Za-z]/);
+  // 简短：三类各一句，整块列表不该长成一段提示词。
+  expect(text.length).toBeLessThan(200);
 });
 
 test("AC-C-8 结果卡点图在站内弹窗预览，无新标签页、无 window.open", async ({ page, request }) => {

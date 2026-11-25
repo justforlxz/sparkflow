@@ -98,7 +98,8 @@ export function SettingsColumn({
 
           <div className="space-y-1.5">
             <p className={LABEL_CLASS}>{LIBRARY_COPY.fixedCategoriesLabel}</p>
-            <ul className="space-y-1">
+            {/* 这段文案直接给用户看，只有 `description`（界面说明），不含提示词工程术语（AC-PROMPT-6）。 */}
+            <ul className="space-y-1" data-testid="fixed-categories">
               {SELECTABLE_CATEGORIES.map((category) => (
                 <li key={category.value} className="text-caption text-ink-tertiary">
                   <span className="block text-body text-ink-secondary">{category.label}</span>

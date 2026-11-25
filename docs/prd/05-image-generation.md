@@ -7,13 +7,18 @@
 把资源夹里的**每一张原始图片**按**类别**取出目标，做成可以直接使用的素材：
 一张原图 × 一个类别 = 一条素材，产物进「素材库」（`docs/prd/12-asset-library.md`）。
 
-内置类别（ADR 0011）：
+内置类别（ADR 0011）。每个类别带**两份描述**，分别给用户与生图模型看，**不得共用同一段文本**（MKACG-1000）：
 
-| key | 中文 | 提取目标描述 |
-| --- | --- | --- |
-| `topdown` | 桌面俯视图 | 从正上方看桌面/桌垫的完整画面；去掉桌面上的摆件与杂物，被遮挡处按周围材质补全；保持原画面长宽比；不要透视畸变 |
-| `texture` | 基本纹理 | 只取桌垫上重复出现的那一块纹理单元；画面内纹理均匀、边缘可平铺；不要出现桌垫边缘与场景 |
-| `graphic` | 形象设计 | 只取印刷在桌垫上的图案（卡通人物、插画、物品）；正面俯视、无角度、背景干净 |
+- **界面说明**渲染在资源夹详情右栏「提取设置」→「固定三类」列表里：一句简短中文，
+  **不得**出现 `orthographic` / `zero perspective` / `zero foreshortening` /
+  `exactly horizontal or vertical` / `This is a material texture, not a scene` 这类提示词工程术语；
+- **提取目标描述**拼进生图提示词：写可判定的几何约束（AC-PROMPT-1、AC-PROMPT-2）。
+
+| key | 中文 | 界面说明 | 提取目标描述（进提示词） |
+| --- | --- | --- | --- |
+| `topdown` | 桌面俯视图 | 从正上方看桌面或桌垫的完整画面，去掉摆件与杂物，被遮挡处按周围材质补全 | 完美平整的俯视图（perfectly flat orthographic view，zero perspective，zero foreshortening）；所有长边与纹理走向必须 exactly horizontal or vertical；均匀漫射光，no shadows、无高光、无景深；去掉桌面上的摆件与杂物，被遮挡处按周围材质补全；保持桌面自身的长宽比，不拉伸、不裁切 |
+| `texture` | 基本纹理 | 只取重复出现的那一块纹理单元，纹理均匀、四边可拼接，不出现桌垫边缘与场景 | 只取重复出现的那一块纹理单元，四边可无缝拼接（matching opposite edges）；这是材质不是场景（This is a material texture, not a scene）；perfectly flat orthographic view，zero perspective，zero foreshortening；所有线与纹理走向必须 exactly horizontal or vertical；均匀漫射光，no shadows、无高光；不要出现桌垫边缘与场景；保持纹理自身的长宽比，不拉伸、不裁切 |
+| `graphic` | 形象设计 | 只取印刷在桌垫上的图案（卡通人物、插画、物品），正面平视、背景干净 | 只取印刷在桌垫上的图案（卡通人物、插画、物品），单一主体、正面平视（front-on orthographic view，zero perspective，zero foreshortening）；图案里的横线与竖线必须 exactly horizontal or vertical，不倾斜；完整保留图案的原始轮廓；均匀漫射光，no shadows、无高光、无倒影；纯色背景，去掉桌垫边缘与场景；保持图案自身的长宽比，不补画、不拉伸、不裁切 |
 
 **有就提取，没有就不提取**：每个（原图 × 类别）先用视觉模型判定是否存在，不存在记 `skipped`，
 不发起图生图（ADR 0011 第 2 条）。
@@ -89,16 +94,30 @@ sensenova 默认模型（`sensenova-token-plan/sensenova-u1.5-lite`）出图右�
 | key | 中文 | 交给模型的描述 |
 | --- | --- | --- |
 | `faithful` | 忠实还原 | 不改颜色与结构，只把目标拉平、去透视，保留原本的纹理走向与细微瑕疵 |
-| `flatten` | 平整化 | 压平褶皱、折痕与光照不均，让纹理均匀铺满画面，可直接当材质使用 |
+| `flatten` | 平整化 | 压平褶皱、折痕与光照不均，让纹理均匀平整，可直接当材质使用 |
 | `dereflect` | 去反光 | 去掉高光、反光与边缘阴影，还原目标真实的颜色与明暗 |
 
 ### 输出形态
 
-固定为**去透视的平铺素材图**：
+固定为**去透视的平铺素材图**（MKACG-1000）：
 
 - 画面里只有目标本身，没有桌面、道具、背景或场景阴影；
-- 目标拉平成正面视角、四边完整、铺满画面；
-- 不添加原图里没有的文字、水印或标识。
+- 几何约束用**可判定的词**写：`perfectly flat orthographic view`、`zero perspective`、
+  `zero foreshortening`；目标内的长线、格线与纹理走向必须 `exactly horizontal or vertical`；
+  均匀漫射光，`no shadows`、无高光、无景深线索；
+- **保持目标自身的真实长宽比**，目标之外留纯色空边即可；**不得**为了填满画布而拉伸或裁切
+  （画布比例按原照片推导，见 `deriveExtractionSize`；命令模型「铺满画面」等于命令它拉伸）；
+- 不添加原图里没有的文字、水印或标识；
+- 收尾一句框定产品属性：`This is a material texture, not a scene.`
+
+### 材质描述（两段式提示词的第一段）
+
+图生图之前先用 `magpie-vision` 对**同一张原图**要一句材质与图案描述，作为 `Material: ...` 段
+拼进生图提示词（同类纹理提取流水线的通行做法：先描述材质，再把「描述 + 原图」交给图生图）。
+
+- 拿不到描述（没有理解网关、上游报错、回复空白）就**跳过该段**，不记失败、不阻断提取；
+- 提问带固定标记（`MATERIAL_PROMPT_MARK`），mock 适配器据此把这类调用与「存在判定」分开，
+  不占用 `mock:vision-absent-at-<n>` 的判定序号。
 
 ### MUST
 
@@ -122,8 +141,8 @@ sensenova 默认模型（`sensenova-token-plan/sensenova-u1.5-lite`）出图右�
 
 ### SHOULD
 
-- 提示词 = Agent 快照的 role / systemPrompt / outputRequirements + **提取目标** + 提取要求描述 + 补充要求；
-  拼装函数单独成函数并有单测。
+- 提示词 = Agent 快照的 role / systemPrompt / outputRequirements + **提取目标** + `Material` 材质描述
+  + 提取要求描述 + 补充要求；拼装函数单独成函数并有单测。
 - 提取要求的描述取自 `src/modules/image-generation/styles.ts` 的登记表（键名从「视觉方向」改成「提取要求」）。
 - 一次任务里的 N 次调用串行执行（避免并发打满上游限流），每次之间不留固定 sleep。
 

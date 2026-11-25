@@ -1,25 +1,33 @@
 /**
- * 提取类别的登记表（ADR 0011、docs/prd/05「内置类别」、docs/prd/12 MUST 2、MUST 2b-1）。
+ * 提取类别的登记表（ADR 0011、docs/prd/05「内置类别」、docs/prd/12 MUST 2、MUST 2b-1、MKACG-1000）。
  *
  * 内置三类可选类别：`topdown`（桌面俯视图）、`texture`（基本纹理）、`graphic`（形象设计）；
  * `other` 只用于历史数据迁移，界面归到「其他（历史）」，新提取不接受它。
  * 加第四类只改这里一处（AGENTS.md 硬性规则 1）。
  *
- * 类别取代了旧模型的单值「提取目标」（ADR 0010）。每个类别带**两句话**，分别给两个模型看：
+ * 类别取代了旧模型的单值「提取目标」（ADR 0010）。每个类别带**三句话**，分别给两个模型与用户看：
  *
- * - `description`：给**生图**模型，描述产物形态（摆正、均匀、可平铺、背景干净），逐字取自 PRD 05 表格；
+ * - `description`：给**用户**看，渲染在资源夹详情右栏「提取设置」→「固定三类」列表里，
+ *   必须是一句简短中文，**不得**出现提示词工程术语（AC-PROMPT-6）；
+ * - `promptDescription`：拼进**生图**提示词，写可判定的几何约束（AC-PROMPT-1、AC-PROMPT-2）；
  * - `presenceQuestion`：给**视觉判定**模型，只问「这张原图里有没有该主体」。
  *
- * 两者**必须分开写**（MUST 2b-1、AC-LIB-16）：2026-11-23 真机把 `description` 当问题问，
- * 三类全判「不存在」——连有图案的桌垫也一样。因为 `description` 写的是产物形态，
- * 模型是在判断「这张照片是不是已经处理好的成品」，斜拍原图当然答「没有」。
- * **MUST NOT** 让两者共用一句话。
+ * 三项都**必须分开写**：
+ *
+ * 1. 界面说明与提示词描述共用一段文本时，提示词工程术语会直接漏到界面上（2026-11-25 合并前被打回）；
+ * 2. 判定问法拿产物形态当问题问，三类会全判「不存在」——连有图案的桌垫也一样（MUST 2b-1、
+ *    AC-LIB-16）：`promptDescription` 写的是产物形态，模型会判断「这张照片是不是已经处理好的成品」，
+ *    斜拍原图当然答「没有」。
+ *
+ * **MUST NOT** 让它们共用一句话。
  */
 export interface ExtractionCategoryDefinition {
   readonly value: string;
   readonly label: string;
-  /** 拼进**生图**提示词的提取目标描述，写成给图片模型看的正向描述（产物形态）。 */
+  /** 给**界面**看的简短中文说明，逐字取自 docs/prd/05 的类别表；不得出现提示词工程术语。 */
   readonly description: string;
+  /** 拼进**生图**提示词的提取目标描述，写成给图片模型看的正向描述（可判定的几何约束）。 */
+  readonly promptDescription: string;
   /**
    * 拼进**视觉判定**提示词的问题，只问原图里有没有该主体。
    * 不得出现产物形态的措辞（摆正、均匀、可平铺、背景干净）—— 那会让斜拍原图一律判「不存在」。
@@ -29,27 +37,48 @@ export interface ExtractionCategoryDefinition {
   readonly selectable: boolean;
 }
 
+/**
+ * 只允许出现在提示词里的术语（AC-PROMPT-6）：界面文案一条都不许出现。
+ *
+ * 单测（`categories.test.ts`）与端到端用例（`tests/e2e/library.spec.ts`）都从这一份取，
+ * 增加术语只改这里一处。
+ */
+export const PROMPT_ONLY_TERMS = [
+  "orthographic",
+  "zero perspective",
+  "zero foreshortening",
+  "exactly horizontal or vertical",
+  "This is a material texture, not a scene",
+] as const;
+
+/** 界面说明的长度上限：「固定三类」列表在 375px 右栏里显示，太长会挤成一段。 */
+export const MAX_CATEGORY_DESCRIPTION_LENGTH = 60;
+
 export const EXTRACTION_CATEGORIES = [
   {
     value: "topdown",
     label: "桌面俯视图",
-    description:
-      "从正上方看桌面/桌垫的完整画面；去掉桌面上的摆件与杂物，被遮挡处按周围材质补全；保持原画面长宽比；不要透视畸变",
+    description: "从正上方看桌面或桌垫的完整画面，去掉摆件与杂物，被遮挡处按周围材质补全",
+    promptDescription:
+      "完美平整的俯视图（perfectly flat orthographic view，zero perspective，zero foreshortening）；所有长边与纹理走向必须 exactly horizontal or vertical；均匀漫射光，no shadows、无高光、无景深；去掉桌面上的摆件与杂物，被遮挡处按周围材质补全；保持桌面自身的长宽比，不拉伸、不裁切",
     presenceQuestion: "这张照片里是否拍到了桌垫或桌面本身？",
     selectable: true,
   },
   {
     value: "texture",
     label: "基本纹理",
-    description:
-      "只取桌垫上重复出现的那一块纹理单元；画面内纹理均匀、边缘可平铺；不要出现桌垫边缘与场景",
+    description: "只取重复出现的那一块纹理单元，纹理均匀、四边可拼接，不出现桌垫边缘与场景",
+    promptDescription:
+      "只取重复出现的那一块纹理单元，四边可无缝拼接（matching opposite edges）；这是材质不是场景（This is a material texture, not a scene）；perfectly flat orthographic view，zero perspective，zero foreshortening；所有线与纹理走向必须 exactly horizontal or vertical；均匀漫射光，no shadows、无高光；不要出现桌垫边缘与场景；保持纹理自身的长宽比，不拉伸、不裁切",
     presenceQuestion: "这张照片里的桌垫或桌面上是否能看到重复的材质纹理？",
     selectable: true,
   },
   {
     value: "graphic",
     label: "形象设计",
-    description: "只取印刷在桌垫上的图案（卡通人物、插画、物品）；正面俯视、无角度、背景干净",
+    description: "只取印刷在桌垫上的图案（卡通人物、插画、物品），正面平视、背景干净",
+    promptDescription:
+      "只取印刷在桌垫上的图案（卡通人物、插画、物品），单一主体、正面平视（front-on orthographic view，zero perspective，zero foreshortening）；图案里的横线与竖线必须 exactly horizontal or vertical，不倾斜；完整保留图案的原始轮廓；均匀漫射光，no shadows、无高光、无倒影；纯色背景，去掉桌垫边缘与场景；保持图案自身的长宽比，不补画、不拉伸、不裁切",
     presenceQuestion: "这张照片里的桌垫上是否印有图案（卡通人物、插画、物品之类）？",
     selectable: true,
   },
@@ -57,7 +86,8 @@ export const EXTRACTION_CATEGORIES = [
     value: "other",
     label: "其他（历史）",
     description: "历史数据迁移而来的素材，不再用于新的提取",
-    // 历史类别不参与新提取（`selectable: false`，服务层会拒绝），这句只是让类型完整；
+    promptDescription: "历史数据迁移而来的素材，不再用于新的提取",
+    // 历史类别不参与新提取（`selectable: false`，服务层会拒绝），这两句只是让类型完整；
     // 万一真的走到判定，问法仍是「原图里有没有内容」，不会退化成产物形态描述。
     presenceQuestion: "这张照片里是否有可提取的内容？",
     selectable: false,

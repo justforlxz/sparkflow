@@ -11,6 +11,7 @@ import type { VisionAnalyzer } from "@/modules/gateway/vision";
 import { StageError } from "@/lib/job-failure";
 import type { GenerateImageInput, ImageGenerator } from "./adapters/types";
 import { extractImages } from "./extraction";
+import { MATERIAL_PROMPT_MARK } from "./material";
 import { MOCK_SCRIPT_HINTS } from "./mock-script";
 
 const AGENT: AgentSnapshot = {
@@ -56,14 +57,28 @@ function countingGenerator(failAt?: number): Counted {
  * 按 `presenceQuestion` 认类别（MUST 2b-1：判定问的是主体存不存在，不是产物形态）。
  */
 interface CountedVision extends VisionAnalyzer {
+  /** 判定问法的提示词（不含材质描述那一类）。 */
   prompts: string[];
+  /** 材质描述的提示词：与判定分开记，用来断言「先判定、再要材质描述」。 */
+  materialPrompts: string[];
 }
 
-function vision(absent: readonly string[] = []): CountedVision {
+function vision(
+  absent: readonly string[] = [],
+  options: { materialFails?: boolean } = {},
+): CountedVision {
   const prompts: string[] = [];
+  const materialPrompts: string[] = [];
   return {
     prompts,
+    materialPrompts,
     async analyzeImage(input) {
+      // 材质描述是另一类调用（MKACG-1000）：单独记，不占判定序号。
+      if (input.prompt.includes(MATERIAL_PROMPT_MARK)) {
+        materialPrompts.push(input.prompt);
+        if (options.materialFails) throw new Error("图片理解网关返回 500");
+        return "深灰色织物，表面有细密斜纹";
+      }
       prompts.push(input.prompt);
       const missing = absent.some((value) => {
         const question = findCategory(value)?.presenceQuestion;
@@ -163,8 +178,9 @@ describe("提取处理器", () => {
 
     const prompt = generator.calls[0]?.prompt ?? "";
     expect(prompt).toContain("桌面俯视图");
-    // `description` 只留在生图提示词里（MUST 2b-1）：它描述的是产物形态。
-    expect(prompt).toContain(findCategory("topdown")?.description);
+    // 只有 `promptDescription`（给模型的产物形态描述）进生图提示词（MUST 2b-1、AC-PROMPT-6）。
+    expect(prompt).toContain(findCategory("topdown")?.promptDescription);
+    expect(prompt).not.toContain(findCategory("topdown")?.description);
     expect(prompt).toContain("忠实还原");
     expect(prompt).toContain("补充要求：mock:强调耐用");
     // 只带当前这一张原图，不是整个资源夹（一图一类别一次调用）。
@@ -220,7 +236,49 @@ describe("提取处理器", () => {
     expect(judge.prompts[0]).toContain("只回答「存在」或「不存在」");
     // 判定问的是原图里有没有主体，不是产物形态（MUST 2b-1、AC-LIB-16）。
     expect(judge.prompts[0]).toContain(findCategory("topdown")?.presenceQuestion);
-    expect(judge.prompts[0]).not.toContain(findCategory("topdown")?.description);
+    expect(judge.prompts[0]).not.toContain(findCategory("topdown")?.promptDescription);
+    // 判定为不存在的类别不发起材质描述：只有 topdown 的 2 条要了描述（AC-PROMPT-3）。
+    expect(judge.materialPrompts).toHaveLength(2);
+    expect(judge.materialPrompts[0]).toContain(MATERIAL_PROMPT_MARK);
+  });
+
+  it("AC-PROMPT-3 判定存在后先要一句材质描述，作为 Material 段拼进生图提示词", async () => {
+    const generator = countingGenerator();
+    const judge = vision();
+
+    await extractImages(context(["topdown"]), {
+      generator,
+      vision: judge,
+      compress,
+      readSize,
+    });
+
+    expect(judge.materialPrompts).toHaveLength(2);
+    const prompt = generator.calls[0]?.prompt ?? "";
+    expect(prompt).toContain("Material: 深灰色织物，表面有细密斜纹");
+    // 材质描述排在提取要求之前：先说清是什么材质，再说按哪种要求处理。
+    expect(prompt.indexOf("Material: ")).toBeLessThan(prompt.indexOf("提取要求："));
+  });
+
+  it("AC-PROMPT-3 材质描述失败不阻断提取：该段缺席，素材照常产出", async () => {
+    const generator = countingGenerator();
+    const judge = vision([], { materialFails: true });
+
+    const outcome = await extractImages(context(["topdown"]), {
+      generator,
+      vision: judge,
+      compress,
+      readSize,
+    });
+
+    // 关键断言：拿不到描述只是少一段提示词，不记失败、不影响产出。
+    expect(judge.materialPrompts).toHaveLength(2);
+    expect(outcome.failures).toEqual([]);
+    expect(outcome.images).toHaveLength(2);
+    expect(generator.calls).toHaveLength(2);
+    for (const call of generator.calls) {
+      expect(call.prompt).not.toContain("Material:");
+    }
   });
 
   it("没有可用的理解网关：按失败处理，不跳过判定直接提取", async () => {

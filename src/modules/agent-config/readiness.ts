@@ -53,9 +53,6 @@ export function resolveAgentReadiness(
     if (modelId) {
       state = "invalid";
       issues.push("绑定已失效：没有绑定网关，请重新选择");
-    } else if (definition.modelRequired) {
-      state = "invalid";
-      issues.push(`未选择模型：${definition.label} 必须绑定一个具体模型`);
     } else {
       state = "unbound";
       issues.push("未绑定网关");
@@ -64,12 +61,8 @@ export function resolveAgentReadiness(
     state = "invalid";
     issues.push("绑定已失效：网关不存在，请重新选择");
   } else if (!modelId) {
-    if (definition.modelRequired) {
-      state = "invalid";
-      issues.push(`未选择模型：${definition.label} 必须绑定一个具体模型`);
-    } else {
-      state = "gateway-default";
-    }
+    // 模型留空：用网关侧的默认图片模型（MUST 3）。
+    state = "gateway-default";
   } else {
     const model = gateway.models.find((candidate) => candidate.modelId === modelId);
     if (!model) {

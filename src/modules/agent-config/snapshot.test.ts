@@ -72,11 +72,10 @@ describe("创建任务用的配置快照（MUST 6）", () => {
     expect(snapshotOf(record({ type: "image", gatewayModelId: null })).modelId).toBeNull();
   });
 
-
-  it("文案 Agent 的快照带上绑定的模型名", () => {
-    expect(
-      snapshotOf(record({ type: "copy", gatewayModelId: "gpt-4o-mini" })).modelId,
-    ).toBe("gpt-4o-mini");
+  it("绑定具体模型时快照带上模型名", () => {
+    expect(snapshotOf(record({ type: "image", gatewayModelId: "gpt-image-1" })).modelId).toBe(
+      "gpt-image-1",
+    );
   });
 
   it("取到的是配置里的文本与网关的协议与地址", () => {
@@ -109,7 +108,6 @@ describe("快照里没有任何密钥（AC-03-9、AC-04-10）", () => {
   it("全文搜索：测试密钥与密文命中 0 次", () => {
     const text = JSON.stringify({
       image: snapshotOf(record()),
-      copy: snapshotOf(record({ type: "copy", gatewayModelId: "gpt-4o-mini" })),
     });
 
     expect(text.includes(PLAIN_KEY)).toBe(false);

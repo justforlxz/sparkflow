@@ -29,27 +29,24 @@ async function createGateway(name: string): Promise<string> {
   return gateway.id;
 }
 
-test("迁移预置两条固定配置，类型只有 image 与 copy（MUST 1）", async () => {
+test("迁移只预置图片提取 Agent 一份配置（MUST 1、AC-AGENT-2）", async () => {
   const rows = await getDb().agentConfig.findMany({
     orderBy: { type: "asc" },
     select: { type: true, enabled: true, gatewayId: true, gatewayModelId: true },
   });
 
-  expect(rows).toEqual([
-    { type: "copy", enabled: true, gatewayId: null, gatewayModelId: null },
-    { type: "image", enabled: true, gatewayId: null, gatewayModelId: null },
-  ]);
+  expect(rows).toEqual([{ type: "image", enabled: true, gatewayId: null, gatewayModelId: null }]);
 });
 
 test("网关被 Agent 引用时能查出引用方（docs/prd/02 MUST 3）", async () => {
   const gatewayId = await createGateway("集成测试网关-引用");
   await getDb().agentConfig.update({
-    where: { type: "copy" },
-    data: { gatewayId, gatewayModelId: "gpt-4o-mini" },
+    where: { type: "image" },
+    data: { gatewayId, gatewayModelId: "gpt-image-1" },
   });
 
   expect(await findAgentReferencesForGateway(gatewayId)).toEqual([
-    { source: "agent", name: "文案创作 Agent" },
+    { source: "agent", name: "图片提取 Agent" },
   ]);
 });
 

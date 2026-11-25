@@ -24,7 +24,6 @@ export interface AgentConfigView {
   role: string;
   systemPrompt: string;
   outputRequirements: string;
-  modelRequired: boolean;
   /** 模型留空时界面上的说法，来自模块常量（AC-03-3）。 */
   emptyModelLabel: string;
   /** 绑定状态；`gateway-default` 表示「使用网关默认图片模型」。 */
@@ -64,7 +63,6 @@ export function toAgentView(
     role: record.role,
     systemPrompt: record.systemPrompt,
     outputRequirements: record.outputRequirements,
-    modelRequired: definition.modelRequired,
     emptyModelLabel: definition.emptyModelLabel,
     state: readiness.state,
     ready: readiness.ready,

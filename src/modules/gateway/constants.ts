@@ -62,7 +62,7 @@ export interface CapabilityDefinition {
  * 把只读图的模型选给图片 Agent 必然失败。
  */
 export const MODEL_CAPABILITIES = [
-  { value: "text", label: "文本", hint: "能生成文本，文案 Agent 可选" },
+  { value: "text", label: "文本", hint: "能生成文本，本版本暂无 Agent 使用" },
   { value: "image", label: "出图", hint: "能输出图片，图片 Agent 候选" },
   { value: "image_input", label: "读图", hint: "能吃图片输入，本版本仅作提示" },
 ] as const satisfies readonly CapabilityDefinition[];

@@ -35,7 +35,7 @@ async function fetchGatewayOptions(): Promise<AgentGatewayOption[]> {
 }
 
 /**
- * 设置页「Agent」区块：图片 Agent 与文案 Agent 两张配置表单（docs/prd/03-agent-config.md）。
+ * 设置页「Agent」区块：图片提取 Agent 的配置表单（docs/prd/03-agent-config.md）。
  * 区块之间不互相内联逻辑：这里只经各自接口读写，不让 Agent 区块去调用网关区块的组件。
  */
 export function AgentSection({ initialAgents, gatewayOptions }: AgentSectionProps) {
@@ -94,8 +94,8 @@ export function AgentSection({ initialAgents, gatewayOptions }: AgentSectionProp
         <div className="space-y-1">
           <h2 className="text-heading font-semibold text-ink">Agent</h2>
           <p className="max-w-2xl text-body text-ink-secondary">
-            两个固定的创作 Agent。图片 Agent 的模型可以留空，表示用网关侧的默认图片模型；文案 Agent
-            必须绑定模型。创建任务时按这里的配置固化成快照，之后修改不影响已创建的任务。
+            固定的图片提取 Agent。模型可以留空，表示用网关侧的默认图片模型。创建任务时按这里的配置固化成快照，
+            之后修改不影响已创建的任务。
           </p>
         </div>
         <button

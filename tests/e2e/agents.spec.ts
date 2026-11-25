@@ -4,11 +4,11 @@ import { ensureAccount } from "./support/auth";
 
 /**
  * Agent 配置与功能开关区块的验收（docs/prd/03-agent-config.md AC-03-1 ~ AC-03-6，
- * docs/prd/10-feature-flags.md AC-10-6）。
+ * docs/prd/10-feature-flags.md AC-10-6），以及 MKACG-997 下线「文案创作 Agent」的
+ * AC-AGENT-3、AC-AGENT-4。
  *
- * 只绑定「图片 Agent」：它的模型可以为空，因此每步都能经接口还原（`gatewayId` 与
- * `gatewayModelId` 清空），测试不留下改不掉的绑定。文案 Agent 必须绑模型，
- * 一旦绑上就无法经接口解绑，会连带让网关删不掉 —— 那条规则由单测覆盖。
+ * 只绑定「图片提取 Agent」：它的模型可以为空，因此每步都能经接口还原（`gatewayId` 与
+ * `gatewayModelId` 清空），测试不留下改不掉的绑定。
  */
 
 interface AgentPayload {
@@ -21,7 +21,6 @@ interface AgentPayload {
   role: string;
   systemPrompt: string;
   outputRequirements: string;
-  modelRequired: boolean;
   emptyModelLabel: string | null;
   state: string;
   ready: boolean;
@@ -118,23 +117,61 @@ function agentCard(page: Page, type: string) {
 test.beforeEach(async ({ request }) => {
   await ensureAccount(request);
 
-  // 每个用例从「默认文案 + 图片 Agent 未绑定」开始，避免互相影响。
-  for (const type of ["image", "copy"]) {
-    const reset = await request.post(`/api/agents/${type}/reset`);
-    expect(reset.status()).toBe(200);
-  }
+  // 每个用例从「默认文案 + 图片提取 Agent 未绑定」开始，避免互相影响。
+  const reset = await request.post("/api/agents/image/reset");
+  expect(reset.status()).toBe(200);
   await patchAgent(request, "image", { gatewayId: null, gatewayModelId: null });
 });
 
-test("AC-03-1 两条配置互相独立：改文案 Agent 提示词不影响图片 Agent", async ({ request }) => {
-  const prompt = `临时提示词-${Date.now().toString(36)}`;
+test("AC-AGENT-4 只剩图片提取 Agent 一个类型：copy 的读写一律 404", async ({ request }) => {
+  const agents = await getAgents(request);
+  expect(agents.map((agent) => agent.type)).toEqual(["image"]);
 
-  const updated = await patchAgent(request, "copy", { systemPrompt: prompt });
-  expect(updated.systemPrompt).toBe(prompt);
+  const patch = await request.patch("/api/agents/copy", { data: { name: "换个名字" } });
+  expect(patch.status()).toBe(404);
 
-  const image = await getAgent(request, "image");
-  expect(image.systemPrompt).toBe(AGENT_DEFAULTS.image.systemPrompt);
-  expect(image.systemPrompt).not.toBe(prompt);
+  const reset = await request.post("/api/agents/copy/reset");
+  expect(reset.status()).toBe(404);
+
+  const models = await request.get("/api/agents/models?type=copy");
+  expect(models.status()).toBe(400);
+});
+
+test("AC-AGENT-3 设置页只渲染图片提取 Agent 一张卡片，且可以正常绑定", async ({
+  page,
+  request,
+}) => {
+  const gateway = await createGateway(request, {
+    name: uniqueName("e2e-agent-single-card"),
+    models: [{ modelId: "gpt-image-1", capability: "image" }],
+  });
+
+  try {
+    await useApiSession(page, request);
+    await page.goto("/settings");
+
+    const section = page.locator('[aria-label="Agent 配置"]');
+    await expect(section.getByTestId("agent-card-image")).toBeVisible();
+    await expect(section.getByTestId("agent-card-copy")).toHaveCount(0);
+    await expect(page.getByText("文案创作 Agent")).toHaveCount(0);
+
+    const card = agentCard(page, "image");
+    await card.getByTestId("agent-gateway").selectOption({ label: gateway.name });
+    await card.getByTestId("agent-model").selectOption("gpt-image-1");
+    await card.getByRole("button", { name: "保存" }).click();
+
+    await expect(card.getByRole("status")).toContainText("已保存");
+    await expect(card.getByTestId("agent-binding-state")).toContainText("gpt-image-1");
+    expect(await getAgent(request, "image")).toMatchObject({
+      gatewayId: gateway.id,
+      gatewayModelId: "gpt-image-1",
+      state: "ok",
+      ready: true,
+    });
+  } finally {
+    await patchAgent(request, "image", { gatewayId: null, gatewayModelId: null });
+    await deleteGateway(request, gateway.id);
+  }
 });
 
 test("AC-03-2 图片 Agent 的候选里没有 text 能力的模型", async ({ page, request }) => {
@@ -152,11 +189,6 @@ test("AC-03-2 图片 Agent 的候选里没有 text 能力的模型", async ({ pa
       (model) => model.gatewayId === gateway.id,
     );
     expect(imageCandidates.map((model) => model.modelId)).toEqual(["gpt-image-1"]);
-
-    const copyCandidates = (await modelCandidates(request, "copy")).filter(
-      (model) => model.gatewayId === gateway.id,
-    );
-    expect(copyCandidates.map((model) => model.modelId).sort()).toEqual(["gpt-4o-mini", "qwen-vl"]);
 
     await useApiSession(page, request);
     await page.goto("/settings");
@@ -206,50 +238,17 @@ test("AC-03-3 图片 Agent 的模型留空可以保存，状态显示为使用�
   }
 });
 
-test("AC-03-4 文案 Agent 的模型留空保存被拒绝，错误指出原因", async ({ page, request }) => {
-  const gateway = await createGateway(request, {
-    name: uniqueName("e2e-agent-copy-required"),
-    models: [{ modelId: "gpt-4o-mini", capability: "text" }],
-  });
-
-  try {
-    const response = await request.patch("/api/agents/copy", {
-      data: { gatewayId: gateway.id, gatewayModelId: null },
-    });
-    expect(response.status()).toBe(400);
-    const body = (await response.json()) as {
-      error: { code: string; message: string; details?: { code: string } };
-    };
-    expect(body.error.code).toBe("VALIDATION_FAILED");
-    expect(body.error.details?.code).toBe("AGENT_MODEL_REQUIRED");
-    expect(body.error.message).toContain("必须绑定");
-    expect(body.error.message).toContain("模型");
-
-    await useApiSession(page, request);
-    await page.goto("/settings");
-    const card = agentCard(page, "copy");
-    await card.getByTestId("agent-gateway").selectOption({ label: gateway.name });
-    await card.getByRole("button", { name: "保存" }).click();
-
-    await expect(card.getByRole("alert")).toContainText("必须绑定");
-    // 保存失败不改变库里的配置
-    expect((await getAgent(request, "copy")).gatewayId).toBeNull();
-  } finally {
-    await deleteGateway(request, gateway.id);
-  }
-});
-
 test("AC-03-5 选择不属于该网关的模型、或已删除的网关时，保存被拒绝而不是 500", async ({
   page,
   request,
 }) => {
   const gatewayA = await createGateway(request, {
     name: uniqueName("e2e-agent-gw-a"),
-    models: [{ modelId: "gpt-4o-mini", capability: "text" }],
+    models: [{ modelId: "gpt-image-1", capability: "image" }],
   });
   const gatewayB = await createGateway(request, {
     name: uniqueName("e2e-agent-gw-b"),
-    models: [{ modelId: "claude-sonnet", capability: "text" }],
+    models: [{ modelId: "claude-sonnet", capability: "image" }],
   });
   const deleted = await createGateway(request, {
     name: uniqueName("e2e-agent-gw-deleted"),
@@ -258,7 +257,7 @@ test("AC-03-5 选择不属于该网关的模型、或已删除的网关时，保
 
   try {
     // 1) 模型属于另一个网关
-    const response = await request.patch("/api/agents/copy", {
+    const response = await request.patch("/api/agents/image", {
       data: { gatewayId: gatewayA.id, gatewayModelId: "claude-sonnet" },
     });
     expect(response.status()).toBe(400);

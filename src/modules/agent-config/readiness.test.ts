@@ -3,7 +3,6 @@ import { findAgentType } from "./constants";
 import { resolveAgentReadiness, type AgentGatewayBinding } from "./readiness";
 
 const image = findAgentType("image")!;
-const copy = findAgentType("copy")!;
 
 function gateway(overrides: Partial<AgentGatewayBinding> = {}): AgentGatewayBinding {
   return {
@@ -56,32 +55,6 @@ describe("图片 Agent 的模型可以留空（MUST 3、AC-03-3）", () => {
   });
 });
 
-describe("文案 Agent 必须绑定模型（MUST 4）", () => {
-  it("模型留空时是 invalid，并说明未选择模型", () => {
-    const readiness = resolveAgentReadiness(
-      copy,
-      { enabled: true, gatewayId: "gw-1", gatewayModelId: null },
-      gateway(),
-    );
-
-    expect(readiness.state).toBe("invalid");
-    expect(readiness.ready).toBe(false);
-    expect(readiness.issues.join()).toContain("未选择模型");
-  });
-
-  it("text 与 image_input 能力的模型都能绑", () => {
-    for (const modelId of ["gpt-4o-mini", "qwen-vl"]) {
-      const readiness = resolveAgentReadiness(
-        copy,
-        { enabled: true, gatewayId: "gw-1", gatewayModelId: modelId },
-        gateway(),
-      );
-      expect(readiness.state).toBe("ok");
-      expect(readiness.ready).toBe(true);
-    }
-  });
-});
-
 describe("绑定失效时显式提示，不静默回退（SHOULD）", () => {
   it("网关不存在", () => {
     const readiness = resolveAgentReadiness(
@@ -96,7 +69,7 @@ describe("绑定失效时显式提示，不静默回退（SHOULD）", () => {
 
   it("网关里已经没有这个模型", () => {
     const readiness = resolveAgentReadiness(
-      copy,
+      image,
       { enabled: true, gatewayId: "gw-1", gatewayModelId: "removed-model" },
       gateway(),
     );

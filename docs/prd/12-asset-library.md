@@ -27,6 +27,7 @@ extraction_run
   categories: text[]   -- topdown | texture | graphic | other
   source_asset_ids: text[]  -- 本次参与提取的原图
   progress: jsonb      -- { done, total }，按 原图×类别 计
+  current_item_key: text  -- 正在处理的那一格：<source_asset_id>|<category>，运行进终态时置空
   error: jsonb, extra_prompt: text, created_at, finished_at
 
 extraction_item
@@ -88,6 +89,9 @@ publish_record
 
 - 提取运行与文案生成都在后台执行（进程内 worker），创建接口立即返回。
 - 素材库里按类别分组，组内按生成时间倒序；每组显示数量。
+- 结果格在运行中要能看出进度（MKACG-999）：正在处理的那一格显示「处理中」，
+  同一次运行里还没轮到的格子显示「等待中」，两者都用这一格自己的原图缩略图做模糊底色；
+  没有任何运行覆盖过的格子显示「未提取」，保持虚线描边且不放图。
 - 文案版本列表显示版本号、生成时间、素材数量与标题首行，点开可看完整内容。
 
 ### MAY

@@ -27,6 +27,9 @@ model ExtractionRun {
   // { code, message, at, failures? }：失败项的可读原因（部分失败时也写，供界面点名）。
   error          Json?
   extraPrompt    String?         @map("extra_prompt")
+  // 正在处理的那一格：`<sourceAssetId>|<category>`（MKACG-999）。worker 每开始一项就改写，
+  // 运行进终态时置空；界面据此区分「处理中」与「等待中」。可空，不参与任何判定。
+  currentItemKey String?         @map("current_item_key")
   createdAt      DateTime        @default(now()) @map("created_at")
   finishedAt     DateTime?       @map("finished_at")
   collection     MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)

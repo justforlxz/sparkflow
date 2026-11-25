@@ -22,6 +22,7 @@ function run(overrides: Partial<ExtractionRunView> = {}): ExtractionRunView {
     progress: null,
     error: null,
     extraPrompt: null,
+    currentItemKey: null,
     createdAt: "2026-11-21T01:00:00.000Z",
     finishedAt: "2026-11-21T01:01:00.000Z",
     ...overrides,

@@ -94,6 +94,8 @@ export interface ExtractionRunView {
   /** 失败原因；部分失败时 `failures` 逐项列出。 */
   error: { code: string; message: string; at: string; failures: ExtractionFailureView[] } | null;
   extraPrompt: string | null;
+  /** 正在处理的那一格（`<sourceAssetId>|<category>`）：界面据此区分「处理中」与「等待中」。 */
+  currentItemKey: string | null;
   createdAt: string;
   finishedAt: string | null;
 }
@@ -130,6 +132,7 @@ export function toExtractionRunView(run: ExtractionRunRecord): ExtractionRunView
         }
       : null,
     extraPrompt: run.extraPrompt,
+    currentItemKey: run.currentItemKey,
     createdAt: run.createdAt.toISOString(),
     finishedAt: run.finishedAt?.toISOString() ?? null,
   };

@@ -19,8 +19,15 @@ import type {
 export interface ExtractionStore {
   /** 取下一个排队中的运行并原子地置为 running；没有可跑的就是 null。 */
   claimNextRun(now: Date): Promise<ExtractionRunRecord | null>;
-  /** 只更新仍处于 running 的运行；返回受影响行数，0 表示这一行已不存在或已被改判。 */
-  updateRunProgress(runId: string, progress: ExtractionProgress): Promise<number>;
+  /**
+   * 只更新仍处于 running 的运行；返回受影响行数，0 表示这一行已不存在或已被改判。
+   * `currentItemKey` 与进度同一笔写入：界面靠它区分「处理中」与「等待中」（MKACG-999）。
+   */
+  updateRunProgress(
+    runId: string,
+    progress: ExtractionProgress,
+    currentItemKey: string | null,
+  ): Promise<number>;
   /** 写终态：`succeeded` / `partial` / `failed` / `empty`，同时清空进度。 */
   finishRun(
     runId: string,

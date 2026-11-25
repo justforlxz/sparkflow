@@ -24,6 +24,7 @@ import { buildImagePrompt } from "./prompt";
 import { resolveImageGenerator, resolveVisionAnalyzer } from "./service";
 import { buildExistencePrompt, deriveExtractionSize, parseExistenceVerdict } from "./vision-judgment";
 import { IMAGE_ERROR_CODES } from "./adapters/types";
+import { extractionItemKey } from "@/modules/extraction/item-key";
 import { EXTRACTION_ERROR_CODES, LIBRARY_COPY } from "@/modules/extraction/constants";
 import type {
   ExtractedImage,
@@ -51,6 +52,24 @@ export interface ExtractionHandlerDeps {
 
 function errorCodeOf(error: unknown): string {
   return error instanceof StageError ? error.code : EXTRACTION_ERROR_CODES.jobFailed;
+}
+
+/**
+ * 下一格（原图 × 类别）的键：同一张原图的下一个类别，否则下一张原图的第一个类别。
+ * 全部轮完时返回 null（调用方会把「正在处理」留在最后一格，运行进终态时由终态写入清空）。
+ */
+function nextItemKey(
+  assets: readonly SourceAssetRef[],
+  categories: readonly string[],
+  assetIndex: number,
+  categoryIndex: number,
+): string | null {
+  const category = categories[categoryIndex + 1];
+  if (category !== undefined) {
+    return extractionItemKey(assets[assetIndex].id, category);
+  }
+  const nextAsset = assets[assetIndex + 1];
+  return nextAsset ? extractionItemKey(nextAsset.id, categories[0] ?? "") : null;
 }
 
 /** 按勾选顺序取原图：只处理本次运行勾选的，不处理整个资源夹。 */
@@ -175,7 +194,8 @@ export async function extractImages(
   const skipped: ExtractionSkip[] = [];
   let done = 0;
 
-  await context.reportProgress({ done, total });
+  // 第一格已经开始：界面据此把这一格显示成「处理中」，同一次运行里其余格子显示「等待中」（MKACG-999）。
+  await context.reportProgress({ done, total }, extractionItemKey(assets[0].id, categories[0] ?? ""));
 
   for (const [offset, asset] of assets.entries()) {
     // 原图字节每张只读一次：同一张原图的多个类别共用压缩结果与尺寸。
@@ -189,7 +209,7 @@ export async function extractImages(
       prepareError = error;
     }
 
-    for (const category of categories) {
+    for (const [categoryIndex, category] of categories.entries()) {
       // 运行被中止（超时、服务停止）时不再继续下一项：否则要等 N×M 次上游超时。
       if (context.signal.aborted) {
         throw new StageError(EXTRACTION_ERROR_CODES.timeout, "提取已中止，停止继续调用");
@@ -268,7 +288,13 @@ export async function extractImages(
       }
 
       done += 1;
-      await context.reportProgress({ done, total });
+      // 一项做完就写进度，并把「正在处理」指向下一格：界面上的「处理中」随之换位（AC-PROG-2）。
+      // 最后一格做完后仍指向它，直到运行进终态时清空 —— 运行期间始终恰好一格「处理中」。
+      await context.reportProgress(
+        { done, total },
+        nextItemKey(assets, categories, offset, categoryIndex) ??
+          extractionItemKey(asset.id, category),
+      );
     }
   }
 

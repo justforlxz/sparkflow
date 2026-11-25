@@ -48,6 +48,7 @@ function run(overrides: Partial<ExtractionRunRecord> = {}): ExtractionRunRecord 
     progress: { done: 0, total: 4 },
     error: null,
     extraPrompt: null,
+    currentItemKey: null,
     createdAt: new Date("2026-11-21T00:00:00Z"),
     finishedAt: null,
     ...overrides,
@@ -153,7 +154,7 @@ describe("提取运行执行器", () => {
     const parts = harness(run());
     const runner = makeRunner(parts, {
       run: async (context) => {
-        await context.reportProgress({ done: 4, total: 4 });
+        await context.reportProgress({ done: 4, total: 4 }, null);
         return {
           images: [
             image("asset-1", "topdown", 1),
@@ -177,7 +178,7 @@ describe("提取运行执行器", () => {
       "topdown",
       "topdown",
     ]);
-    expect(parts.store.updateRunProgress).toHaveBeenCalledWith("run-1", { done: 4, total: 4 });
+    expect(parts.store.updateRunProgress).toHaveBeenCalledWith("run-1", { done: 4, total: 4 }, null);
     expect(parts.finished).toEqual([{ status: "succeeded", error: null }]);
     // 每条素材都写一条 succeeded 条目，并指回它的素材 id。
     expect(parts.items[0]?.map((item) => item.status)).toEqual([

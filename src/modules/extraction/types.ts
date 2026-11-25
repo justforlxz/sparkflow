@@ -76,8 +76,14 @@ export interface ExtractionContext {
   signal: AbortSignal;
   /** 按 id 读一张原图的字节（由 runner 接到资源夹模块）。 */
   readSourceImage(assetId: string): Promise<SourceImageBytes>;
-  /** 写执行进度；终态时 runner 负责清空。 */
-  reportProgress(progress: ExtractionProgress): Promise<void>;
+  /**
+   * 写执行进度，同时记下正在处理的那一格（`<sourceAssetId>|<category>`）：
+   * 界面据此把「处理中」与「等待中」分开（MKACG-999）。还没轮到的项与终态都写 null。
+   */
+  reportProgress(
+    progress: ExtractionProgress,
+    currentItemKey: string | null,
+  ): Promise<void>;
 }
 
 /**
@@ -119,6 +125,8 @@ export interface ExtractionRunRecord {
   progress: ExtractionProgress | null;
   error: ExtractionErrorRecord | null;
   extraPrompt: string | null;
+  /** 正在处理的那一格（`<sourceAssetId>|<category>`）；没在跑或运行已进终态时为 null。 */
+  currentItemKey: string | null;
   createdAt: Date;
   finishedAt: Date | null;
 }

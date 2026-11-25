@@ -8,6 +8,7 @@ import {
   extractAndWait,
   prepareAgents,
   uniqueName,
+  waitForRun,
 } from "./support/library";
 
 /**
@@ -86,6 +87,19 @@ async function layout(page: Page) {
       scrollY: window.scrollY,
     };
   });
+}
+
+/** 结果卡的格子快照：卡（原图 id）、类别与 `data-state`，按页面顺序。 */
+async function cells(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="result-card"]')].flatMap((card) =>
+      [...card.querySelectorAll('[data-testid="result-cell"]')].map((cell) => ({
+        card: card.getAttribute("data-source-asset-id") ?? "",
+        category: cell.getAttribute("data-category") ?? "",
+        state: cell.getAttribute("data-state") ?? "",
+      })),
+    ),
+  );
 }
 
 test.beforeEach(async ({ request }) => {
@@ -435,6 +449,147 @@ test("AC-UI-9 单格「重试」：点击后该格立刻显示「重试中」+ �
     results.locator('[data-testid="result-cell"][data-state="absent"]'),
     "不存在的那一格没有被重试",
   ).toHaveCount(1);
+});
+
+test("AC-PROG-1 AC-PROG-2 AC-PROG-3 运行中恰好一格「处理中」、其余「等待中」，各格用自己的原图模糊图做底", async ({
+  page,
+  request,
+}) => {
+  await createGateway(request);
+  // 2 张原图 × 3 类 = 6 项：一次运行里既有正在处理的那一格，也有还没轮到的格子。
+  const collection = await createCollection(request, uniqueName("AC-PROG-1"), 2);
+
+  await loginInBrowser(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/collections/${collection.id}`);
+
+  // mock 出图每次慢 2 秒：一次运行约 12 秒，界面每 3 秒轮询一次，才采得到两次中间态。
+  await page.getByTestId("extra-prompt").fill(`${MOCK_SCRIPT_HINTS.delayImageMs}-2000`);
+  await page.getByTestId("extract-submit").click();
+
+  const results = page.getByTestId("column-results");
+  await expect(results.getByTestId("result-card")).toHaveCount(2);
+
+  // 等 worker 认领并指出当前条目：恰好 1 格「处理中」，其余 5 格「等待中」（AC-PROG-1）。
+  await expect
+    .poll(
+      async () => (await cells(page)).filter((cell) => cell.state === "pending").length,
+      { timeout: 60_000, intervals: [200, 200, 300, 500] },
+    )
+    .toBe(1);
+
+  const first = await cells(page);
+  expect(first.filter((cell) => cell.state === "pending")).toHaveLength(1);
+  expect(first.filter((cell) => cell.state === "waiting")).toHaveLength(5);
+  const processing = first.find((cell) => cell.state === "pending");
+  const sameCard = first.filter((cell) => cell.card === processing?.card);
+  expect(sameCard, "同属一张原图的三格").toHaveLength(3);
+  expect(sameCard.filter((cell) => cell.state === "pending")).toHaveLength(1);
+  expect(sameCard.filter((cell) => cell.state === "waiting")).toHaveLength(2);
+
+  // 底色是各卡自己的原图缩略图，模糊处理；两张卡不串图（AC-PROG-3）。
+  const covers = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="result-card"]')].map((card) => ({
+      card: card.getAttribute("data-source-asset-id") ?? "",
+      header: card.querySelector("img")?.getAttribute("src") ?? null,
+      cells: [...card.querySelectorAll('[data-testid="result-cell"]')]
+        .filter((cell) => ["pending", "waiting"].includes(cell.getAttribute("data-state") ?? ""))
+        .map((cell) => {
+          const image = cell.querySelector("img");
+          return {
+            src: image?.getAttribute("src") ?? null,
+            filter: image ? getComputedStyle(image).filter : null,
+          };
+        }),
+    })),
+  );
+  expect(covers.map((cover) => cover.header)).not.toContain(null);
+  expect(new Set(covers.map((cover) => cover.header)).size, "两张原图的缩略图不同").toBe(2);
+  for (const cover of covers) {
+    expect(cover.cells.length, "运行进行中：每张卡都有还没出结论的格子").toBeGreaterThan(0);
+    for (const cell of cover.cells) {
+      expect(cell.src, "格子底色是这一格自己那张原图").toBe(cover.header);
+      expect(cell.filter ?? "", "底色是模糊图").toContain("blur(");
+    }
+  }
+
+  // 「处理中」随 progress.done 前进而换位（AC-PROG-2）：连续采样两次，位置必须变化。
+  const firstIndex = first.findIndex((cell) => cell.state === "pending");
+  await expect
+    .poll(
+      async () => {
+        const index = (await cells(page)).findIndex((cell) => cell.state === "pending");
+        return index >= 0 && index !== firstIndex;
+      },
+      { timeout: 60_000, intervals: [200, 200, 300, 500] },
+    )
+    .toBe(true);
+
+  // 跑完不再有「处理中 / 等待中」（AC-PROG-5）。
+  await expect(page.getByTestId("extraction-run")).toContainText("已完成", { timeout: 90_000 });
+  await expect
+    .poll(
+      async () =>
+        (await cells(page)).filter(
+          (cell) => cell.state === "pending" || cell.state === "waiting",
+        ).length,
+      { timeout: 60_000 },
+    )
+    .toBe(0);
+  // 完成后六格都是缩略图（完成态用的是 ImageLightbox，没有 data-state）。
+  await expect(results.getByTestId("image-thumbnail")).toHaveCount(6);
+  await expect(results.getByTestId("result-card-count")).toHaveText(["3/3", "3/3"]);
+});
+
+test("AC-PROG-4 AC-PROG-5 从未提取过的格子仍是 idle 且不放图；跑完的运行不再留下 pending", async ({
+  page,
+  request,
+}) => {
+  await createGateway(request);
+  const collection = await createCollection(request, uniqueName("AC-PROG-4"), 2);
+
+  // 只跑第一张原图：第二张原图的格子没有被任何运行覆盖过。
+  const created = await request.post(`/api/collections/${collection.id}/extractions`, {
+    data: {
+      sourceAssetIds: [collection.assetIds[0]],
+      categories: ["topdown", "texture", "graphic"],
+      requirement: "faithful",
+    },
+  });
+  expect(created.status()).toBe(201);
+  const run = ((await created.json()) as { data: { run: { id: string } } }).data.run;
+  await waitForRun(request, collection.id, run.id);
+
+  await loginInBrowser(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/collections/${collection.id}`);
+
+  const results = page.getByTestId("column-results");
+  const idleCard = results.locator(
+    `[data-testid="result-card"][data-source-asset-id="${collection.assetIds[1]}"]`,
+  );
+  const idleCells = idleCard.locator('[data-testid="result-cell"][data-state="idle"]');
+  await expect(idleCells).toHaveCount(3);
+  await expect(idleCells.first()).toHaveText("未提取");
+  // 从未提取：虚线描边、不放图（AC-PROG-4）。
+  await expect(idleCard.locator('[data-testid="result-cell"] img')).toHaveCount(0);
+
+  // 跑完的运行不再有「处理中 / 等待中」（AC-PROG-5）。
+  await expect
+    .poll(
+      async () =>
+        (await cells(page)).filter(
+          (cell) => cell.state === "pending" || cell.state === "waiting",
+        ).length,
+    )
+    .toBe(0);
+
+  // 跑过的那张原图三格都是完成态（缩略图），不是「等待中」。
+  const doneCard = results.locator(
+    `[data-testid="result-card"][data-source-asset-id="${collection.assetIds[0]}"]`,
+  );
+  await expect(doneCard.getByTestId("image-thumbnail")).toHaveCount(3);
+  await expect(doneCard.getByTestId("result-card-count")).toHaveText("3/3");
 });
 
 test("AC-UI-10 375 视口无横向溢出；单列；缩略图 2 列；弹窗完整可见", async ({ page, request }) => {

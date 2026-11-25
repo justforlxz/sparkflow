@@ -23,6 +23,11 @@ export const MOCK_SCRIPT_HINTS = {
    * mock 出图只花几毫秒，不加延时的话一次多图提取在界面上抓不到「中间进度」。
    */
   delayImageMs: "mock:delay-image-ms",
+  /**
+   * 把主体画到图片底边：验证「主体贴底时不去水印、标含水印」（MKACG-1004、AC-WM-3）。
+   * 默认产物是纯白底，安全检测永远通过，跑不到「拒绝裁切」这条分支。
+   */
+  subjectToBottom: "mock:subject-to-bottom",
 } as const;
 
 /** 延时上限：脚本标记只用于测试，不让人把一次提取拖成几分钟。 */

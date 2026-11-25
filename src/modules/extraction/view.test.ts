@@ -15,6 +15,8 @@ function asset(id: string, category: string, createdAt: string): LibraryAssetRec
     width: 1536,
     height: 1024,
     sortOrder: 1,
+    watermarkRemoved: true,
+    watermarkNote: null,
     createdAt: new Date(createdAt),
   };
 }

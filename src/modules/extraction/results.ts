@@ -31,6 +31,10 @@ export interface ResultCellAsset {
   fileName: string;
   url: string;
   thumbnailUrl: string;
+  /** 是否已经去掉上游水印（MKACG-1004）：false 时格子角上标「含水印」。 */
+  watermarkRemoved: boolean;
+  /** 没去水印的原因（可空），作为角标的提示文字。 */
+  watermarkNote: string | null;
 }
 
 /**
@@ -153,6 +157,8 @@ function collectAttempts(input: ResultCardsInput): Map<string, Attempt> {
           fileName: asset.fileName,
           url: asset.url,
           thumbnailUrl: asset.thumbnailUrl,
+          watermarkRemoved: asset.watermarkRemoved,
+          watermarkNote: asset.watermarkNote,
         },
         reason: null,
         retry: null,

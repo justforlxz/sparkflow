@@ -123,8 +123,16 @@ function context(
 const readSize = async () => ({ width: 900, height: 600 });
 const compress = async () => "data:image/jpeg;base64,AA==";
 
+/** 单测注入：默认「去水印成功且字节不变」，这样不用真 sharp 也能断言后处理的三种结局。 */
+const watermark = async (bytes: Buffer) => ({
+  bytes,
+  removed: true,
+  note: null,
+  subjectRatio: 0,
+});
+
 function deps(generator: ImageGenerator, absent: readonly string[] = []) {
-  return { generator, vision: vision(absent), compress, readSize };
+  return { generator, vision: vision(absent), compress, readSize, watermark };
 }
 
 /** 提取粒度 = 原图 × 类别（docs/prd/12 MUST 2、AC-LIB-1、AC-LIB-2）。 */
@@ -364,7 +372,7 @@ describe("提取处理器", () => {
     await expect(
       extractImages(
         { ...base, signal: controller.signal },
-        { generator: slowGenerator, vision: vision(), compress, readSize },
+        { generator: slowGenerator, vision: vision(), compress, readSize, watermark },
       ),
     ).rejects.toMatchObject({ code: EXTRACTION_ERROR_CODES.timeout });
     expect(generator.calls).toHaveLength(1);
@@ -390,7 +398,88 @@ describe("提取处理器", () => {
       vision: vision(),
       compress,
       readSize,
+      watermark,
     });
     expect(generator).toHaveBeenCalledTimes(4);
+  });
+});
+
+/**
+ * 去水印后处理（MKACG-1004）：出图后、入库前处理一次，三种结局都不阻断提取。
+ * 后处理本身的行为由 `watermark.test.ts` 覆盖；这里只锁处理器怎么用它、怎么标注素材。
+ */
+describe("去水印后处理（MKACG-1004）", () => {
+  it("AC-WM-3 安全检测拒绝时：原图字节照常交出，标成未去水印并带上原因", async () => {
+    const reason = "未去水印：底部 10% 条带里主体像素占 80.0%，裁掉会切掉主体，已保留原图";
+
+    const outcome = await extractImages(context(["topdown"]), {
+      ...deps(countingGenerator()),
+      watermark: async (bytes) => ({
+        bytes,
+        removed: false,
+        note: reason,
+        subjectRatio: 0.8,
+      }),
+    });
+
+    expect(outcome.failures).toEqual([]);
+    expect(outcome.images).toHaveLength(2);
+    for (const image of outcome.images) {
+      expect(image.watermarkRemoved).toBe(false);
+      expect(image.watermarkNote).toBe(reason);
+      // 产物仍是上游给的原图：没有被换成处理后的字节。
+      expect(image.bytes.equals(Buffer.from("png"))).toBe(true);
+    }
+  });
+
+  it("AC-WM-4 后处理抛错时：提取仍成功，产物是原图，标成未去水印并写明原因", async () => {
+    const outcome = await extractImages(context(["topdown", "texture"]), {
+      ...deps(countingGenerator()),
+      watermark: async () => {
+        throw new Error("输入缓冲区不是受支持的图片");
+      },
+    });
+
+    expect(outcome.failures).toEqual([]);
+    expect(outcome.images).toHaveLength(4);
+    for (const image of outcome.images) {
+      expect(image.watermarkRemoved).toBe(false);
+      expect(image.watermarkNote).toContain("未去水印");
+      expect(image.watermarkNote).toContain("后处理失败");
+      expect(image.bytes.equals(Buffer.from("png"))).toBe(true);
+    }
+  });
+
+  it("去水印成功时：落库用的是处理后的字节，注明已去掉水印", async () => {
+    const processed = Buffer.from("processed-png");
+
+    const outcome = await extractImages(context(["topdown"]), {
+      ...deps(countingGenerator()),
+      watermark: async () => ({ bytes: processed, removed: true, note: null, subjectRatio: 0 }),
+    });
+
+    expect(outcome.images).toHaveLength(2);
+    for (const image of outcome.images) {
+      expect(image.bytes.equals(processed)).toBe(true);
+      expect(image.watermarkRemoved).toBe(true);
+      expect(image.watermarkNote).toBeNull();
+    }
+  });
+
+  it("后处理只对成功产出的条目调用：判定为不存在的不处理", async () => {
+    const processed: Buffer[] = [];
+
+    const outcome = await extractImages(context(["topdown"]), {
+      ...deps(countingGenerator(), ["topdown"]),
+      watermark: async (bytes) => {
+        processed.push(bytes);
+        return { bytes, removed: true, note: null, subjectRatio: 0 };
+      },
+    });
+
+    // 两张原图 × 1 个类别，全部判定为不存在：一件产物都没有，也就没有后处理。
+    expect(outcome.images).toEqual([]);
+    expect(outcome.skipped).toHaveLength(2);
+    expect(processed).toEqual([]);
   });
 });

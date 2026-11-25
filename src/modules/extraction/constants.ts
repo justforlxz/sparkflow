@@ -126,6 +126,8 @@ export const LIBRARY_COPY = {
   clearSelection: "清空选择",
   cancelAction: "取消",
   viewImage: "查看大图",
+  /** 上游水印没能去掉的素材角标（MKACG-1004）：悬停时用 `watermarkNote` 说明原因。 */
+  watermarkBadge: "含水印",
   closePreview: "关闭",
   sourceAssetLabelPrefix: "原图",
   /** 来源原图已被解除关联时如实说明，不猜编号。 */

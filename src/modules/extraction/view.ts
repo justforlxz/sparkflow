@@ -37,6 +37,10 @@ export interface LibraryAssetView {
   /** 鉴权读取素材图片的地址，可直接渲染。 */
   url: string;
   thumbnailUrl: string;
+  /** 是否已经去掉上游水印（MKACG-1004）：false 时界面标「含水印」。 */
+  watermarkRemoved: boolean;
+  /** 没去水印的原因（可空），界面作为角标的提示文字。 */
+  watermarkNote: string | null;
   createdAt: string;
 }
 
@@ -168,6 +172,8 @@ export function toLibraryAssetView(
     height: asset.height,
     url: libraryAssetUrl(asset.id),
     thumbnailUrl: libraryAssetUrl(asset.id, DEFAULT_THUMBNAIL_WIDTH),
+    watermarkRemoved: asset.watermarkRemoved,
+    watermarkNote: asset.watermarkNote,
     createdAt: asset.createdAt.toISOString(),
   };
 }

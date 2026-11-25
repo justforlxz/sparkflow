@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { getDb } from "@/lib/db";
 import { createGateway } from "@/modules/gateway/service";
@@ -165,6 +166,8 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
                 category,
                 sourceAssetId: assetId,
                 sortOrder: assetIndex + 1,
+                watermarkRemoved: true,
+                watermarkNote: null,
               });
             }
             call += 1;
@@ -187,6 +190,8 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
             category: image.category,
             sourceAssetId: image.sourceAssetId,
             sortOrder: image.sortOrder,
+            watermarkRemoved: image.watermarkRemoved,
+            watermarkNote: image.watermarkNote,
           })),
       },
       handler,
@@ -216,5 +221,55 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
     const library = await listLibrary(id);
     expect(library.total).toBe(3);
     expect(library.groups.map((group) => group.category).sort()).toEqual(["texture", "topdown"]);
+  });
+});
+
+/**
+ * 去水印的结局要一路带到界面（MKACG-1004、AC-WM-3）：落盘 → 入库 → 视图回读。
+ * 用真实的落盘与真实 PostgreSQL 断言两列确实写进去了，内存替身测不出「列没写」。
+ */
+describe("AC-WM-3 素材记录带上「是否去水印」与原因", () => {
+  test("AC-WM-3 未去水印的素材入库后，视图回读到 watermarkRemoved=false 与原因", async () => {
+    const { id, assetIds } = await createCollectionWithAssets(1);
+    const { createExtraction, listLibrary } = await import("@/modules/extraction/service");
+    const { extractionStore } = await import("@/modules/extraction/repo");
+    const { removeLibraryFile, writeLibraryImages } = await import("@/modules/extraction/storage");
+
+    const run = await createExtraction(id, {
+      sourceAssetIds: assetIds,
+      categories: ["topdown"],
+      requirement: "faithful",
+    });
+
+    const note = "未去水印：底部 10% 条带里主体像素占 80.0%，裁掉会切掉主体，已保留原图";
+    const bytes = await sharp({
+      create: { width: 20, height: 20, channels: 3, background: { r: 245, g: 243, b: 238 } },
+    })
+      .png()
+      .toBuffer();
+
+    const written = await writeLibraryImages(run.id, [
+      {
+        bytes,
+        mimeType: "image/png",
+        width: 20,
+        height: 20,
+        category: "topdown",
+        sourceAssetId: assetIds[0] ?? "",
+        sortOrder: 1,
+        watermarkRemoved: false,
+        watermarkNote: note,
+      },
+    ]);
+
+    try {
+      await extractionStore.saveAssets(run.id, id, written);
+
+      const library = await listLibrary(id);
+      const item = library.groups.flatMap((group) => group.items)[0];
+      expect(item).toMatchObject({ watermarkRemoved: false, watermarkNote: note });
+    } finally {
+      for (const asset of written) await removeLibraryFile(asset.storageKey);
+    }
   });
 });

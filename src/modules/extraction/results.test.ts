@@ -16,6 +16,8 @@ function asset(overrides: Partial<LibraryAssetView> & { sourceAssetId: string; c
     height: 1024,
     url: "/api/files/library/x",
     thumbnailUrl: "/api/files/library/x?w=400",
+    watermarkRemoved: true,
+    watermarkNote: null,
     createdAt: "2026-11-24T10:00:00.000Z",
     ...overrides,
   };

@@ -84,6 +84,10 @@ model LibraryAsset {
   width           Int?
   height          Int?
   sortOrder       Int            @default(0) @map("sort_order")
+  // 是否已经去掉上游模型自带的水印（MKACG-1004）。默认 false：老素材确实都还带着水印。
+  watermarkRemoved Boolean       @default(false) @map("watermark_removed")
+  // 没去水印时的原因（主体贴底、后处理失败）；去掉时为空。
+  watermarkNote   String?        @map("watermark_note")
   createdAt       DateTime       @default(now()) @map("created_at")
   collection      MediaCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
   extractionRun   ExtractionRun  @relation(fields: [extractionRunId], references: [id], onDelete: Cascade)

@@ -19,7 +19,7 @@ import { isSelectableCategory, SELECTABLE_CATEGORIES } from "./categories";
 import * as repo from "./repo";
 import type { CreateExtractionInput } from "./schema";
 import { readLibraryFile, removeLibraryFile } from "./storage";
-import type { ExtractionProgress, LibraryAssetRecord } from "./types";
+import type { ExtractionProgress } from "./types";
 import { toExtractionRunView, toLibraryView, type ExtractionRunView, type LibraryView } from "./view";
 
 export interface LibraryBytes {
@@ -135,11 +135,6 @@ export async function listLibrary(collectionId: string): Promise<LibraryView> {
     skipped,
     collection.assets.map((asset) => asset.id),
   );
-}
-
-/** 批量取素材记录：文案版本要把 `selected_asset_ids` 还原成可用图片（AC-LIB-5）。 */
-export async function getLibraryAssets(assetIds: readonly string[]): Promise<LibraryAssetRecord[]> {
-  return repo.findLibraryAssetsByIds(assetIds);
 }
 
 /**

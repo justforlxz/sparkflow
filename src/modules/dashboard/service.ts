@@ -4,24 +4,21 @@
  * 统计口径（写死在这里，页面与接口都不再解释一遍）：
  * - `collections`：媒体资源夹总数。
  * - `pendingGeneration`（待处理）：还没有任何素材的资源夹数。
- * - `pendingPublish`（待发布）：有文案版本、但该版本还没有发布记录的条数。
- * - `published`（已发布）：发布记录数（同一条结果重复标记只有一行）。
+ *
+ * 文案与发布下线后，「待发布」「已发布」与「最近生成的内容」没有数据来源，随功能一并删除
+ * （ADR 0012 第 3 条、MKACG-976）；`/api/stats` 改为返回两个数字与一份最近列表。
  *
  * 每个数字都由它所属的模块给出一次聚合计数（`count`），本模块不遍历列表、不读别人的表
- * （AGENTS.md 硬性规则 2、docs/prd/09 MUST 1 / MUST NOT）。`/api/stats` 一次返回四个数字
- * 与两份最近列表，前端只发一次请求（docs/prd/09 SHOULD）。
+ * （AGENTS.md 硬性规则 2、docs/prd/09 MUST 1 / MUST NOT）。
  */
 import { cache } from "react";
-import { countUnpublishedVersions } from "@/modules/copy-generation/service";
-import { listRecentVersions } from "@/modules/copy-generation/recent";
 import {
   countCollections,
   countDraftCollections,
   listRecentCollections,
 } from "@/modules/media-collection/service";
-import { countAllPublishRecords } from "@/modules/publish/counts";
 import { assembleStats, type DashboardStats } from "./assemble";
-import { RECENT_COLLECTIONS_LIMIT, RECENT_RESULTS_LIMIT } from "./constants";
+import { RECENT_COLLECTIONS_LIMIT } from "./constants";
 
 /** 侧栏计数的来源（docs/prd/09 MUST 2）：与工作台前两项统计是同一份数据。
  *  字段名与 `NAV_ITEMS` 的 `badge` 一一对应，见 `src/components/shell/navigation.ts`。 */
@@ -48,21 +45,12 @@ export async function getNavCounts(): Promise<NavCounts> {
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  // 五项互不依赖，并发发出；每一项都是一次聚合查询或一次带 limit 的列表查询。
-  // 「资源夹总数」「待创作」复用侧栏那两份按请求缓存的计数，同一次渲染不会查两遍。
-  const [nav, pendingPublish, published, recentCollections, recentResults] = await Promise.all([
+  // 两项互不依赖，并发发出；每一项都是一次聚合查询或一次带 limit 的列表查询。
+  // 两个数字复用侧栏那两份按请求缓存的计数，同一次渲染不会查两遍。
+  const [nav, recentCollections] = await Promise.all([
     loadNavCounts(),
-    countUnpublishedVersions(),
-    countAllPublishRecords(),
     listRecentCollections(RECENT_COLLECTIONS_LIMIT),
-    listRecentVersions(RECENT_RESULTS_LIMIT),
   ]);
 
-  return assembleStats({
-    ...nav,
-    pendingPublish,
-    published,
-    recentCollections,
-    recentResults,
-  });
+  return assembleStats({ ...nav, recentCollections });
 }

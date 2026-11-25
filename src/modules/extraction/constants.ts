@@ -81,7 +81,6 @@ export const EXTRACTION_POLL_INTERVAL_MS = 3000;
 /** 素材库与提取运行的界面文案（AGENTS.md 硬性规则 1）。 */
 export const LIBRARY_COPY = {
   libraryTab: "素材库",
-  publishTab: "发布",
   oneClickExtract: "一键提取",
   submittingLabel: "发起中…",
   /** 三栏页的四块面板标题（ADR 0012 第 4 条）。 */

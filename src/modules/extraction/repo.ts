@@ -304,18 +304,6 @@ export async function findLibraryAsset(assetId: string): Promise<LibraryAssetRec
   return getDb().libraryAsset.findUnique({ where: { id: assetId }, select: LIBRARY_SELECT });
 }
 
-/** 批量取素材：文案版本要把 `selected_asset_ids` 还原成可用图片（AC-LIB-5）。 */
-export async function findLibraryAssetsByIds(
-  assetIds: readonly string[],
-): Promise<LibraryAssetRecord[]> {
-  const unique = [...new Set(assetIds)];
-  if (unique.length === 0) return [];
-  return getDb().libraryAsset.findMany({
-    where: { id: { in: unique } },
-    select: LIBRARY_SELECT,
-  });
-}
-
 /** 删除一张素材；返回被删的 storage_key 与运行 id，供调用方清理磁盘。 */
 export async function deleteLibraryAsset(
   assetId: string,

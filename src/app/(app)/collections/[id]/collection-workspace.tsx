@@ -249,12 +249,6 @@ export function CollectionWorkspace({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h1 className={PAGE_TITLE_CLASS}>{collection.name}</h1>
           <div className="flex flex-wrap items-start gap-2">
-            <Link
-              href={`/collections/${collection.id}?view=publish`}
-              className={`text-footnote ${TEXT_LINK_CLASS}`}
-            >
-              文案与发布
-            </Link>
             <CollectionDialog
               mode="edit"
               collection={{

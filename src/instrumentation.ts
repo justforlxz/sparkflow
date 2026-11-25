@@ -15,6 +15,6 @@ export async function register(): Promise<void> {
 
   getEnv();
   await ensureStorageRoot();
-  // 提取与文案都用进程内 worker 执行（ADR 0002）：启动时清理残留 running，然后轮询排队作业。
+  // 提取用进程内 worker 执行（ADR 0002）：启动时清理残留 running，然后轮询排队作业。
   startWorker();
 }

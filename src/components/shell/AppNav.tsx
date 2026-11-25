@@ -16,7 +16,6 @@ import { NAV_ITEMS, isNavActive, type NavBadgeKey, type NavKey } from "./navigat
 const ICON_PATHS: Record<NavKey, ReactNode> = {
   dashboard: <path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5" />,
   collections: <path d="M4 6.5h6l2 2.5h8V19H4V6.5Z" />,
-  publish: <path d="M4 12.5 19 5l-2.5 14-4-4.5-5.5-2Z" />,
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />

@@ -6,11 +6,11 @@ import { EXTRACTION_TERMINAL_STATUSES } from "../../../src/modules/extraction/co
 import { ensureAccount } from "./auth";
 
 /**
- * 素材库 / 提取运行 / 文案版本共用的端到端预备动作。
+ * 素材库 / 提取运行共用的端到端预备动作。
  *
- * 「发布」与「素材库」两份 spec 都要造资源夹、造网关、跑提取、等终态 ——
- * 这些步骤只写一份，避免两份用例对同一件事各自维护一套判定（尤其等终态的时机）。
- * 走真实 HTTP + 进程内 worker + mock 适配器（`GENERATION_ADAPTER=mock`）。
+ * 各份 spec 都要造资源夹、造网关、跑提取、等终态 —— 这些步骤只写一份，避免多份用例对同一件事
+ * 各自维护一套判定（尤其等终态的时机）。走真实 HTTP + 进程内 worker + mock 适配器
+ * （`GENERATION_ADAPTER=mock`）。文案版本与发布记录的辅助函数随功能下线删除（MKACG-976）。
  */
 
 /** 1×1 的 PNG：类型判定只看魔数。 */
@@ -61,17 +61,6 @@ export interface ExtractionRun {
   error: { code: string; message: string; failures: unknown[] } | null;
 }
 
-export interface CopyVersion {
-  id: string;
-  versionNo: number;
-  versionLabel: string;
-  status: string;
-  title: string | null;
-  selectedAssetIds: string[];
-  assets: Array<{ id: string; deleted: boolean; categoryLabel: string | null }>;
-  error: { code: string; message: string } | null;
-}
-
 const createdCollections: string[] = [];
 const createdGateways: string[] = [];
 
@@ -117,16 +106,12 @@ export async function createCollection(
   return { id: body.data.id, assetIds: body.data.assets.map((asset) => asset.id) };
 }
 
-/** 造一个网关并绑定对应的 Agent：`magpie-mcp` 给图片 Agent，`openai-chat` 给文案 Agent。 */
-export async function createGateway(
-  request: APIRequestContext,
-  protocol: "magpie-mcp" | "openai-chat",
-  agentType: "image" | "copy",
-): Promise<void> {
+/** 造一个 `magpie-mcp` 网关并绑定图片 Agent。文案 Agent 下线后不再需要文案侧网关（MKACG-976）。 */
+export async function createGateway(request: APIRequestContext): Promise<void> {
   const response = await request.post("/api/gateways", {
     data: {
-      name: uniqueName(`e2e-lib-${agentType}`),
-      protocol,
+      name: uniqueName("e2e-lib-image"),
+      protocol: "magpie-mcp",
       baseUrl: "https://example.com",
       apiKey: "test-key-placeholder",
     },
@@ -135,17 +120,8 @@ export async function createGateway(
   const gateway = ((await response.json()) as { data: { gateway: { id: string } } }).data.gateway;
   createdGateways.push(gateway.id);
 
-  let gatewayModelId: string | null = null;
-  if (agentType === "copy") {
-    const model = await request.post(`/api/gateways/${gateway.id}/models`, {
-      data: { modelId: "gpt-4o-mini", capability: "text" },
-    });
-    expect(model.status()).toBe(201);
-    gatewayModelId = "gpt-4o-mini";
-  }
-
-  const bind = await request.patch(`/api/agents/${agentType}`, {
-    data: { gatewayId: gateway.id, gatewayModelId },
+  const bind = await request.patch("/api/agents/image", {
+    data: { gatewayId: gateway.id, gatewayModelId: null },
   });
   expect(bind.status()).toBe(200);
 }
@@ -166,15 +142,6 @@ export async function listRuns(
   const response = await request.get(`/api/collections/${collectionId}/extractions`);
   expect(response.status()).toBe(200);
   return ((await response.json()) as { data: { runs: ExtractionRun[] } }).data.runs;
-}
-
-export async function listVersions(
-  request: APIRequestContext,
-  collectionId: string,
-): Promise<CopyVersion[]> {
-  const response = await request.get(`/api/collections/${collectionId}/copy-versions`);
-  expect(response.status()).toBe(200);
-  return ((await response.json()) as { data: { versions: CopyVersion[] } }).data.versions;
 }
 
 /**
@@ -206,29 +173,6 @@ function isTerminalRun(status: string): boolean {
   return (EXTRACTION_TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
-export async function waitForVersion(
-  request: APIRequestContext,
-  collectionId: string,
-  versionId: string,
-): Promise<CopyVersion> {
-  let latest: CopyVersion | undefined;
-  // 等到终态（成功或失败）再断言成功：把「失败」当超时等只会给出含糊的等待超时。
-  await expect
-    .poll(
-      async () => {
-        latest = (await listVersions(request, collectionId)).find(
-          (version) => version.id === versionId,
-        );
-        return latest?.status === "succeeded" || latest?.status === "failed";
-      },
-      { timeout: 40_000, intervals: [500, 1000, 2000] },
-    )
-    .toBe(true);
-  if (!latest) throw new Error(`文案版本 ${versionId} 没有出现在列表里`);
-  expect(latest.status, `生成失败：${latest.error?.message ?? "未知原因"}`).toBe("succeeded");
-  return latest;
-}
-
 /** 界面用例的数据准备走接口：发起一次提取并等它进入终态，断言只看界面。 */
 export async function extractAndWait(
   request: APIRequestContext,
@@ -251,10 +195,8 @@ export async function extractAndWait(
 /** 每个用例从默认配置开始，避免上一条用例绑定的网关互相影响。 */
 export async function prepareAgents(request: APIRequestContext): Promise<void> {
   await ensureAccount(request);
-  for (const type of ["image", "copy"]) {
-    const reset = await request.post(`/api/agents/${type}/reset`);
-    expect(reset.status()).toBe(200);
-  }
+  const reset = await request.post("/api/agents/image/reset");
+  expect(reset.status()).toBe(200);
 }
 
 /**

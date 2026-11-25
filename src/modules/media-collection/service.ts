@@ -14,9 +14,7 @@ import { randomUUID } from "node:crypto";
 import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
-import { countCollectionVersions } from "@/modules/copy-generation/service";
 import { countCollectionUsage, countDraftCollections } from "@/modules/extraction/service";
-import { countCollectionPublishRecords } from "@/modules/publish/counts";
 import { DEFAULT_THUMBNAIL_WIDTH, type CollectionStatus } from "./constants";
 import { readAssetFile, removeAssetFile, writeAssetBytes } from "./files";
 import * as repo from "./repo";
@@ -79,8 +77,6 @@ export interface CollectionSummaryView {
   extractionRunCount: number;
   /** 素材库里的素材数。 */
   libraryAssetCount: number;
-  /** 文案版本数。 */
-  copyVersionCount: number;
   /** 封面取第一张原图（MAY），没有图片时为 null。 */
   coverUrl: string | null;
 }
@@ -105,22 +101,15 @@ export interface AssetBytes {
 /**
  * 关联记录计数（AC-02-10 的判定点、列表的派生状态）。
  *
- * 提取运行与素材数来自提取模块的 service，文案版本数来自文案模块的 service，
- * 发布记录数来自发布模块的计数函数：都不直接查别人的表（AGENTS.md 硬性规则 2）。
+ * 提取运行与素材数来自提取模块的 service：不直接查别人的表（AGENTS.md 硬性规则 2）。
  * 「运行中提取」指排队或执行中的运行：此时改图或删夹会影响正在进行的提取。
  */
 async function relatedCounts(collectionId: string): Promise<CollectionCounts> {
-  const [usage, copyVersions, published] = await Promise.all([
-    countCollectionUsage(collectionId),
-    countCollectionVersions(collectionId),
-    countCollectionPublishRecords(collectionId),
-  ]);
+  const usage = await countCollectionUsage(collectionId);
   return {
     runningExtractions: usage.activeRuns,
     extractionRuns: usage.runs,
     libraryAssets: usage.libraryAssets,
-    copyVersions,
-    published,
   };
 }
 
@@ -147,7 +136,6 @@ function toSummary(row: repo.CollectionRow, counts: CollectionCounts): Collectio
     assetCount: row.assetCount,
     extractionRunCount: counts.extractionRuns,
     libraryAssetCount: counts.libraryAssets,
-    copyVersionCount: counts.copyVersions,
     coverUrl: row.coverAssetId
       ? assetFileUrl(row.coverAssetId, DEFAULT_THUMBNAIL_WIDTH)
       : null,
@@ -182,7 +170,7 @@ function toPoolAssetView(asset: repo.PoolAssetRow): PoolAssetView {
 
 /**
  * 列表：先按关键词查，再按派生状态筛选与分页。
- * 状态依赖任务/结果/发布记录计数，暂时无法下推到 SQL；等那些表落地后可以改成一次聚合查询。
+ * 状态依赖提取运行与素材计数，暂时无法下推到 SQL；等这些计数能一次聚合出来再改。
  */
 export async function listCollections(query: ListCollectionsQuery): Promise<CollectionList> {
   const rows = await repo.listCollections(query.q);
@@ -201,21 +189,6 @@ export async function listCollections(query: ListCollectionsQuery): Promise<Coll
     page: query.page,
     pageSize: query.pageSize,
   };
-}
-
-/**
- * 批量取资源夹名称（创作任务列表用）。查不到的 id 不出现在结果里：
- * 资源夹被删时任务随外键级联删除，正常不会出现「任务在、资源夹没了」。
- */
-export async function getCollectionNames(
-  ids: readonly string[],
-): Promise<Record<string, string>> {
-  return repo.findCollectionNames([...new Set(ids)]);
-}
-
-/** 发布记录的筛选选项（只给 id 与名称，不读图片与计数）。 */
-export async function listCollectionOptions(): Promise<Array<{ id: string; name: string }>> {
-  return repo.listCollectionOptions();
 }
 
 /** 只查存在性：创作任务与结果需要判断资源夹是否还在，但不需要它的图片与计数。 */
@@ -543,12 +516,4 @@ export async function getAssetImage(assetId: string, width?: number): Promise<As
   const original = await readAssetFile(asset.storageKey);
   const bytes = width ? await scaleImage(original, width) : original;
   return { bytes, mimeType: asset.mimeType, fileName: asset.fileName };
-}
-
-/**
- * 分配下一个文案版本号（docs/prd/12 MUST 5）：计数器只增不减，删除版本后编号不回收。
- * 号码属于资源夹，所以由本模块分配；文案模块只拿号去建版本。
- */
-export async function allocateCopyVersionNumber(collectionId: string): Promise<number> {
-  return repo.allocateCopyVersionNumber(collectionId);
 }

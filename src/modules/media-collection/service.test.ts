@@ -27,14 +27,10 @@ vi.mock("./files", () => ({
 
 vi.mock("./thumbnails", () => ({ scaleImage: vi.fn() }));
 vi.mock("@/modules/extraction/service", () => ({ countCollectionUsage: vi.fn() }));
-vi.mock("@/modules/copy-generation/service", () => ({ countCollectionVersions: vi.fn() }));
-vi.mock("@/modules/publish/counts", () => ({ countCollectionPublishRecords: vi.fn() }));
 
 const repo = await import("./repo");
 const files = await import("./files");
 const counts = await import("@/modules/extraction/service");
-const copyCounts = await import("@/modules/copy-generation/service");
-const publishCounts = await import("@/modules/publish/counts");
 const service = await import("./service");
 
 const COLLECTION_ID = "11111111-1111-4111-8111-111111111111";
@@ -105,8 +101,6 @@ beforeEach(() => {
   vi.mocked(repo.listAssetsByCollection).mockResolvedValue([ASSET_A, ASSET_B]);
   vi.mocked(repo.findCollection).mockResolvedValue(collectionRow([ASSET_A, ASSET_B]));
   vi.mocked(counts.countCollectionUsage).mockResolvedValue({ runs: 0, activeRuns: 0, libraryAssets: 0 });
-  vi.mocked(copyCounts.countCollectionVersions).mockResolvedValue(0);
-  vi.mocked(publishCounts.countCollectionPublishRecords).mockResolvedValue(0);
   vi.mocked(files.writeAssetBytes).mockResolvedValue(undefined);
   vi.mocked(files.removeAssetFile).mockResolvedValue(undefined);
   vi.mocked(repo.saveCollectionEdit).mockResolvedValue(undefined);

@@ -1,10 +1,13 @@
 // 媒体资源夹、总资源库（照片池）与资源夹关联（docs/prd/01-media-collection.md、
 // docs/adr/0012-总资源库与资源夹的相册模型.md 第 1 条、docs/prd/00-overview.md 第 5 节）。
 //
-// 提取运行、素材库、文案版本、发布记录分属各自的 schema 文件。那些模块在自己的 schema 里用
-// `collectionId` 外键并声明 `onDelete: Cascade`，这样删除资源夹时数据库会一并删掉它们
-// （docs/prd/00-overview.md 全局规则 7、docs/prd/12 MUST 8）。本文件只保留这些外键的反向字段，
-// 关系本身（字段、`onDelete`）在各自模块的 schema 里声明，这里不写它们的列。
+// 提取运行与素材库分属 `extraction.prisma`。那个模块在自己的 schema 里用 `collectionId` 外键并声明
+// `onDelete: Cascade`，这样删除资源夹时数据库会一并删掉它们（docs/prd/00-overview.md 全局规则 7、
+// docs/prd/12 MUST 8）。本文件只保留这些外键的反向字段，关系本身（字段、`onDelete`）在各自的
+// schema 里声明，这里不写它们的列。
+//
+// 文案版本与发布记录已下线（ADR 0012 第 3 条、MKACG-976）：那两张表与资源夹上的版本号计数器列
+// 在新迁移里删除，所以本文件不再声明它们的反向关系。
 //
 // 没有 `extract_target`：类别（material / border / other）取代了单值提取目标（ADR 0010、MKACG-938）。
 //
@@ -20,19 +23,13 @@ model MediaCollection {
   sourceBody  String?  @map("source_body")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-  // 文案版本号的计数器：只增不减，删除版本后也不回收（docs/prd/12 MUST 5：version_no 不复用）。
-  // 单独一列而不是「当前最大版本号 + 1」，是因为删掉最高版本后那种算法会复用编号。
-  copyVersionSeq Int    @default(0) @map("copy_version_seq")
   // 兼容反向关系：上一版镜像靠它读「这个夹有哪些照片」。新代码一律走 `collectionAssets`，
   // 不查这个字段（留着只是因为删列要等 MKACG-981）。
   assets           MediaAsset[]
   collectionAssets CollectionAsset[]
-  // 以下三组反向关系由各自的 schema 文件声明，删除资源夹时级联。
+  // 以下两组反向关系由 extraction.prisma 声明，删除资源夹时级联。
   extractionRuns ExtractionRun[]
   libraryAssets  LibraryAsset[]
-  copyVersions   CopyVersion[]
-  // 发布记录的反向关系由发布模块（prisma/schema/publish.prisma）声明。
-  publishRecords PublishRecord[]
 
   @@map("media_collection")
 }

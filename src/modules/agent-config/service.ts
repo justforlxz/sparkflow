@@ -25,7 +25,7 @@ function findGateway(
   return gateways.find((gateway) => gateway.id === gatewayId) ?? null;
 }
 
-/** 类型只有 image / copy；其它值一律当作不存在。 */
+/** 类型只剩 image；其它值一律当作不存在。 */
 export function requireAgentType(type: string): AgentTypeDefinition {
   const definition = findAgentType(type);
   if (!definition) throw AppError.notFound(`不支持的 Agent 类型：${type}`);
@@ -82,8 +82,8 @@ export async function updateAgent(
     input.gatewayModelId !== undefined ? input.gatewayModelId : current.gatewayModelId,
   );
   // 绑定规则只在本次请求要写绑定时校验（MUST 4、MUST 5）。
-  // 只改名称/提示词时不动绑定：迁移预置的文案 Agent 本来就是未绑定状态，
-  // 不该因为「还没选模型」就连提示词都改不了；它仍然不可用于创建任务（MUST 8）。
+  // 只改名称/提示词时不动绑定：迁移预置的图片 Agent 本来就是未绑定状态，
+  // 不该因为「还没选网关」就连提示词都改不了；它仍然不可用于创建任务（MUST 8）。
   if (input.gatewayId !== undefined || input.gatewayModelId !== undefined) {
     assertBindingSavable(definition, { gatewayId, gatewayModelId, gateways });
   }
@@ -157,9 +157,9 @@ export async function requireReadyAgentViews(
 }
 
 /**
- * 按类型取一份就绪快照（docs/prd/12 MUST 1：提取与文案是两个独立动作）。
+ * 按类型取一份就绪快照（docs/prd/12 MUST 1：提取是独立动作）。
  *
- * 提取只用图片 Agent，文案只用文案 Agent：一份没就绪不该把另一份也挡住。
+ * 提取只用图片 Agent：别的动作没就绪不该把它挡住。
  * 决策与 `requireReadyAgentViews` 同一份判定、同一种错误形状（`AGENT_NOT_READY`），
  * 只是把范围收窄到一个类型。
  */

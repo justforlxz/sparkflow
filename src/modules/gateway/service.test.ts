@@ -114,10 +114,10 @@ describe("编辑时密钥留空保留原密钥（MUST 2、AC-02-3）", () => {
     vi.mocked(repo.findGateway).mockResolvedValue(record());
 
     const view = await service.updateGateway("gw-1", { name: "改名" }, async () => [
-      { source: "agent", name: "文案创作 Agent" },
+      { source: "agent", name: "图片提取 Agent" },
     ]);
 
-    expect(view.references).toEqual([{ source: "agent", name: "文案创作 Agent" }]);
+    expect(view.references).toEqual([{ source: "agent", name: "图片提取 Agent" }]);
   });
 
   it("重新填入密钥时写入新的密文", async () => {

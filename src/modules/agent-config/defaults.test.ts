@@ -26,16 +26,9 @@ function presetSql(): string {
     .join("\n");
 }
 
-describe("两份固定 Agent（MUST 1）", () => {
-  it("类型只有 image 与 copy", () => {
-    expect(AGENT_TYPES.map((definition) => definition.value)).toEqual(["image", "copy"]);
-  });
-
-  it("只有图片 Agent 允许模型留空（MUST 3、MUST 4）", () => {
-    expect(AGENT_TYPES.map((definition) => [definition.value, definition.modelRequired])).toEqual([
-      ["image", false],
-      ["copy", true],
-    ]);
+describe("固定的图片提取 Agent（MUST 1、ADR 0012 第 3 条）", () => {
+  it("Agent 类型只剩 image（AC-AGENT-1）", () => {
+    expect(AGENT_TYPES.map((definition) => definition.value)).toEqual(["image"]);
   });
 
   it("候选能力按 MUST 2 过滤", () => {
@@ -43,10 +36,10 @@ describe("两份固定 Agent（MUST 1）", () => {
       AGENT_TYPES.map((definition) => [definition.value, [...definition.capabilities]]),
     );
 
-    expect(capabilities).toEqual({ image: ["image"], copy: ["text", "image_input"] });
+    expect(capabilities).toEqual({ image: ["image"] });
   });
 
-  it("每个类型都有模型留空的界面说法，界面不再各写一份（MUST 3、AC-03-3）", () => {
+  it("模型留空的界面说法来自模块常量，界面不再各写一份（MUST 3、AC-03-3）", () => {
     for (const definition of AGENT_TYPES) {
       expect(definition.emptyModelLabel.length).toBeGreaterThan(0);
     }

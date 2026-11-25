@@ -41,13 +41,7 @@ export function assertBindingSavable(
   }
 
   if (!modelId) {
-    if (definition.modelRequired) {
-      throw AppError.validationFailed(`${definition.label}必须绑定一个具体模型`, {
-        code: "AGENT_MODEL_REQUIRED",
-        agentType: definition.value,
-      });
-    }
-    // 图片 Agent 允许留空：绑了网关就是用网关侧默认图片模型（MUST 3），没绑网关则是未就绪。
+    // 模型留空：绑了网关就是用网关侧默认图片模型（MUST 3），没绑网关则是未就绪。
     return;
   }
 

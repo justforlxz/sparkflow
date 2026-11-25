@@ -5,7 +5,7 @@
  * 边界：
  * 1. 发起提取前依次校验「资源夹存在、有原图、勾选的原图属于它」「类别可选」「提取要求合法」
  *    与「图片 Agent 就绪」；任一不满足都不写运行记录。
- * 2. 提取只依赖图片 Agent：文案 Agent 没配置好不该挡住「AI 处理」（MUST 1：两个动作互不依赖）。
+ * 2. 提取只依赖图片 Agent：别的动作没配置好不该挡住「AI 处理」（MUST 1：两个动作互不依赖）。
  * 3. `progress.total` 在创建时就算成「勾选原图数 × 类别数」，接口立即给得出这个数（AC-LIB-1）。
  */
 import { AppError } from "@/lib/errors";
@@ -91,7 +91,7 @@ export async function createExtraction(
   const categories = normalizeCategories(input.categories);
   assertValidRequirement(input.requirement);
 
-  // 只校验图片 Agent：文案 Agent 没配好不该挡住「AI 处理」（MUST 1：两个动作互不依赖）。
+  // 只校验图片 Agent：别的动作没配好不该挡住「AI 处理」（MUST 1：两个动作互不依赖）。
   await requireAgentSnapshotOf(await listGatewayViews(), "image");
 
   const progress: ExtractionProgress = {

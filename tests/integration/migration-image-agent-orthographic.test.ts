@@ -31,6 +31,12 @@ const OLD_OUTPUT_REQUIREMENTS =
 const EDITED_SYSTEM_PROMPT = "我们自己改过的系统提示词：只提取桌垫中央的图案。";
 const EDITED_OUTPUT_REQUIREMENTS = "我们自己改过的输出要求：只要一张，不要边框。";
 
+/** 文案 Agent 的预置文案（`20261118010000_agent_config` 写入；该行由 MKACG-997 的迁移删除）。 */
+const COPY_PRESET_SYSTEM_PROMPT =
+  "只依据原始素材与图片描述写作：不照搬原文，不编造参数、价格、功效与个人体验；语气自然、口语化，避免营销套话与夸张承诺。";
+const COPY_PRESET_OUTPUT_REQUIREMENTS =
+  "输出 JSON：title（不超过 30 字）、body（分段，不少于 80 字）、tags（话题标签，最多 10 个，不带 # 号）。";
+
 /** 可判定的几何词（AC-PROMPT-1）：迁移后的默认文案必须带上这几组。 */
 const GEOMETRY_PHRASES = [
   "orthographic",
@@ -122,9 +128,9 @@ describe("AC-PROMPT-4 图片 Agent 默认提示词的数据迁移", () => {
   });
 
   test("AC-PROMPT-4 文案 Agent 那一行不受影响", async () => {
-    // 文案 Agent 的默认文案来自 `20261118010000_agent_config` 的预置行，本次迁移只碰 type='image'。
+    // 这一行随后由 `20261125140000_drop_copy_agent` 删除，所以这里写死预置文案而不是读 defaults.ts。
     const row = await agentRow("copy");
-    expect(row.system_prompt).toBe(AGENT_DEFAULTS.copy.systemPrompt);
-    expect(row.output_requirements).toBe(AGENT_DEFAULTS.copy.outputRequirements);
+    expect(row.system_prompt).toBe(COPY_PRESET_SYSTEM_PROMPT);
+    expect(row.output_requirements).toBe(COPY_PRESET_OUTPUT_REQUIREMENTS);
   });
 });

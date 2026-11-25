@@ -27,7 +27,7 @@ export default async function SettingsPage() {
       <header className="space-y-2">
         <h1 className={PAGE_TITLE_CLASS}>设置</h1>
         <p className={`max-w-2xl ${PAGE_SUBTITLE_CLASS}`}>
-          模型与 Agent 设置：先配置模型网关，再让两个 Agent 从这里选择模型；最后是本版本的功能开关。
+          模型与 Agent 设置：先配置模型网关，再让图片提取 Agent 从这里选择模型；最后是本版本的功能开关。
         </p>
       </header>
 

@@ -1,7 +1,8 @@
 /**
  * 资源夹状态是派生值，不落库（docs/prd/01-media-collection.md「数据与接口」）。
- * 判定顺序：有排队/执行中的提取 → `generating`；否则有发布记录 → `published`；
- * 否则有素材或文案版本 → `has_results`；否则 `draft`。
+ * 判定顺序：有排队/执行中的提取 → `generating`；否则有素材 → `has_results`；否则 `draft`。
+ *
+ * 文案与发布下线后不再有「已发布」状态（ADR 0012 第 3 条、MKACG-976）。
  */
 import { COLLECTION_STATUSES, type CollectionStatus } from "./constants";
 
@@ -12,16 +13,11 @@ export interface CollectionCounts {
   extractionRuns: number;
   /** 素材库里的素材数。 */
   libraryAssets: number;
-  /** 文案版本数。 */
-  copyVersions: number;
-  /** 发布记录数。 */
-  published: number;
 }
 
 export function deriveCollectionStatus(counts: CollectionCounts): CollectionStatus {
   if (counts.runningExtractions > 0) return "generating";
-  if (counts.published > 0) return "published";
-  if (counts.libraryAssets > 0 || counts.copyVersions > 0) return "has_results";
+  if (counts.libraryAssets > 0) return "has_results";
   return "draft";
 }
 

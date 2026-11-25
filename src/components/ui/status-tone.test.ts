@@ -1,33 +1,27 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { COPY_VERSION_STATUSES } from "@/modules/copy-generation/constants";
 import { EXTRACTION_STATUSES } from "@/modules/extraction/constants";
 import { COLLECTION_STATUSES } from "@/modules/media-collection/constants";
-import {
-  COLLECTION_STATUS_TONE,
-  COPY_VERSION_STATUS_TONE,
-  EXTRACTION_STATUS_TONE,
-} from "./status-tone";
+import { COLLECTION_STATUS_TONE, EXTRACTION_STATUS_TONE } from "./status-tone";
 
 /**
  * 状态标签颜色语义（docs/prd/09 SHOULD、AC-10-9）：
  * 待处理=蓝、生成中=强调色、待发布=橙、已发布=绿，颜色只来自 `globals.css` 的设计变量。
+ * 文案与发布下线后资源夹只剩三种状态（ADR 0012 第 3 条、MKACG-976）。
  */
 const GLOBALS_CSS = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 
 describe("状态标签的颜色语义", () => {
-  it("资源夹四种状态各自对应固定语义", () => {
+  it("资源夹三种状态各自对应固定语义", () => {
     expect(COLLECTION_STATUS_TONE).toEqual({
       draft: "draft",
       generating: "generating",
       has_results: "pendingPublish",
-      published: "published",
     });
   });
 
-  it("提取运行与文案版本状态都有色板，不漏项", () => {
+  it("提取运行状态都有色板，不漏项", () => {
     expect(Object.keys(EXTRACTION_STATUS_TONE).sort()).toEqual([...EXTRACTION_STATUSES].sort());
-    expect(Object.keys(COPY_VERSION_STATUS_TONE).sort()).toEqual([...COPY_VERSION_STATUSES].sort());
     expect(Object.keys(COLLECTION_STATUS_TONE).sort()).toEqual([...COLLECTION_STATUSES].sort());
   });
 

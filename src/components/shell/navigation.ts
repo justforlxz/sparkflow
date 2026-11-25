@@ -6,10 +6,10 @@
  *
  * `badge` 指向 `GET /api/stats` 返回的哪一项计数；没有计数的项为 `null`。
  *
- * ADR 0010 之后没有「创作任务」页：任务概念被提取运行与文案版本取代，两者都展示在资源夹详情里
- * （MKACG-938）。「发布记录」页与它的导航项由 MKACG-940 随发布页签重建，数据与资源夹「发布」页签同源。
+ * ADR 0010 之后没有「创作任务」页：任务概念被提取运行取代，结果显示在资源夹详情里（MKACG-938）。
+ * ADR 0012 第 3 条下线了文案与发布功能，导航里不再有「发布记录」项（MKACG-976）。
  */
-export type NavKey = "dashboard" | "collections" | "publish" | "settings";
+export type NavKey = "dashboard" | "collections" | "settings";
 
 /** 侧栏计数取自统计接口的这两个字段（docs/prd/09 MUST 2、AC-09-5）。 */
 export type NavBadgeKey = "collections" | "pendingGeneration";
@@ -25,7 +25,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: "dashboard", href: "/", label: "工作台", badge: null },
   // 「媒体资源夹」显示资源夹总数：必须与工作台统计一致（AC-09-5）。
   { key: "collections", href: "/collections", label: "媒体资源夹", badge: "collections" },
-  { key: "publish", href: "/published", label: "发布记录", badge: null },
   { key: "settings", href: "/settings", label: "模型与 Agent 设置", badge: null },
 ];
 

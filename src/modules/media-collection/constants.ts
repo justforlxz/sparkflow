@@ -18,16 +18,18 @@ export const IMAGE_EXTENSION: Record<ImageMime, string> = {
 /** 原图存储子目录（assets/architecture.md「文件」）。 */
 export const ASSET_STORAGE_PREFIX = "media-assets";
 
-/** 资源夹状态是派生值，不落库（docs/prd/01-media-collection.md「数据与接口」）。 */
-export const COLLECTION_STATUSES = ["draft", "generating", "has_results", "published"] as const;
+/**
+ * 资源夹状态是派生值，不落库（docs/prd/01-media-collection.md「数据与接口」）。
+ * 文案与发布下线后没有「已发布」状态（ADR 0012 第 3 条、MKACG-976）。
+ */
+export const COLLECTION_STATUSES = ["draft", "generating", "has_results"] as const;
 
 export type CollectionStatus = (typeof COLLECTION_STATUSES)[number];
 
 export const COLLECTION_STATUS_LABELS: Record<CollectionStatus, string> = {
   draft: "待处理",
   generating: "生成中",
-  has_results: "待发布",
-  published: "已发布",
+  has_results: "有结果",
 };
 
 /** 列表分页默认与上限。 */
@@ -59,7 +61,7 @@ export const COLLECTION_COPY = {
   deleteConfirmAction: "确认删除",
   deletingLabel: "删除中…",
   deleteConfirmBody:
-    "删除后，它的提取运行、素材、文案版本与发布记录会一并删除。原始图片仍留在总资源库，不会被删除。此操作不可撤销。",
+    "删除后，它的提取运行与素材会一并删除。原始图片仍留在总资源库，不会被删除。此操作不可撤销。",
   assetStateSaved: "已保存",
   assetStatePendingAdd: "待添加",
   assetStatePendingRemove: "待移除",

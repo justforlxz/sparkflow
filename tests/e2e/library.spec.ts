@@ -8,20 +8,19 @@ import {
   extractAndWait,
   listLibrary,
   listRuns,
-  listVersions,
   prepareAgents,
   uniqueName,
   waitForRun,
-  waitForVersion,
-  type CopyVersion,
   type ExtractionRun,
 } from "./support/library";
 
 /**
- * 素材库、提取运行与文案版本的接口验收（docs/prd/12-asset-library.md）。
+ * 素材库与提取运行的接口验收（docs/prd/12-asset-library.md）。
  *
  * 走真实 HTTP + 进程内 worker + mock 适配器（`GENERATION_ADAPTER=mock`）：
- * 提取与文案都由后台作业推进，用例只轮询接口等它进入终态。
+ * 提取由后台作业推进，用例只轮询接口等它进入终态。
+ *
+ * 文案版本与发布记录的用例随功能下线删除（ADR 0012 第 3 条、MKACG-976）。
  */
 
 test.beforeEach(async ({ request }) => {
@@ -35,7 +34,7 @@ test.afterAll(async ({ request }) => {
 test("AC-LIB-1 AC-LIB-3 2 张原图 × 2 个类别 = 进度 4；再跑一次素材增加而不是覆盖", async ({
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-1"), 2);
 
   const first = await request.post(`/api/collections/${collection.id}/extractions`, {
@@ -81,7 +80,7 @@ test("AC-LIB-1 AC-LIB-3 2 张原图 × 2 个类别 = 进度 4；再跑一次素�
 });
 
 test("AC-LIB-2 一项失败：其余正常入库，运行标 partial 并给出可读原因", async ({ request }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-2"), 2);
 
   const response = await request.post(`/api/collections/${collection.id}/extractions`, {
@@ -102,160 +101,6 @@ test("AC-LIB-2 一项失败：其余正常入库，运行标 partial 并给出�
   expect((await listLibrary(request, collection.id)).total).toBe(3);
 });
 
-test("AC-LIB-4 生成文案不触发提取；提取不产生文案版本", async ({ request }) => {
-  await createGateway(request, "magpie-mcp", "image");
-  await createGateway(request, "openai-chat", "copy");
-  const collection = await createCollection(request, uniqueName("AC-LIB-4"), 1);
-
-  const extraction = await request.post(`/api/collections/${collection.id}/extractions`, {
-    data: {
-      sourceAssetIds: collection.assetIds,
-      categories: ["topdown"],
-      requirement: "faithful",
-    },
-  });
-  const run = ((await extraction.json()) as { data: { run: ExtractionRun } }).data.run;
-  await waitForRun(request, collection.id, run.id);
-
-  // 提取不产生文案版本。
-  expect(await listVersions(request, collection.id)).toEqual([]);
-  const library = await listLibrary(request, collection.id);
-  const assetIds = library.groups.flatMap((group) => group.items.map((item) => item.id));
-  expect(assetIds).toHaveLength(1);
-
-  const before = await listRuns(request, collection.id);
-
-  const copy = await request.post(`/api/collections/${collection.id}/copy-versions`, {
-    data: { selectedAssetIds: assetIds, copyStyle: "story" },
-  });
-  expect(copy.status()).toBe(201);
-  const version = ((await copy.json()) as { data: { version: CopyVersion } }).data.version;
-  await waitForVersion(request, collection.id, version.id);
-
-  // 生成文案不触发任何提取：运行条数不变，素材条数也不变。
-  expect((await listRuns(request, collection.id)).length).toBe(before.length);
-  expect((await listLibrary(request, collection.id)).total).toBe(1);
-});
-
-test("AC-LIB-5 两个版本的选中素材各自固化，两版并存", async ({ request }) => {
-  await createGateway(request, "magpie-mcp", "image");
-  await createGateway(request, "openai-chat", "copy");
-  const collection = await createCollection(request, uniqueName("AC-LIB-5"), 2);
-
-  const extraction = await request.post(`/api/collections/${collection.id}/extractions`, {
-    data: {
-      sourceAssetIds: collection.assetIds,
-      categories: ["topdown", "texture"],
-      requirement: "faithful",
-    },
-  });
-  const run = ((await extraction.json()) as { data: { run: ExtractionRun } }).data.run;
-  await waitForRun(request, collection.id, run.id);
-
-  const library = await listLibrary(request, collection.id);
-  const all = library.groups.flatMap((group) => group.items.map((item) => item.id));
-
-  const first = await request.post(`/api/collections/${collection.id}/copy-versions`, {
-    data: { selectedAssetIds: all.slice(0, 3), copyStyle: "story" },
-  });
-  const v1 = ((await first.json()) as { data: { version: CopyVersion } }).data.version;
-  await waitForVersion(request, collection.id, v1.id);
-
-  const second = await request.post(`/api/collections/${collection.id}/copy-versions`, {
-    data: { selectedAssetIds: all.slice(2, 4), copyStyle: "note" },
-  });
-  const v2 = ((await second.json()) as { data: { version: CopyVersion } }).data.version;
-  await waitForVersion(request, collection.id, v2.id);
-
-  const versions = await listVersions(request, collection.id);
-  expect(versions.map((version) => version.versionLabel)).toEqual(["v2", "v1"]);
-  expect(versions.find((version) => version.id === v1.id)?.selectedAssetIds).toEqual(all.slice(0, 3));
-  expect(versions.find((version) => version.id === v2.id)?.selectedAssetIds).toEqual(all.slice(2, 4));
-  // 两版都有内容，能各自打开。
-  expect(versions.every((version) => version.status === "succeeded")).toBe(true);
-});
-
-test("AC-LIB-6 删除被引用的素材后版本仍能打开，被删素材显示为占位", async ({ request }) => {
-  await createGateway(request, "magpie-mcp", "image");
-  await createGateway(request, "openai-chat", "copy");
-  const collection = await createCollection(request, uniqueName("AC-LIB-6"), 1);
-
-  const extraction = await request.post(`/api/collections/${collection.id}/extractions`, {
-    data: {
-      sourceAssetIds: collection.assetIds,
-      categories: ["topdown", "texture"],
-      requirement: "faithful",
-    },
-  });
-  const run = ((await extraction.json()) as { data: { run: ExtractionRun } }).data.run;
-  await waitForRun(request, collection.id, run.id);
-
-  const library = await listLibrary(request, collection.id);
-  const all = library.groups.flatMap((group) => group.items.map((item) => item.id));
-  const removed = all[0] as string;
-
-  const copy = await request.post(`/api/collections/${collection.id}/copy-versions`, {
-    data: { selectedAssetIds: all, copyStyle: "story" },
-  });
-  const version = ((await copy.json()) as { data: { version: CopyVersion } }).data.version;
-  await waitForVersion(request, collection.id, version.id);
-
-  const deleted = await request.delete(`/api/library/${removed}`);
-  expect(deleted.status()).toBe(200);
-
-  const [afterDelete] = await listVersions(request, collection.id);
-  expect(afterDelete?.status).toBe("succeeded");
-  expect(afterDelete?.assets).toHaveLength(all.length);
-  expect(afterDelete?.assets.find((asset) => asset.id === removed)).toMatchObject({
-    deleted: true,
-    categoryLabel: "已删除素材",
-  });
-});
-
-test("AC-LIB-8 同一版本重复标记发布，发布记录仍为 1 条", async ({ request }) => {
-  await createGateway(request, "magpie-mcp", "image");
-  await createGateway(request, "openai-chat", "copy");
-  const collection = await createCollection(request, uniqueName("AC-LIB-8"), 1);
-
-  const extraction = await request.post(`/api/collections/${collection.id}/extractions`, {
-    data: {
-      sourceAssetIds: collection.assetIds,
-      categories: ["topdown"],
-      requirement: "faithful",
-    },
-  });
-  const run = ((await extraction.json()) as { data: { run: ExtractionRun } }).data.run;
-  await waitForRun(request, collection.id, run.id);
-
-  const library = await listLibrary(request, collection.id);
-  const assetIds = library.groups.flatMap((group) => group.items.map((item) => item.id));
-
-  const copy = await request.post(`/api/collections/${collection.id}/copy-versions`, {
-    data: { selectedAssetIds: assetIds, copyStyle: "story" },
-  });
-  const version = ((await copy.json()) as { data: { version: CopyVersion } }).data.version;
-  await waitForVersion(request, collection.id, version.id);
-
-  const first = await request.post(`/api/copy-versions/${version.id}/publish`, {
-    data: { platform: "小红书" },
-  });
-  expect(first.status()).toBe(200);
-  const second = await request.post(`/api/copy-versions/${version.id}/publish`, {
-    data: { platform: "小红书" },
-  });
-  expect(second.status()).toBe(200);
-
-  const records = await request.get(`/api/collections/${collection.id}/publish-records`);
-  const body = (await records.json()) as {
-    data: { total: number; items: Array<{ copyVersionId: string; versionLabel: string; title: string }> };
-  };
-  expect(body.data.total).toBe(1);
-  expect(body.data.items[0]).toMatchObject({
-    copyVersionId: version.id,
-    versionLabel: "v1",
-  });
-});
-
 /* ------------------------------------------------------------------ *
  * 界面验收（MKACG-974）：三栏工作区、按原图一张卡、内联进度
  * ------------------------------------------------------------------ */
@@ -264,7 +109,7 @@ test("AC-LIB-1 AC-LIB-3 界面：2 张原图 × 三类 = 进度 6，结果按原
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-1-ui"), 2);
 
   await loginInBrowser(page);
@@ -305,7 +150,7 @@ test("AC-LIB-2 界面：部分失败标注「部分失败」、失败项数量�
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-2-ui"), 2);
   // mock 适配器按脚本让第 2 次调用失败：6 项里 5 项正常入库。
   const run = await extractAndWait(request, collection, {
@@ -335,7 +180,7 @@ test("AC-LIB-10 三栏各管一件事：左栏只有原图、中栏只有结果�
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-10"), 2);
   await extractAndWait(request, collection, { categories: ["topdown", "texture", "graphic"] });
 
@@ -366,7 +211,7 @@ test("AC-LIB-10 三栏各管一件事：左栏只有原图、中栏只有结果�
 });
 
 test("AC-C-8 结果卡点图在站内弹窗预览，无新标签页、无 window.open", async ({ page, request }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-C-8"), 1);
   await extractAndWait(request, collection, { categories: ["topdown", "texture", "graphic"] });
 
@@ -407,7 +252,7 @@ test("AC-U-1 375px 下三栏不横向溢出；全选、添加弹窗与一键提�
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-U-1"), 2);
 
   await loginInBrowser(page);
@@ -452,7 +297,7 @@ test("AC-U-1 375px 下三栏不横向溢出；全选、添加弹窗与一键提�
 });
 
 test("AC-LIB-11 某类别判定为不存在：格子里显示「不存在」与模型原话", async ({ page, request }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-11"), 1);
 
   // mock 视觉判定让第 1 次判定回「不存在」：topdown 跳过、另外两类照常提取。
@@ -480,7 +325,7 @@ test("AC-LIB-12 全部类别都不存在：运行 empty、三类都显示不存�
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-12"), 1);
 
   const run = await extractAndWait(request, collection, {
@@ -509,7 +354,7 @@ test("AC-LIB-12 全部类别都不存在：运行 empty、三类都显示不存�
 });
 
 test("AC-LIB-13 3:2 原图产出长边 1536 的 3:2 图，不出现拉伸", async ({ request }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-13"), 1, {
     imageSize: { width: 900, height: 600 },
   });
@@ -524,7 +369,7 @@ test("AC-LIB-13 3:2 原图产出长边 1536 的 3:2 图，不出现拉伸", asyn
 });
 
 test("AC-LIB-14 旧的类别 key 被拒绝：只接受 topdown / texture / graphic", async ({ request }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-LIB-14"), 1);
 
   for (const legacy of ["material", "border", "other"]) {

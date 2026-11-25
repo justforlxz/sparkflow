@@ -314,7 +314,7 @@ test("AC-01-5 解除某张原图关联后，该图从详情消失，其余图片
   expect(detail.assets.map((asset) => asset.fileName)).toEqual(["b.png"]);
 });
 
-test("AC-01-6 删除资源夹后，其提取运行、素材、文案版本与发布记录都不再出现", async ({
+test("AC-01-6 删除资源夹后，其提取运行与素材都不再出现", async ({
   page,
   request,
 }) => {
@@ -327,7 +327,7 @@ test("AC-01-6 删除资源夹后，其提取运行、素材、文案版本与发
   await page.getByRole("button", { name: "删除" }).click();
 
   const dialog = page.getByRole("dialog", { name: "删除这个资源夹？" });
-  await expect(dialog).toContainText("提取运行、素材、文案版本与发布记录会一并删除");
+  await expect(dialog).toContainText("提取运行与素材会一并删除");
   await dialog.getByRole("button", { name: "确认删除" }).click();
 
   await expect(page).toHaveURL("/collections");

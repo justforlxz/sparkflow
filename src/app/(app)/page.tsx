@@ -20,8 +20,11 @@ export const dynamic = "force-dynamic";
 /**
  * 工作台（docs/prd/09-dashboard.md「工作台」）。
  *
- * 四个统计数字与两份最近列表都来自 `getDashboardStats()`（`GET /api/stats` 的同一份数据），
+ * 两个统计数字与最近资源夹列表都来自 `getDashboardStats()`（`GET /api/stats` 的同一份数据），
  * 页面不做任何遍历计算，也没有演示数字：没有数据时显示空状态与引导（AC-09-1）。
+ *
+ * 文案与发布下线后，「待发布」「已发布」两个数字与「最近生成的内容」列表没有数据来源，
+ * 随功能一并删除（ADR 0012 第 3 条、MKACG-976）。
  */
 const STAT_CARDS = [
   {
@@ -33,16 +36,6 @@ const STAT_CARDS = [
     key: "pendingGeneration",
     label: DASHBOARD_COPY.statPendingGeneration,
     hint: DASHBOARD_COPY.statPendingGenerationHint,
-  },
-  {
-    key: "pendingPublish",
-    label: DASHBOARD_COPY.statPendingPublish,
-    hint: DASHBOARD_COPY.statPendingPublishHint,
-  },
-  {
-    key: "published",
-    label: DASHBOARD_COPY.statPublished,
-    hint: DASHBOARD_COPY.statPublishedHint,
   },
 ] as const;
 
@@ -65,7 +58,7 @@ export default async function DashboardPage() {
 
       <dl
         aria-label={DASHBOARD_COPY.statsLabel}
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2"
       >
         {STAT_CARDS.map((card) => (
           <Panel key={card.key}>
@@ -83,112 +76,61 @@ export default async function DashboardPage() {
         ))}
       </dl>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Panel
-          title={DASHBOARD_COPY.recentCollections}
-          actions={
-            <Link
-              href="/collections"
-              data-testid="dashboard-view-all"
-              className={buttonClass({ variant: "ghost", size: "sm" })}
-            >
-              {DASHBOARD_COPY.viewAll}
-            </Link>
-          }
-        >
-          {stats.recentCollections.length === 0 ? (
-            <EmptyState message={DASHBOARD_COPY.emptyCollections} />
-          ) : (
-            <ul className="space-y-3">
-              {stats.recentCollections.map((collection) => (
-                <li key={collection.id}>
-                  <Link
-                    href={`/collections/${collection.id}`}
-                    data-testid="recent-collection"
-                    data-collection-id={collection.id}
-                    className={CARD_LINK_CLASS}
-                  >
-                    {collection.coverUrl ? (
-                      // 鉴权路由读取原图缩略图，不走 Next 图片优化器。
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={collection.coverUrl}
-                        alt={collection.name}
-                        className="h-12 w-12 shrink-0 rounded-md border border-line object-cover"
-                      />
-                    ) : (
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-soft text-center text-caption text-ink-tertiary">
-                        {DASHBOARD_COPY.noCover}
-                      </span>
-                    )}
-                    <span className="min-w-0 flex-1 space-y-1">
-                      <span className="block truncate text-body font-medium text-ink">
-                        {collection.name}
-                      </span>
-                      <span className="block text-footnote text-ink-tertiary">
-                        {collection.assetCount} {DASHBOARD_COPY.assetCountLabel} ·{" "}
-                        {formatDate(collection.createdAt)}
-                      </span>
-                    </span>
-                    <Pill tone={COLLECTION_STATUS_TONE[collection.status]}>
-                      {COLLECTION_STATUS_LABELS[collection.status]}
-                    </Pill>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-
-        <Panel title={DASHBOARD_COPY.recentResults}>
-          {stats.recentResults.length === 0 ? (
-            <EmptyState
-              message={DASHBOARD_COPY.emptyResults}
-              action={
+      <Panel
+        title={DASHBOARD_COPY.recentCollections}
+        actions={
+          <Link
+            href="/collections"
+            data-testid="dashboard-view-all"
+            className={buttonClass({ variant: "ghost", size: "sm" })}
+          >
+            {DASHBOARD_COPY.viewAll}
+          </Link>
+        }
+      >
+        {stats.recentCollections.length === 0 ? (
+          <EmptyState message={DASHBOARD_COPY.emptyCollections} />
+        ) : (
+          <ul className="space-y-3">
+            {stats.recentCollections.map((collection) => (
+              <li key={collection.id}>
                 <Link
-                  href="/collections"
-                  className={buttonClass({ variant: "secondary" })}
+                  href={`/collections/${collection.id}`}
+                  data-testid="recent-collection"
+                  data-collection-id={collection.id}
+                  className={CARD_LINK_CLASS}
                 >
-                  {DASHBOARD_COPY.emptyResultsAction}
-                </Link>
-              }
-            />
-          ) : (
-            <ul className="space-y-3">
-              {stats.recentResults.map((result) => (
-                <li key={result.id}>
-                  <Link
-                    href={`/collections/${result.collectionId}`}
-                    data-testid="recent-result"
-                    data-result-id={result.id}
-                    className={CARD_LINK_CLASS}
-                  >
-                    {result.thumbnailUrl ? (
-                      // 鉴权路由读取生成图片缩略图，不走 Next 图片优化器。
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={result.thumbnailUrl}
-                        alt={result.title ?? DASHBOARD_COPY.untitledResult}
-                        className="h-12 w-12 shrink-0 rounded-md border border-line object-cover"
-                      />
-                    ) : (
-                      <span className="h-12 w-12 shrink-0 rounded-md bg-soft" />
-                    )}
-                    <span className="min-w-0 flex-1 space-y-1">
-                      <span className="block truncate text-body font-medium text-ink">
-                        {result.versionLabel} {result.title ?? DASHBOARD_COPY.untitledResult}
-                      </span>
-                      <span className="block truncate text-footnote text-ink-tertiary">
-                        {result.collectionName} · {formatDate(result.createdAt)}
-                      </span>
+                  {collection.coverUrl ? (
+                    // 鉴权路由读取原图缩略图，不走 Next 图片优化器。
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={collection.coverUrl}
+                      alt={collection.name}
+                      className="h-12 w-12 shrink-0 rounded-md border border-line object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-soft text-center text-caption text-ink-tertiary">
+                      {DASHBOARD_COPY.noCover}
                     </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-      </div>
+                  )}
+                  <span className="min-w-0 flex-1 space-y-1">
+                    <span className="block truncate text-body font-medium text-ink">
+                      {collection.name}
+                    </span>
+                    <span className="block text-footnote text-ink-tertiary">
+                      {collection.assetCount} {DASHBOARD_COPY.assetCountLabel} ·{" "}
+                      {formatDate(collection.createdAt)}
+                    </span>
+                  </span>
+                  <Pill tone={COLLECTION_STATUS_TONE[collection.status]}>
+                    {COLLECTION_STATUS_LABELS[collection.status]}
+                  </Pill>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
     </section>
   );
 }

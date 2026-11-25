@@ -1,7 +1,7 @@
 /**
- * 异步作业的失败记录与超时执行（提取运行与文案版本共用）。
+ * 异步作业的失败记录与超时执行（提取运行使用）。
  *
- * 两类作业的失败形状一样：`code` 可分类、`message` 已脱敏且截断、`at` 是发生时间。
+ * 作业的失败形状：`code` 可分类、`message` 已脱敏且截断、`at` 是发生时间。
  * 脱敏放在这里而不是交给各适配器：上游消息里可能带 key 或 Authorization 形态，
  * 写库前统一按日志同一套规则处理（docs/prd/05 AC-05-8）。
  */
@@ -12,7 +12,7 @@ export const MAX_ERROR_MESSAGE_LENGTH = 1000;
 
 const FALLBACK_MESSAGE = "执行失败";
 
-/** 作业失败的记录形状（写进 `extraction_run.error` 与 `copy_version.error`）。 */
+/** 作业失败的记录形状（写进 `extraction_run.error`）。 */
 export interface FailureRecord {
   code: string;
   /** 已脱敏、已截断的可读原因。 */
@@ -21,7 +21,7 @@ export interface FailureRecord {
 }
 
 /**
- * 适配器主动分类的失败：`code` 是业务子码（如 `UPSTREAM_AUTH` / `COPY_FORMAT`）。
+ * 适配器主动分类的失败：`code` 是业务子码（如 `UPSTREAM_AUTH`）。
  * 作业执行器只认这里的 `code`，其余异常统一记成 `JOB_FAILED`。
  */
 export class StageError extends Error {
@@ -70,7 +70,6 @@ export class JobTimeoutError extends Error {
 
 /**
  * 带总超时执行一次作业：超时即 abort 正在进行的上游请求，并抛出 `JobTimeoutError`。
- * 两类作业共用这一处，超时口径不会各写一份。
  */
 export async function runWithTimeout<T>(
   run: (signal: AbortSignal) => Promise<T>,

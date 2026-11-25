@@ -3,7 +3,7 @@
  * （docs/prd/12-asset-library.md、docs/adr/0010）。
  *
  * 处理器只做「拿到原图与类别 → 调上游 → 交出图片与失败项」；落盘、写库、状态流转都在
- * `runner.ts` 与 `service.ts` 里。文案版本那一侧用同样的拆分（`copy-generation/`）。
+ * `runner.ts` 与 `service.ts` 里。
  */
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import type { FailureRecord } from "@/lib/job-failure";

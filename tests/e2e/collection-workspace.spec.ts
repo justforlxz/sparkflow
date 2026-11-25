@@ -103,7 +103,7 @@ test("AC-UI-1 AC-UI-2 1440 视口：三栏 232 / ≥600 / 268，整页锁高度�
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   // 8 张原图：中列内容一定超过一屏，才测得出「只有中列滚」。
   const collection = await createCollection(request, uniqueName("AC-UI-1"), 8);
 
@@ -147,7 +147,7 @@ test("AC-UI-1 AC-UI-2 1440 视口：三栏 232 / ≥600 / 268，整页锁高度�
 });
 
 test("AC-UI-3 1240 视口仍是三栏；1120 视口回落单列且页面可滚", async ({ page, request }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-UI-3"), 4);
 
   await loginInBrowser(page);
@@ -181,7 +181,7 @@ test("AC-UI-4 三列面板圆角 14px、描边 #e2e5ea、标题栏内边距 10px
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-UI-4"), 1);
   await extractAndWait(request, collection, { categories: ["topdown", "texture", "graphic"] });
 
@@ -226,7 +226,7 @@ test("AC-UI-5 添加弹窗：标题带夹名，本地上传 2 张 + 总库 1 张
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const name = uniqueName("AC-UI-5");
   const collection = await createCollection(request, name, 1);
   // 总资源库是全库共享的（别的用例也会往里放照片），只按自己这张的文件名定位。
@@ -281,7 +281,7 @@ test("AC-UI-5 添加弹窗：标题带夹名，本地上传 2 张 + 总库 1 张
 });
 
 test("AC-UI-6 弹窗里已在夹内的照片置灰不可选；Esc 可关", async ({ page, request }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-UI-6"), 1);
   await uploadToPool(request, `pool-2-${collection.id}.png`);
 
@@ -313,7 +313,7 @@ test("AC-UI-7 运行中标题下方出现进度条与百分比，进度随 progr
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-UI-7"), 2);
 
   await loginInBrowser(page);
@@ -360,7 +360,7 @@ test("AC-UI-8 结果按原图分组：一张图一张卡，三类产出并排；
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-UI-8"), 1);
 
   // 一张原图跑出三种状态：topdown 判定不存在、texture 正常出图、graphic 生图失败。
@@ -401,7 +401,7 @@ test("AC-UI-9 单格「重试」：点击后该格立刻显示「重试中」+ �
   page,
   request,
 }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-UI-9"), 1);
   await extractAndWait(request, collection, {
     categories: ["topdown", "texture", "graphic"],
@@ -438,7 +438,7 @@ test("AC-UI-9 单格「重试」：点击后该格立刻显示「重试中」+ �
 });
 
 test("AC-UI-10 375 视口无横向溢出；单列；缩略图 2 列；弹窗完整可见", async ({ page, request }) => {
-  await createGateway(request, "magpie-mcp", "image");
+  await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-UI-10"), 4);
   await uploadToPool(request, "pool-375.png");
 

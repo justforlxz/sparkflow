@@ -57,32 +57,6 @@ export interface NewAsset {
   size: number;
 }
 
-/**
- * 批量取资源夹名称：创作任务列表要显示资源夹名，只能经本模块的 service 取
- * （AGENTS.md 硬性规则 2：不直接查别的模块的表）。
- */
-export async function findCollectionNames(
-  ids: readonly string[],
-): Promise<Record<string, string>> {
-  if (ids.length === 0) return {};
-  const rows = await getDb().mediaCollection.findMany({
-    where: { id: { in: [...ids] } },
-    select: { id: true, name: true },
-  });
-  return Object.fromEntries(rows.map((row) => [row.id, row.name]));
-}
-
-/**
- * 发布记录的资源夹筛选选项：只需要 id 与名称，按创建时间倒序。
- * 不翻页 —— 筛选器要列出全部资源夹，否则筛不到排在后面的。
- */
-export async function listCollectionOptions(): Promise<Array<{ id: string; name: string }>> {
-  return getDb().mediaCollection.findMany({
-    select: { id: true, name: true },
-    orderBy: { createdAt: "desc" },
-  });
-}
-
 const ASSET_SELECT = {
   id: true,
   storageKey: true,
@@ -224,7 +198,7 @@ export async function updateCollectionFields(
  * 两条外键动作在这里各管一半，缺一条就会删照片：
  * - `collection_asset.collection_id` 是 `ON DELETE CASCADE`，关联行随夹删除；
  * - `media_asset.collection_id` 是 `ON DELETE SET NULL`，迁移来的历史照片只丢归属（AC-POOL-8）。
- * 任务、结果、发布记录同样由它们自己 schema 里的外键负责。
+ * 提取运行、提取条目与素材库同样由它们自己 schema 里的外键负责。
  */
 export async function deleteCollection(id: string): Promise<boolean> {
   const { count } = await getDb().mediaCollection.deleteMany({ where: { id } });
@@ -428,19 +402,4 @@ export async function appendAssetsToCollection(
       });
     }
   });
-}
-
-/**
- * 分配下一个文案版本号（docs/prd/12 MUST 5）：在资源夹的计数器上原子加一。
- *
- * 为什么不是「当前最大版本号 + 1」：删掉最高的那一版之后，那种算法会把编号再发一次，
- * 而版本号在资源夹内必须只增不减。计数器只增不减，删除版本也不回收。
- */
-export async function allocateCopyVersionNumber(collectionId: string): Promise<number> {
-  const row = await getDb().mediaCollection.update({
-    where: { id: collectionId },
-    data: { copyVersionSeq: { increment: 1 } },
-    select: { copyVersionSeq: true },
-  });
-  return row.copyVersionSeq;
 }

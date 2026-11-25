@@ -29,7 +29,7 @@ export const PATCH = route<Context>(async (request, context) => {
   return okResponse(await updateCollectionFields(id, input));
 });
 
-/** 删除：级联删任务/结果/发布记录，磁盘文件尽力清理（MUST 5）。 */
+/** 删除：级联删提取运行、提取条目与素材库，磁盘文件尽力清理（MUST 5）。 */
 export const DELETE = route<Context>(async (_request, context) => {
   await requireUser();
 

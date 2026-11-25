@@ -25,15 +25,17 @@ describe("判定提示词", () => {
   });
 
   it("判定提示词里没有产物形态的措辞（MUST 2b-1、AC-LIB-16 的回归锁）", () => {
-    // 这些词来自 `description`，写的是产物形态。拿它们问原图，斜拍照片一律判「不存在」。
+    // 这些词来自 `promptDescription`，写的是产物形态。拿它们问原图，斜拍照片一律判「不存在」。
     const productFormWording = ["边缘可平铺", "背景干净", "不要透视畸变", "正面俯视", "画面内纹理均匀"];
 
     for (const category of SELECTABLE_CATEGORIES) {
       const prompt = buildExistencePrompt(category.value);
-      // 整句 description 都不能出现在判定提示词里 —— 这是 MUST NOT 共用一句话的直接断言。
-      expect(prompt, `${category.value} 的判定提示词不应包含 description`).not.toContain(
-        category.description,
-      );
+      // 界面说明与提示词描述都不能出现在判定提示词里 —— 这是 MUST NOT 共用一句话的直接断言。
+      for (const productForm of [category.description, category.promptDescription]) {
+        expect(prompt, `${category.value} 的判定提示词不应包含产物形态描述`).not.toContain(
+          productForm,
+        );
+      }
       for (const wording of productFormWording) {
         expect(prompt, `${category.value} 的判定提示词不应包含「${wording}」`).not.toContain(wording);
       }
@@ -44,8 +46,10 @@ describe("判定提示词", () => {
 
   it("描述与问法确实是两句话，不是同一句（MUST NOT 共用一句话）", () => {
     for (const category of EXTRACTION_CATEGORIES) {
-      expect(category.presenceQuestion).not.toBe(category.description);
-      expect(category.presenceQuestion).not.toContain(category.description);
+      for (const description of [category.description, category.promptDescription]) {
+        expect(category.presenceQuestion).not.toBe(description);
+        expect(category.presenceQuestion).not.toContain(description);
+      }
     }
   });
 

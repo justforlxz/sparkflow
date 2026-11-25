@@ -16,14 +16,24 @@ export interface ImagePromptInput {
   category: string;
   /** 提取要求 key（faithful / flatten / dereflect）。 */
   extractRequirement: string;
+  /**
+   * 视觉模型给的材质描述（`material.ts` 两段式的第一段）；`null` 表示没拿到，
+   * 整段跳过 —— 不写「Material：」这种没有内容的标题。
+   */
+  material: string | null;
   /** 补充要求；null 表示没有。 */
   extraPrompt: string | null;
 }
 
-/** 类别进提示词的样子：名称加描述；认不出的 key 按原文交给模型，不编造描述。 */
+/**
+ * 类别进提示词的样子：名称加**给模型看的那一份**描述（`promptDescription`）。
+ *
+ * 不能用 `description`：那一份是界面说明，没有几何约束（MKACG-1000 把两者拆开了）。
+ * 认不出的 key 按原文交给模型，不编造描述。
+ */
 export function describeCategory(value: string): string {
   const category = findCategory(value);
-  return category ? `${category.label}——${category.description}` : value;
+  return category ? `${category.label}——${category.promptDescription}` : value;
 }
 
 /** 空行分段，空字段整段跳过：不让提示词里出现「补充要求：」这种没有内容的标题。 */
@@ -37,6 +47,8 @@ export function buildImagePrompt(input: ImagePromptInput): string {
     input.agents.role,
     input.agents.systemPrompt,
     `提取目标：${describeCategory(input.category)}`,
+    // 材质描述写在提取要求之前：先把「这是什么材质」说清，再说这次要按哪种要求处理。
+    input.material?.trim() ? `Material: ${input.material.trim()}` : "",
     `提取要求：${requirementLine}`,
     input.agents.outputRequirements ? `输出要求：${input.agents.outputRequirements}` : "",
     input.extraPrompt?.trim() ? `补充要求：${input.extraPrompt.trim()}` : "",

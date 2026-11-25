@@ -9,7 +9,9 @@
  * 3. 单项失败不丢弃其它项：有产出的照常交出，失败项连同原因一起交出去（整体记 partial）；
  * 4. `model` 只取自 Agent 快照；快照里没有就省略，不自造模型名；
  * 5. 输出比例跟随原图（`deriveExtractionSize`），不再固定 1024×1536；
- * 6. 落盘与写库不在这里（提取模块的 runner 负责），本文件只交图片、跳过项与失败清单。
+ * 6. 图生图前先向视觉模型要一句材质描述，作为 `Material:` 段拼进提示词；拿不到就跳过该段、
+ *    **不阻断**提取（MKACG-1000、AC-PROMPT-3）；
+ * 7. 落盘与写库不在这里（提取模块的 runner 负责），本文件只交图片、跳过项与失败清单。
  */
 import { logger } from "@/lib/logger";
 import { StageError } from "@/lib/job-failure";
@@ -17,6 +19,7 @@ import type { VisionAnalyzer } from "@/modules/gateway/vision";
 import type { ImageGenerator } from "./adapters/types";
 import { compressForReferenceImage, readImageDimensions } from "./compress";
 import { describeStageFailure } from "./failure";
+import { buildMaterialPrompt, parseMaterialDescription } from "./material";
 import { buildImagePrompt } from "./prompt";
 import { resolveImageGenerator, resolveVisionAnalyzer } from "./service";
 import { buildExistencePrompt, deriveExtractionSize, parseExistenceVerdict } from "./vision-judgment";
@@ -103,6 +106,37 @@ async function judgeExistence(
   return verdict;
 }
 
+/**
+ * 两段式提示词的第一段：问视觉模型要一句材质描述（MKACG-1000）。
+ *
+ * 与判定不同，**拿不到就跳过整段**：没有理解网关、上游报错、回复空白都只记一条日志，
+ * 返回 `null`，图生图照常发起（AC-PROMPT-3）。判定失败必须记失败，因为那会产出幻觉素材；
+ * 材质描述缺失只是少一句补充说明，不值得让一条本来能成的素材失败。
+ */
+async function describeMaterial(
+  vision: VisionAnalyzer | null,
+  image: string,
+  category: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  if (!vision) return null;
+
+  try {
+    const text = await vision.analyzeImage(
+      { image, prompt: buildMaterialPrompt(category) },
+      { signal },
+    );
+    return parseMaterialDescription(text);
+  } catch (error) {
+    // 只记「哪一张、哪个类别、什么原因」，绝不记 base64 与密钥（docs/prd/05 MUST 9）。
+    logger.warn("材质描述没拿到，跳过该段", {
+      category,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 /** 一张原图准备好的一次性输入：字节压缩结果与按长宽比推导的尺寸，同一张原图的多个类别共用。 */
 interface PreparedSource {
   image: string;
@@ -179,11 +213,14 @@ export async function extractImages(
             reason: verdict.reason,
           });
         } else {
+          // 图生图之前先要一句材质描述，拿不到就跳过该段，不阻断（AC-PROMPT-3）。
+          const material = await describeMaterial(vision, prepared.image, category, context.signal);
           // 第二段：判定存在才发起图生图，提示词按该类别描述拼装。
           const prompt = buildImagePrompt({
             agents: context.agent,
             category,
             extractRequirement: context.requirement,
+            material,
             extraPrompt: context.extraPrompt,
           });
           const generated = await generator.generate(

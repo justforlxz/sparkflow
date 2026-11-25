@@ -28,7 +28,7 @@ export const EXTRACT_REQUIREMENTS = [
   {
     value: "flatten",
     label: "平整化",
-    description: "压平褶皱、折痕与光照不均，让纹理均匀铺满画面，可直接当材质使用",
+    description: "压平褶皱、折痕与光照不均，让纹理均匀平整，可直接当材质使用",
     size: DEFAULT_IMAGE_SIZE,
   },
   {

@@ -7,12 +7,15 @@
  */
 import type { VisionAnalyzer } from "@/modules/gateway/vision";
 import { LIBRARY_COPY } from "@/modules/extraction/constants";
+import { MATERIAL_PROMPT_MARK } from "../material";
 import { MOCK_SCRIPT_HINTS, hasMockHint, mockVisionAbsentAt } from "../mock-script";
 
 /** 判定为不存在时回给调用方的原话：会被存进 `extraction_item.skip_reason` 并显示在界面。 */
 const ABSENT_REASON = `${LIBRARY_COPY.verdictAbsent}：画面里没有这个目标`;
 /** 判定为存在时的原话：只用于日志，不写库。 */
 const PRESENT_REASON = `${LIBRARY_COPY.verdictPresent}：目标位于画面中央`;
+/** 材质描述的回复：固定一句话，供 e2e 断言提示词里带 `Material:` 段。 */
+const MATERIAL_DESCRIPTION = "深灰色织物，表面有细密斜纹";
 
 export class MockVisionAnalyzer implements VisionAnalyzer {
   private readonly absentAll: boolean;
@@ -25,7 +28,11 @@ export class MockVisionAnalyzer implements VisionAnalyzer {
     this.absentAt = mockVisionAbsentAt(extraPrompt);
   }
 
-  async analyzeImage(): Promise<string> {
+  async analyzeImage(input: { prompt: string }): Promise<string> {
+    // 材质描述不判断「存在 / 不存在」，也不占判定序号：否则 `mock:vision-absent-at-<n>`
+    // 会随「每一项多一次调用」错位（MKACG-1000）。
+    if (input.prompt.includes(MATERIAL_PROMPT_MARK)) return MATERIAL_DESCRIPTION;
+
     this.calls += 1;
     if (this.absentAll || this.absentAt === this.calls) return ABSENT_REASON;
     return PRESENT_REASON;

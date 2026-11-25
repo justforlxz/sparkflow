@@ -112,6 +112,9 @@ export const LIBRARY_COPY = {
   /** 结果卡的格子状态与操作。 */
   retryAction: "重试",
   retryingLabel: "重试中",
+  /** 正在处理的那一格；同一次运行里还没轮到的格子（MKACG-999）。 */
+  processingLabel: "处理中",
+  waitingLabel: "等待中",
   rerunAction: "重跑",
   absentLabel: "不存在",
   idleCellLabel: "未提取",

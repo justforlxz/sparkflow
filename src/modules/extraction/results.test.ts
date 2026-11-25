@@ -65,6 +65,7 @@ function run(overrides: Partial<ExtractionRunView> & { id: string }): Extraction
     progress: null,
     error: null,
     extraPrompt: null,
+    currentItemKey: null,
     createdAt: "2026-11-24T10:00:00.000Z",
     finishedAt: "2026-11-24T10:00:10.000Z",
     ...overrides,
@@ -159,7 +160,7 @@ describe("buildResultCards", () => {
     });
   });
 
-  it("有未终态运行时，它覆盖的格子是 pending，其余格子保持原样", () => {
+  it("有未终态运行时，它覆盖的格子还没出结论；没有当前条目时都是 waiting", () => {
     const cards = build({
       library: library([asset({ sourceAssetId: "a1", category: "topdown" })]),
       runs: [
@@ -175,11 +176,83 @@ describe("buildResultCards", () => {
       ],
     });
 
-    expect(cards[0]?.cells.map((cell) => cell.state)).toEqual(["done", "pending", "pending"]);
+    expect(cards[0]?.cells.map((cell) => cell.state)).toEqual(["done", "waiting", "waiting"]);
     // 正在重试的格子不再显示上一次失败的原因。
     expect(cards[0]?.cells[1]?.retry).toBeNull();
     // 另一张原图不受这条运行影响。
     expect(cards[1]?.cells.every((cell) => cell.state === "idle")).toBe(true);
+  });
+
+  it("运行指出当前正在处理的那一格：只有那一格是 pending，同运行其余格子是 waiting（AC-PROG-1）", () => {
+    const cards = build({
+      runs: [
+        run({
+          id: "run-1",
+          status: "running",
+          progress: { done: 0, total: 3 },
+          sourceAssetIds: ["a1"],
+          categories: ["topdown", "texture", "graphic"],
+          currentItemKey: "a1|topdown",
+          finishedAt: null,
+        }),
+      ],
+    });
+
+    expect(cards[0]?.cells.map((cell) => cell.state)).toEqual(["pending", "waiting", "waiting"]);
+    // 排队中的格子同样不带上一次尝试的产物与原因。
+    expect(cards[0]?.cells[1]).toMatchObject({ asset: null, reason: null, retry: null });
+  });
+
+  it("当前条目随进度前移，「处理中」换到下一格（AC-PROG-2）", () => {
+    const states = (currentItemKey: string, done: number) =>
+      build({
+        runs: [
+          run({
+            id: "run-1",
+            status: "running",
+            progress: { done, total: 3 },
+            sourceAssetIds: ["a1"],
+            categories: ["topdown", "texture", "graphic"],
+            currentItemKey,
+            finishedAt: null,
+          }),
+        ],
+      })[0]?.cells.map((cell) => cell.state);
+
+    expect(states("a1|topdown", 0)).toEqual(["pending", "waiting", "waiting"]);
+    expect(states("a1|texture", 1)).toEqual(["waiting", "pending", "waiting"]);
+    expect(states("a1|graphic", 2)).toEqual(["waiting", "waiting", "pending"]);
+  });
+
+  it("排队中（worker 还没认领）的运行没有当前条目，它覆盖的格子都还是 waiting", () => {
+    const cards = build({
+      runs: [
+        run({
+          id: "run-queued",
+          status: "queued",
+          progress: { done: 0, total: 2 },
+          sourceAssetIds: ["a1"],
+          categories: ["texture", "graphic"],
+          currentItemKey: null,
+          finishedAt: null,
+        }),
+      ],
+    });
+
+    expect(cards[0]?.cells.map((cell) => cell.state)).toEqual(["idle", "waiting", "waiting"]);
+  });
+
+  it("运行结束后不再有 pending / waiting（AC-PROG-5）", () => {
+    const cards = build({
+      library: library([
+        asset({ sourceAssetId: "a1", category: "topdown" }),
+        asset({ sourceAssetId: "a1", category: "texture" }),
+        asset({ sourceAssetId: "a1", category: "graphic" }),
+      ]),
+      runs: [run({ id: "run-1", status: "succeeded" })],
+    });
+
+    expect(cards[0]?.cells.map((cell) => cell.state)).toEqual(["done", "done", "done"]);
   });
 
   it("同一个格子有多次尝试时取最近一次（重试成功覆盖上一次失败）", () => {

@@ -8,13 +8,15 @@
  * - `done`：入库的素材（library asset），可以点开看大图；
  * - `absent`：视觉判定为不存在（skipped），显示模型原话；
  * - `failed`：判定存在但生图失败，显示可读原因并能单独重试这一格；
- * - `pending`：有未终态的运行正在处理这一格（首次提取与单格重试都是这个状态）；
+ * - `pending`：运行正在处理这一格（首次提取与单格重试都是这个状态）；
+ * - `waiting`：同一次运行还没轮到这一格（MKACG-999）；
  * - `idle`：这一格还没有尝试过。
  *
  * 纯函数，单测在 `results.test.ts`。界面只消费结果，不自己判断状态与拼文案
  * （AGENTS.md 硬性规则 1）。
  */
 import { SELECTABLE_CATEGORIES } from "./categories";
+import { extractionItemKey } from "./item-key";
 import type { ExtractionRunView, LibraryView } from "./view";
 
 /** 卡片需要的原图信息：资源夹视图里的原图就满足这个形状，界面直接传进来。 */
@@ -41,7 +43,13 @@ export interface ResultCellRetry {
   requirement: string;
 }
 
-export type ResultCellState = "idle" | "pending" | "done" | "absent" | "failed";
+/**
+ * 一格的状态（MKACG-999）：
+ * - `pending`：这一格正在被处理（运行指向它，`ExtractionRunView.currentItemKey`）；
+ * - `waiting`：同一次运行还没轮到它；
+ * - `idle`：没有任何运行覆盖过这一格。
+ */
+export type ResultCellState = "idle" | "pending" | "waiting" | "done" | "absent" | "failed";
 
 export interface ResultCellView {
   category: string;
@@ -82,14 +90,10 @@ export interface ResultCardsInput {
 interface Attempt {
   /** 尝试时间（毫秒），用来判断哪一次是「最近一次」。 */
   at: number;
-  state: Exclude<ResultCellState, "idle" | "pending">;
+  state: Exclude<ResultCellState, "idle" | "pending" | "waiting">;
   asset: ResultCellAsset | null;
   reason: string | null;
   retry: ResultCellRetry | null;
-}
-
-function cellKey(sourceAssetId: string, category: string): string {
-  return `${sourceAssetId}\u0000${category}`;
 }
 
 /**
@@ -100,13 +104,15 @@ function runAttemptTime(run: ExtractionRunView): number {
   return Date.parse(run.finishedAt ?? run.createdAt);
 }
 
-/** 运行还没进终态时，它覆盖的每一格都在处理中（首次提取与单格重试都一样）。 */
+/** 运行还没进终态时，它覆盖的每一格都还没出结论（首次提取与单格重试都一样）。 */
 function pendingKeys(runs: readonly ExtractionRunView[]): Set<string> {
   const keys = new Set<string>();
   for (const run of runs) {
     if (!isActive(run)) continue;
     for (const sourceAssetId of run.sourceAssetIds) {
-      for (const category of run.categories) keys.add(cellKey(sourceAssetId, category));
+      for (const category of run.categories) {
+        keys.add(extractionItemKey(sourceAssetId, category));
+      }
     }
   }
   return keys;
@@ -114,6 +120,17 @@ function pendingKeys(runs: readonly ExtractionRunView[]): Set<string> {
 
 function isActive(run: ExtractionRunView): boolean {
   return run.status === "queued" || run.status === "running";
+}
+
+/**
+ * 正在处理的那一格：取第一条「在处理且已经指出当前条目」的活动运行。
+ * 排队中（worker 还没认领）的运行没有这个值，它覆盖的格子都显示「等待中」（MKACG-999）。
+ */
+function currentItemKeyOf(runs: readonly ExtractionRunView[]): string | null {
+  for (const run of runs) {
+    if (isActive(run) && run.currentItemKey !== null) return run.currentItemKey;
+  }
+  return null;
 }
 
 /** 收集所有尝试，按 (原图, 类别) 取最近一次；同一时间点先出现的那条优先。 */
@@ -128,7 +145,7 @@ function collectAttempts(input: ResultCardsInput): Map<string, Attempt> {
 
   for (const group of input.library.groups) {
     for (const asset of group.items) {
-      record(cellKey(asset.sourceAssetId, asset.category), {
+      record(extractionItemKey(asset.sourceAssetId, asset.category), {
         at: Date.parse(asset.createdAt),
         state: "done",
         asset: {
@@ -142,7 +159,7 @@ function collectAttempts(input: ResultCardsInput): Map<string, Attempt> {
       });
     }
     for (const item of group.skipped) {
-      record(cellKey(item.sourceAssetId, item.category), {
+      record(extractionItemKey(item.sourceAssetId, item.category), {
         at: Date.parse(item.createdAt),
         state: "absent",
         asset: null,
@@ -154,7 +171,7 @@ function collectAttempts(input: ResultCardsInput): Map<string, Attempt> {
 
   for (const run of input.runs) {
     for (const failure of run.error?.failures ?? []) {
-      record(cellKey(failure.sourceAssetId, failure.category), {
+      record(extractionItemKey(failure.sourceAssetId, failure.category), {
         at: runAttemptTime(run),
         state: "failed",
         asset: null,
@@ -187,16 +204,23 @@ export function buildResultCards(input: ResultCardsInput): ResultCardView[] {
   const categories = input.categories ?? SELECTABLE_CATEGORIES;
   const attempts = collectAttempts(input);
   const pending = pendingKeys(input.runs);
+  const current = currentItemKeyOf(input.runs);
 
   return input.sourceAssets.map((source) => {
     const cells = categories.map((category): ResultCellView => {
-      const key = cellKey(source.id, category.value);
+      const key = extractionItemKey(source.id, category.value);
       const attempt = attempts.get(key);
       const base = { category: category.value, label: category.label };
 
-      // 有运行正在处理这一格时，最新的一次尝试还没有结论：先显示「处理中」。
+      // 运行还没给这一格结论：正在处理的那一格显示「处理中」，同运行其余格子显示「等待中」。
       if (pending.has(key)) {
-        return { ...base, state: "pending", asset: null, reason: null, retry: null };
+        return {
+          ...base,
+          state: current === key ? "pending" : "waiting",
+          asset: null,
+          reason: null,
+          retry: null,
+        };
       }
       if (!attempt) {
         return { ...base, state: "idle", asset: null, reason: null, retry: null };

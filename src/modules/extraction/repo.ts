@@ -27,6 +27,7 @@ const RUN_SELECT = {
   progress: true,
   error: true,
   extraPrompt: true,
+  currentItemKey: true,
   createdAt: true,
   finishedAt: true,
 } as const;
@@ -41,6 +42,7 @@ interface RawRunRow {
   progress: unknown;
   error: unknown;
   extraPrompt: string | null;
+  currentItemKey: string | null;
   createdAt: Date;
   finishedAt: Date | null;
 }
@@ -56,6 +58,7 @@ function toRunRecord(row: RawRunRow): ExtractionRunRecord {
     progress: (row.progress as ExtractionProgress | null) ?? null,
     error: (row.error as ExtractionErrorRecord | null) ?? null,
     extraPrompt: row.extraPrompt,
+    currentItemKey: row.currentItemKey,
     createdAt: row.createdAt,
     finishedAt: row.finishedAt,
   };
@@ -179,14 +182,18 @@ export async function claimNextRun(now: Date): Promise<ExtractionRunRecord | nul
   return toRunRecord({ ...candidate, status: "running", finishedAt: null } as RawRunRow);
 }
 
-/** 进度只写 running 的行：终态会清空进度，迟到的写入不该复活它。 */
+/**
+ * 进度与「正在处理的那一格」只写 running 的行：终态会清空它们，迟到的写入不该复活它。
+ * 两件事同一笔写入，界面看到的就是「第 k 项做完、第 k+1 项在跑」（MKACG-999）。
+ */
 export async function updateRunProgress(
   runId: string,
   progress: ExtractionProgress,
+  currentItemKey: string | null,
 ): Promise<number> {
   const { count } = await getDb().extractionRun.updateMany({
     where: { id: runId, status: "running" },
-    data: { progress: progress as unknown as Prisma.InputJsonValue },
+    data: { progress: progress as unknown as Prisma.InputJsonValue, currentItemKey },
   });
   return count;
 }
@@ -205,6 +212,7 @@ export async function finishRun(
       finishedAt: now,
       error: jsonOrDbNull(error),
       progress: Prisma.DbNull,
+      currentItemKey: null,
     },
   });
   return count;
@@ -222,6 +230,7 @@ export async function failRunningRuns(
       finishedAt: now,
       error: jsonOrDbNull(error),
       progress: Prisma.DbNull,
+      currentItemKey: null,
     },
   });
   return count;

@@ -215,12 +215,14 @@ export function createExtractionRunner(options: ExtractionRunnerOptions): Extrac
       collection,
       signal: controller.signal,
       readSourceImage: (assetId: string) => loadSourceImage(run.collectionId, assetId),
-      reportProgress: async (progress) => {
+      reportProgress: async (progress, currentItemKey) => {
         // 进度写入失败不该让整条运行失败：界面最多少刷新一次。
-        const written = await store.updateRunProgress(run.id, progress).catch((error) => {
-          logger.warn("提取进度写入失败，已跳过", { runId: run.id, error });
-          return 0;
-        });
+        const written = await store
+          .updateRunProgress(run.id, progress, currentItemKey)
+          .catch((error) => {
+            logger.warn("提取进度写入失败，已跳过", { runId: run.id, error });
+            return 0;
+          });
         if (written === 0) {
           logger.warn("提取进度没有写入：该运行已不在执行中", { runId: run.id });
         }

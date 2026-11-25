@@ -9,6 +9,7 @@ import { COLLECTION_STATUS_TONE, EXTRACTION_STATUS_TONE } from "@/components/ui/
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS, TEXT_LINK_CLASS } from "@/components/ui/styles";
 import { SELECTABLE_CATEGORIES } from "@/modules/extraction/categories";
 import { EXTRACTION_POLL_INTERVAL_MS, LIBRARY_COPY } from "@/modules/extraction/constants";
+import { extractionItemKey } from "@/modules/extraction/item-key";
 import {
   buildResultCards,
   type ResultCardView,
@@ -22,7 +23,7 @@ import type { CollectionDetailView } from "@/modules/media-collection/service";
 import { CollectionDialog } from "../collection-dialog";
 import { DeleteCollectionButton } from "./delete-collection-button";
 import { SettingsColumn } from "./extraction-settings-panel";
-import { ResultCards, resultCellKey } from "./result-cards";
+import { ResultCards } from "./result-cards";
 import { SourceAssetsPanel } from "./source-assets-panel";
 
 /**
@@ -141,7 +142,7 @@ export function CollectionWorkspace({
     return built.map((card) => ({
       ...card,
       cells: card.cells.map((cell) =>
-        cell.state !== "done" && retrying.has(resultCellKey(card.sourceAssetId, cell.category))
+        cell.state !== "done" && retrying.has(extractionItemKey(card.sourceAssetId, cell.category))
           ? { ...cell, state: "pending" as const, asset: null, reason: null, retry: null }
           : cell,
       ),
@@ -200,7 +201,7 @@ export function CollectionWorkspace({
   }
 
   async function retryCell(cell: ResultCellRetry): Promise<void> {
-    const key = resultCellKey(cell.sourceAssetId, cell.category);
+    const key = extractionItemKey(cell.sourceAssetId, cell.category);
     // 先把这一格标成「重试中」：运行创建接口返回前也有反馈，不必等下一次轮询。
     setRetrying((current) => new Set(current).add(key));
     setError(null);

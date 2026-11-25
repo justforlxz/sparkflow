@@ -93,6 +93,7 @@ function context(
   categories: readonly string[],
   progress: ExtractionProgress[] = [],
   extraPrompt: string | null = null,
+  currentKeys: Array<string | null> = [],
 ): ExtractionContext {
   return {
     runId: "run-1",
@@ -111,8 +112,9 @@ function context(
     },
     signal: new AbortController().signal,
     readSourceImage: async () => ({ bytes: Buffer.from("src"), mimeType: "image/png" }),
-    reportProgress: async (value) => {
+    reportProgress: async (value, currentItemKey) => {
       progress.push(value);
+      currentKeys.push(currentItemKey);
     },
   };
 }
@@ -151,6 +153,27 @@ describe("提取处理器", () => {
     // 序号用原图位置：同一张原图的两个类别共用同一个序号。
     expect(outcome.images.filter((image) => image.sourceAssetId === "asset-1").map((i) => i.sortOrder))
       .toEqual([1, 1]);
+  });
+
+  it("进度写入同时带出「正在处理的那一格」：随处理顺序前移，全部轮完清空（MKACG-999）", async () => {
+    const generator = countingGenerator();
+    const progress: ExtractionProgress[] = [];
+    const currentKeys: Array<string | null> = [];
+
+    await extractImages(
+      context(["topdown", "texture"], progress, null, currentKeys),
+      deps(generator),
+    );
+
+    // 2 张原图 × 2 个类别：先指向第一格，每做完一格指向下一格；最后一格做完仍指向它，
+    // 运行进终态时才清空（运行期间始终恰好一格「处理中」）。
+    expect(currentKeys).toEqual([
+      "asset-1|topdown",
+      "asset-1|texture",
+      "asset-2|topdown",
+      "asset-2|texture",
+      "asset-2|texture",
+    ]);
   });
 
   it("单项失败不中断其他项：其余照常交出，失败项带可读原因（AC-LIB-2）", async () => {

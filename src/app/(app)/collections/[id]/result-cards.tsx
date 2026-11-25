@@ -5,13 +5,15 @@ import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { Panel } from "@/components/ui/Panel";
 import { buttonClass } from "@/components/ui/styles";
 import { LIBRARY_COPY } from "@/modules/extraction/constants";
+import { extractionItemKey } from "@/modules/extraction/item-key";
 import type { ResultCardView, ResultCellRetry, ResultCellState } from "@/modules/extraction/results";
 
 /**
  * 中栏「处理结果」（MKACG-974 范围 5、AC-UI-8、AC-UI-9）：一张原图一张卡。
  *
  * 卡头是原图缩略图、文件名、三个状态圆点、`已完成/总数` 与「重跑」；卡内并排三类产出：
- * 完成=缩略图（点开看大图）、不存在=灰底与原因、失败=红框、原因与「重试」、处理中=扫光。
+ * 完成=缩略图（点开看大图）、不存在=灰底与原因、失败=红框、原因与「重试」；
+ * 运行中：处理中=扫光 + 该格原图的模糊底色，等待中=同样的模糊底色但没有扫光（MKACG-999）。
  *
  * 结果卡只用描边与圆角，**不带阴影** —— 外层三栏面板已经有唯一的阴影档（AC-UI-4）。
  */
@@ -29,12 +31,9 @@ const DOT_CLASS: Record<ResultCellState, string> = {
   absent: "bg-line-strong",
   failed: "bg-danger",
   pending: "bg-warning",
+  waiting: "bg-warning/50",
   idle: "bg-soft",
 };
-
-export function resultCellKey(sourceAssetId: string, category: string): string {
-  return `${sourceAssetId}|${category}`;
-}
 
 export function ResultCards({ cards, retrying, onRetry, onRerun }: ResultCardsProps) {
   return (
@@ -113,7 +112,7 @@ function ResultCard({
 
       <div className="mt-2 grid grid-cols-3 gap-2">
         {card.cells.map((cell) => {
-          const isRetrying = retrying.has(resultCellKey(card.sourceAssetId, cell.category));
+          const isRetrying = retrying.has(extractionItemKey(card.sourceAssetId, cell.category));
           return (
             <div key={cell.category} className="space-y-1">
               <p className="text-caption text-ink-tertiary">{cell.label}</p>
@@ -165,14 +164,33 @@ function ResultCard({
                     {cell.reason}
                   </p>
                 </div>
-              ) : cell.state === "pending" ? (
+              ) : cell.state === "pending" || cell.state === "waiting" ? (
                 <div
                   data-testid="result-cell"
-                  data-state="pending"
+                  data-state={cell.state}
                   data-category={cell.category}
-                  className="shimmer flex h-[72px] items-center justify-center rounded-md bg-soft p-1.5 text-caption text-ink-secondary"
+                  className={`relative flex h-[72px] items-center justify-center overflow-hidden rounded-md border border-line p-1.5 text-caption text-ink-secondary ${
+                    cell.state === "pending" ? "shimmer" : ""
+                  }`}
                 >
-                  {isRetrying ? LIBRARY_COPY.retryingLabel : LIBRARY_COPY.inlineProgressLabel}
+                  {/* 底色用这张卡自己的原图缩略图（`?w=400`），模糊后加半透明遮罩：
+                      处理中与等待中的格子各显示各自的原图，不串图（MKACG-999 AC-PROG-3）。 */}
+                  {/* eslint-disable-next-line @next/next/no-img-element -- 鉴权路由，不走 Next 图片优化器 */}
+                  <img
+                    src={card.thumbnailUrl}
+                    alt=""
+                    aria-hidden
+                    data-testid="result-cell-cover"
+                    className="absolute inset-0 h-full w-full scale-105 object-cover blur-[2px]"
+                  />
+                  <span aria-hidden className="absolute inset-0 bg-panel/70" />
+                  <span className="relative">
+                    {isRetrying
+                      ? LIBRARY_COPY.retryingLabel
+                      : cell.state === "pending"
+                        ? LIBRARY_COPY.processingLabel
+                        : LIBRARY_COPY.waitingLabel}
+                  </span>
                 </div>
               ) : (
                 <div

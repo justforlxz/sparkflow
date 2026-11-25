@@ -130,6 +130,7 @@ describe("提取运行视图", () => {
       progress: { done: 2, total: 4 },
       error: null,
       extraPrompt: null,
+      currentItemKey: null,
       createdAt: new Date("2026-11-21T00:00:00Z"),
       finishedAt: null,
     };
@@ -152,6 +153,7 @@ describe("提取运行视图", () => {
       progress: null,
       error: null,
       extraPrompt: null,
+      currentItemKey: null,
       createdAt: new Date("2026-11-21T00:00:00Z"),
       finishedAt: new Date("2026-11-21T00:01:00Z"),
     };
@@ -185,6 +187,7 @@ describe("提取运行视图", () => {
         ],
       },
       extraPrompt: null,
+      currentItemKey: null,
       createdAt: new Date("2026-11-21T00:00:00Z"),
       finishedAt: new Date("2026-11-21T00:01:00Z"),
     };

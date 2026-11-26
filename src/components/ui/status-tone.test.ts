@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { EXTRACTION_STATUSES } from "@/modules/extraction/constants";
+import { EXTRACTION_OVERVIEW_STATES } from "@/modules/extraction/constants";
 import { COLLECTION_STATUSES } from "@/modules/media-collection/constants";
-import { COLLECTION_STATUS_TONE, EXTRACTION_STATUS_TONE } from "./status-tone";
+import { COLLECTION_STATUS_TONE, EXTRACTION_OVERVIEW_TONE } from "./status-tone";
 
 /**
  * 状态标签颜色语义（docs/prd/09 SHOULD、AC-10-9）：
@@ -20,8 +20,10 @@ describe("状态标签的颜色语义", () => {
     });
   });
 
-  it("提取运行状态都有色板，不漏项", () => {
-    expect(Object.keys(EXTRACTION_STATUS_TONE).sort()).toEqual([...EXTRACTION_STATUSES].sort());
+  it("页头提取状态与资源夹状态都有色板，不漏项", () => {
+    expect(Object.keys(EXTRACTION_OVERVIEW_TONE).sort()).toEqual(
+      [...EXTRACTION_OVERVIEW_STATES].sort(),
+    );
     expect(Object.keys(COLLECTION_STATUS_TONE).sort()).toEqual([...COLLECTION_STATUSES].sort());
   });
 

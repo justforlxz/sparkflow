@@ -33,7 +33,7 @@ test.afterAll(async ({ request }) => {
   await cleanupLibraryData(request);
 });
 
-test("AC-LIB-1 AC-LIB-3 2 张原图 × 2 个类别 = 进度 4；再跑一次素材增加而不是覆盖", async ({
+test("AC-LIB-1 AC-LIB-3 AC-UX-3 2 张原图 × 2 个类别 = 进度 4；再跑一次只留最新产物", async ({
   request,
 }) => {
   await createGateway(request);
@@ -66,7 +66,9 @@ test("AC-LIB-1 AC-LIB-3 2 张原图 × 2 个类别 = 进度 4；再跑一次素�
     }
   }
 
-  // 再跑一次：新运行、新素材，旧素材仍在（AC-LIB-3）。
+  const firstIds = library.groups.flatMap((group) => group.items.map((item) => item.id));
+
+  // 再跑一次：新运行照常创建，但同一（原图 × 类别）只留最新一条（MKACG-1007 AC-UX-3）。
   const second = await request.post(`/api/collections/${collection.id}/extractions`, {
     data: {
       sourceAssetIds: collection.assetIds,
@@ -77,7 +79,13 @@ test("AC-LIB-1 AC-LIB-3 2 张原图 × 2 个类别 = 进度 4；再跑一次素�
   const rerun = ((await second.json()) as { data: { run: ExtractionRun } }).data.run;
   await waitForRun(request, collection.id, rerun.id);
 
-  expect((await listLibrary(request, collection.id)).total).toBe(8);
+  const afterRerun = await listLibrary(request, collection.id);
+  expect(afterRerun.total, "重跑不叠加：条数仍是 4").toBe(4);
+  const afterIds = afterRerun.groups.flatMap((group) => group.items.map((item) => item.id));
+  expect(afterIds.filter((id) => firstIds.includes(id)), "旧产物被顶掉，不是留在库里并列").toEqual(
+    [],
+  );
+  // 运行历史不删：两次运行都在。
   expect((await listRuns(request, collection.id)).length).toBe(2);
 });
 
@@ -107,7 +115,7 @@ test("AC-LIB-2 一项失败：其余正常入库，运行标 partial 并给出�
  * 界面验收（MKACG-974）：三栏工作区、按原图一张卡、内联进度
  * ------------------------------------------------------------------ */
 
-test("AC-LIB-1 AC-LIB-3 界面：2 张原图 × 三类 = 进度 6，结果按原图两张卡；再跑一次素材累加", async ({
+test("AC-LIB-1 AC-LIB-3 界面：2 张原图 × 三类 = 进度 6，结果按原图两张卡；再跑一次不叠加", async ({
   page,
   request,
 }) => {
@@ -128,8 +136,8 @@ test("AC-LIB-1 AC-LIB-3 界面：2 张原图 × 三类 = 进度 6，结果按原
   await expect(page.getByTestId("inline-progress-bar")).toHaveAttribute("aria-valuemax", "100");
   await expect(page.getByTestId("inline-progress-text")).toHaveText(/^\d+%$/);
 
-  // 跑完换成状态标签，进度条收起。
-  await expect(page.getByTestId("extraction-run")).toContainText("已完成", { timeout: 60_000 });
+  // 跑完换成状态标签（口径由本夹全部原图推导，MKACG-1007 AC-UX-2），进度条收起。
+  await expect(page.getByTestId("extraction-run")).toContainText("已提取", { timeout: 60_000 });
   await expect(page.getByTestId("inline-progress")).toHaveCount(0);
 
   // 一张原图一张卡，卡内三类产出并排（都完成）。
@@ -141,14 +149,24 @@ test("AC-LIB-1 AC-LIB-3 界面：2 张原图 × 三类 = 进度 6，结果按原
   }
   await expect(page.getByText("素材库 6 条")).toBeVisible();
 
-  // 再跑一次：素材增加而不是覆盖（AC-LIB-3）。
+  // 再跑一次：条数不变，格子换成这次的新产物（MKACG-1007 AC-UX-3）。
+  const firstThumbnail = cards.first().getByTestId("image-thumbnail").first().locator("img");
+  const beforeSrc = await firstThumbnail.getAttribute("src");
   await page.getByTestId("extract-submit").click();
-  await expect(page.getByText("素材库 12 条")).toBeVisible({ timeout: 60_000 });
+  // 产物换了新一版，缩略图地址里的素材 id 跟着换；条数仍是 6。
+  await expect
+    .poll(async () => firstThumbnail.getAttribute("src"), { timeout: 90_000 })
+    .not.toBe(beforeSrc);
+  await expect(page.getByText("素材库 6 条")).toBeVisible();
   // 结果卡仍是两张：每格显示这张原图最近一次尝试。
   await expect(cards).toHaveCount(2);
+  for (const card of await cards.all()) {
+    await expect(card.getByTestId("result-card-count")).toHaveText("3/3");
+    await expect(card.getByTestId("image-thumbnail")).toHaveCount(3);
+  }
 });
 
-test("AC-LIB-2 界面：部分失败标注「部分失败」、失败项数量与原因，其余素材正常显示", async ({
+test("AC-LIB-2 界面：有失败格时页头标「有失败项」、失败项数量与原因，其余素材正常显示", async ({
   page,
   request,
 }) => {
@@ -166,7 +184,8 @@ test("AC-LIB-2 界面：部分失败标注「部分失败」、失败项数量�
 
   // 标题下方：状态、失败项数量与可读原因都在这一行上。
   const status = page.getByTestId("extraction-run");
-  await expect(status).toContainText("部分失败");
+  // 页头状态由「本夹全部原图的完成情况」推导：有一格失败就是「有失败项」（MKACG-1007 AC-UX-2）。
+  await expect(status).toContainText("有失败项");
   await expect(status).toContainText("失败项 1 条");
   await expect(status).toContainText("已保留 5/6 条素材");
 

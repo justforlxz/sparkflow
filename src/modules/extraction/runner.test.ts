@@ -61,13 +61,20 @@ interface Harness {
   saved: LibraryAssetInput[][];
   items: ExtractionItemInput[][];
   finished: Array<{ status: string; error: unknown }>;
+  /** 每次 `files.discard` 收到的 storage_key（被新产物顶掉的旧产物）。 */
+  discarded: string[][];
 }
 
 /** 内存 store：只记状态变化，不碰数据库。 */
-function harness(claimed: ExtractionRunRecord | null): Harness {
+function harness(
+  claimed: ExtractionRunRecord | null,
+  options: { replacedStorageKeys?: string[] } = {},
+): Harness {
   const saved: LibraryAssetInput[][] = [];
   const items: ExtractionItemInput[][] = [];
   const finished: Array<{ status: string; error: unknown }> = [];
+  const discarded: string[][] = [];
+  const replacedStorageKeys = options.replacedStorageKeys ?? [];
   const store: ExtractionStore = {
     claimNextRun: vi.fn(async () =>
       claimed ? ({ ...claimed, status: "running" } satisfies ExtractionRunRecord) : null,
@@ -81,7 +88,7 @@ function harness(claimed: ExtractionRunRecord | null): Harness {
     saveAssets: vi.fn(async (_runId: string, _collectionId: string, assets: readonly LibraryAssetInput[]) => {
       saved.push([...assets]);
       // 真实实现返回落库后的记录：条目要用它拿到 `library_asset_id`（ADR 0011 第 3 条）。
-      return assets.map(
+      const records = assets.map(
         (asset, index) =>
           ({
             id: `library-${index + 1}`,
@@ -100,6 +107,7 @@ function harness(claimed: ExtractionRunRecord | null): Harness {
             createdAt: new Date("2026-11-21T00:00:00Z"),
           }) satisfies LibraryAssetRecord,
       );
+      return { assets: records, replacedStorageKeys };
     }),
     saveItems: vi.fn(async (_runId: string, written: readonly ExtractionItemInput[]) => {
       items.push([...written]);
@@ -120,8 +128,11 @@ function harness(claimed: ExtractionRunRecord | null): Harness {
         watermarkNote: image.watermarkNote,
       })),
     ),
+    discard: vi.fn(async (storageKeys: readonly string[]) => {
+      discarded.push([...storageKeys]);
+    }),
   };
-  return { store, files, saved, items, finished };
+  return { store, files, saved, items, finished, discarded };
 }
 
 function image(sourceAssetId: string, category: string, sortOrder: number): ExtractedImage {
@@ -361,6 +372,30 @@ describe("提取运行执行器", () => {
     await runner.runOnce();
     expect(parts.finished).toHaveLength(1);
     expect(parts.finished[0]?.status).toBe("partial");
+  });
+
+  it("重跑顶掉旧产物时，旧产物的文件一起删掉（AC-UX-3）", async () => {
+    const parts = harness(run(), {
+      replacedStorageKeys: ["library-assets/old-run/0.png", "library-assets/old-run/1.png"],
+    });
+    const runner = makeRunner(parts, {
+      run: async () => ({ images: [image("asset-1", "topdown", 1)], failures: [], skipped: [] }),
+    });
+
+    expect(await runner.runOnce()).toEqual({ ran: true, runId: "run-1", status: "succeeded" });
+    expect(parts.discarded).toEqual([
+      ["library-assets/old-run/0.png", "library-assets/old-run/1.png"],
+    ]);
+  });
+
+  it("没有旧产物被顶掉时不删任何文件", async () => {
+    const parts = harness(run());
+    const runner = makeRunner(parts, {
+      run: async () => ({ images: [image("asset-1", "topdown", 1)], failures: [], skipped: [] }),
+    });
+
+    await runner.runOnce();
+    expect(parts.files.discard).not.toHaveBeenCalled();
   });
 
   it("写库失败不得把运行说成成功", async () => {

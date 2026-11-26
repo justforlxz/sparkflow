@@ -7,7 +7,7 @@ import { fetchJson } from "@/components/api";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Pill } from "@/components/ui/Pill";
 import { useToast } from "@/components/ui/Toast";
-import { COLLECTION_STATUS_TONE, EXTRACTION_STATUS_TONE } from "@/components/ui/status-tone";
+import { EXTRACTION_OVERVIEW_TONE } from "@/components/ui/status-tone";
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS, TEXT_LINK_CLASS } from "@/components/ui/styles";
 import { SELECTABLE_CATEGORIES } from "@/modules/extraction/categories";
 import { EXTRACTION_POLL_INTERVAL_MS, LIBRARY_COPY } from "@/modules/extraction/constants";
@@ -18,10 +18,15 @@ import {
   type ResultCardView,
   type ResultCellRetry,
 } from "@/modules/extraction/results";
-import { isActiveRun, progressPercent, runFailureText } from "@/modules/extraction/summary";
+import {
+  extractionOverview,
+  isActiveRun,
+  progressPercent,
+  runFailureText,
+} from "@/modules/extraction/summary";
 import type { ExtractionRunView, LibraryView } from "@/modules/extraction/view";
 import { EXTRACT_REQUIREMENTS } from "@/modules/image-generation/styles";
-import { COLLECTION_COPY, COLLECTION_STATUS_LABELS } from "@/modules/media-collection/constants";
+import { COLLECTION_COPY } from "@/modules/media-collection/constants";
 import type { CollectionDetailView } from "@/modules/media-collection/service";
 import { CollectionDialog } from "../collection-dialog";
 import { DeleteCollectionButton } from "./delete-collection-button";
@@ -325,6 +330,9 @@ export function CollectionWorkspace({
     );
   }
 
+  // 页头状态只看本夹全部原图出没出图（MKACG-1007 AC-UX-2），不抄最近一条运行的状态：
+  // 一条只跑了两张图的运行也会读作「已完成」，那正是要修的错口径。
+  const overview = useMemo(() => extractionOverview(cards), [cards]);
   const percent = progressPercent(activeRun?.progress ?? null);
   const failureText = latestRun ? runFailureText(latestRun) : null;
 
@@ -384,20 +392,21 @@ export function CollectionWorkspace({
                 {percent}%
               </span>
             </span>
-          ) : latestRun ? (
+          ) : (
             <>
-              <Pill tone={EXTRACTION_STATUS_TONE[latestRun.status]}>{latestRun.statusLabel}</Pill>
+              <Pill
+                tone={EXTRACTION_OVERVIEW_TONE[overview.state]}
+                data-testid="collection-extraction-status"
+              >
+                {overview.label}
+              </Pill>
               {failureText ? <span className="text-warning">{failureText}</span> : null}
-              {latestRun.error ? (
+              {latestRun?.error ? (
                 <span className="min-w-0 break-words text-ink-tertiary">
                   {latestRun.error.message}
                 </span>
               ) : null}
             </>
-          ) : (
-            <Pill tone={COLLECTION_STATUS_TONE[collection.status]}>
-              {COLLECTION_STATUS_LABELS[collection.status]}
-            </Pill>
           )}
 
           <span>原图 {assets.length} 张</span>

@@ -268,7 +268,19 @@ export function createExtractionRunner(options: ExtractionRunnerOptions): Extrac
     let stored: LibraryAssetRecord[];
     try {
       const written = await files.write(run.id, images);
-      stored = written.length > 0 ? await store.saveAssets(run.id, run.collectionId, written) : [];
+      const saved =
+        written.length > 0
+          ? await store.saveAssets(run.id, run.collectionId, written)
+          : { assets: [], replacedStorageKeys: [] };
+      stored = saved.assets;
+      // 被新产物顶掉的旧产物已经不在库里：文件也删掉，重跑不会越堆越多（AC-UX-3）。
+      if (saved.replacedStorageKeys.length > 0) {
+        await files.discard(saved.replacedStorageKeys);
+        logger.info("旧产物已被新产物替换", {
+          runId: run.id,
+          replaced: saved.replacedStorageKeys.length,
+        });
+      }
       logger.info("提取运行完成", {
         runId: run.id,
         kept: stored.length,

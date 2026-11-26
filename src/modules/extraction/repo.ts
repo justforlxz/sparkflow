@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { getDb } from "@/lib/db";
-import type { ExtractionStore } from "./store";
+import type { ExtractionStore, SavedAssets } from "./store";
 import type { ExtractionStatus } from "./constants";
 import type {
   ExtractionErrorRecord,
@@ -240,33 +240,64 @@ export async function failRunningRuns(
 
 /**
  * 成功的产出入库：同一批一次写入，素材与运行分开两笔（素材先到，终态后写）。
- * 返回落库后的记录 —— 提取条目要用它拿到 `library_asset_id`（ADR 0011 第 3 条）。
+ *
+ * 同一（原图 × 类别）只保留最新一条（MKACG-1007 AC-UX-3）：删旧行、置空旧条目引用、写新行
+ * 在同一笔事务里，中途失败不会出现「旧的删了新的没写」。旧行的 `storage_key` 一并返回，
+ * 调用方据此删文件。
  */
 export async function saveAssets(
   runId: string,
   collectionId: string,
   assets: readonly LibraryAssetInput[],
-): Promise<LibraryAssetRecord[]> {
-  if (assets.length === 0) return [];
-  const rows = await getDb().libraryAsset.createManyAndReturn({
-    data: assets.map((asset) => ({
-      id: randomUUID(),
-      collectionId,
-      extractionRunId: runId,
-      sourceAssetId: asset.sourceAssetId,
-      category: asset.category,
-      storageKey: asset.storageKey,
-      fileName: asset.fileName,
-      mimeType: asset.mimeType,
-      width: asset.width,
-      height: asset.height,
-      sortOrder: asset.sortOrder,
-      watermarkRemoved: asset.watermarkRemoved,
-      watermarkNote: asset.watermarkNote,
-    })),
-    select: LIBRARY_SELECT,
+): Promise<SavedAssets> {
+  if (assets.length === 0) return { assets: [], replacedStorageKeys: [] };
+
+  return getDb().$transaction(async (tx) => {
+    const replaced = await tx.libraryAsset.findMany({
+      where: {
+        collectionId,
+        OR: assets.map((asset) => ({
+          sourceAssetId: asset.sourceAssetId,
+          category: asset.category,
+        })),
+      },
+      select: { id: true, storageKey: true },
+    });
+
+    if (replaced.length > 0) {
+      const replacedIds = replaced.map((row) => row.id);
+      await tx.libraryAsset.deleteMany({ where: { id: { in: replacedIds } } });
+      // 提取条目里的 `library_asset_id` 指向已删行：置空，别在库里留悬空 id。
+      await tx.extractionItem.updateMany({
+        where: { libraryAssetId: { in: replacedIds } },
+        data: { libraryAssetId: null },
+      });
+    }
+
+    const rows = await tx.libraryAsset.createManyAndReturn({
+      data: assets.map((asset) => ({
+        id: randomUUID(),
+        collectionId,
+        extractionRunId: runId,
+        sourceAssetId: asset.sourceAssetId,
+        category: asset.category,
+        storageKey: asset.storageKey,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+        width: asset.width,
+        height: asset.height,
+        sortOrder: asset.sortOrder,
+        watermarkRemoved: asset.watermarkRemoved,
+        watermarkNote: asset.watermarkNote,
+      })),
+      select: LIBRARY_SELECT,
+    });
+
+    return {
+      assets: rows as LibraryAssetRecord[],
+      replacedStorageKeys: replaced.map((row) => row.storageKey),
+    };
   });
-  return rows as LibraryAssetRecord[];
 }
 
 /** 写这一批提取条目：三种结局各一条，一次写入（ADR 0011 第 3 条）。 */

@@ -75,6 +75,14 @@ export const LIBRARY_STORAGE_PREFIX = "library-assets";
 export const MAX_SOURCE_ASSETS = 50;
 export const MAX_CATEGORIES = 10;
 
+/**
+ * 页头「提取状态」的取值（MKACG-1007 AC-UX-2）：由本夹全部原图的完成情况推导，
+ * 与单条运行的状态（`ExtractionStatus`）分开：运行可能只覆盖了一部分原图。
+ */
+export const EXTRACTION_OVERVIEW_STATES = ["ready", "partial", "failed", "absent", "idle"] as const;
+
+export type ExtractionOverviewState = (typeof EXTRACTION_OVERVIEW_STATES)[number];
+
 /** 界面轮询未终态运行的间隔：`docs/prd/07-results.md` MUST 4 规定 3 秒，不按界面观感改小。 */
 export const EXTRACTION_POLL_INTERVAL_MS = 3000;
 
@@ -109,6 +117,12 @@ export const LIBRARY_COPY = {
   extraPromptPlaceholder: "例如：只保留干净背景",
   fixedCategoriesLabel: "固定三类",
   inlineProgressLabel: "提取中",
+  /** 页头「提取状态」（MKACG-1007 AC-UX-2）：只由本夹全部原图的完成情况推导。 */
+  overviewReady: "已提取",
+  overviewPartial: "部分完成",
+  overviewFailed: "有失败项",
+  overviewAbsent: "未发现可提取内容",
+  overviewIdle: "待提取",
   /** 结果卡的格子状态与操作。 */
   retryAction: "重试",
   retryingLabel: "重试中",

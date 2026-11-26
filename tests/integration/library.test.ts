@@ -193,6 +193,7 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
             watermarkRemoved: image.watermarkRemoved,
             watermarkNote: image.watermarkNote,
           })),
+        discard: async () => {},
       },
       handler,
       loadCollection: async () => ({
@@ -271,5 +272,112 @@ describe("AC-WM-3 素材记录带上「是否去水印」与原因", () => {
     } finally {
       for (const asset of written) await removeLibraryFile(asset.storageKey);
     }
+  });
+});
+
+/**
+ * 重跑不叠加（MKACG-1007 AC-UX-3）：同一（原图 × 类别）只保留最新一条产物，旧行与旧文件一起走。
+ * 依赖真实 PostgreSQL 的事务与外键：内存替身测不出「删旧行 + 写新行」是不是同一笔。
+ */
+describe("AC-UX-3 同一（原图 × 类别）只保留最新产物", () => {
+  test("同一格连跑两次：库里仍是 1 条、旧素材被顶掉、旧文件交出去删掉", async () => {
+    // 队列是全局的：先清掉其它用例留下的排队运行，确保这一轮认领的就是本用例的。
+    await getDb().extractionRun.deleteMany({ where: { status: "queued" } });
+    const { id, assetIds } = await createCollectionWithAssets(1);
+    const { createExtraction, listExtractionRuns, listLibrary } = await import(
+      "@/modules/extraction/service"
+    );
+    const { extractionStore } = await import("@/modules/extraction/repo");
+    const { createExtractionRunner } = await import("@/modules/extraction/runner");
+    const { AGENT } = await import("./support/agent");
+
+    /** 记录每次落盘的 storage_key 与交给 `discard` 的旧 key。 */
+    const writtenKeys: string[] = [];
+    const discarded: string[][] = [];
+
+    async function extractOnce(): Promise<void> {
+      await createExtraction(id, {
+        sourceAssetIds: assetIds,
+        categories: ["topdown"],
+        requirement: "faithful",
+      });
+
+      const runner = createExtractionRunner({
+        store: extractionStore,
+        files: {
+          write: async (_runId, images) =>
+            images.map((image, index) => {
+              const storageKey = `library-assets/test/${randomUUID()}-${index}.png`;
+              writtenKeys.push(storageKey);
+              return {
+                storageKey,
+                fileName: `${index}.png`,
+                mimeType: image.mimeType,
+                width: null,
+                height: null,
+                category: image.category,
+                sourceAssetId: image.sourceAssetId,
+                sortOrder: image.sortOrder,
+                watermarkRemoved: image.watermarkRemoved,
+                watermarkNote: image.watermarkNote,
+              };
+            }),
+          discard: async (storageKeys) => {
+            discarded.push([...storageKeys]);
+          },
+        },
+        handler: {
+          async run() {
+            return {
+              images: [
+                {
+                  bytes: Buffer.from("png"),
+                  mimeType: "image/png",
+                  category: "topdown",
+                  sourceAssetId: assetIds[0] as string,
+                  sortOrder: 1,
+                  watermarkRemoved: true,
+                  watermarkNote: null,
+                },
+              ],
+              failures: [],
+              skipped: [],
+            };
+          },
+        },
+        loadCollection: async () => ({
+          id,
+          platform: null,
+          sourceTitle: null,
+          sourceBody: null,
+          assets: assetIds.map((assetId, index) => ({
+            id: assetId,
+            fileName: `asset-${index}.png`,
+            mimeType: "image/png",
+          })),
+        }),
+        loadSourceImage: async () => ({ bytes: Buffer.from("src"), mimeType: "image/png" }),
+        loadAgent: async () => AGENT,
+      });
+
+      expect(await runner.runOnce()).toMatchObject({ ran: true, status: "succeeded" });
+    }
+
+    await extractOnce();
+    const first = await listLibrary(id);
+    expect(first.total).toBe(1);
+    const firstAssetId = first.groups[0]?.items[0]?.id;
+    expect(firstAssetId).toBeDefined();
+    expect(discarded).toEqual([]);
+
+    await extractOnce();
+    const second = await listLibrary(id);
+    // 条数不增加：同一格只留最新一条（AC-UX-3）。
+    expect(second.total).toBe(1);
+    expect(second.groups[0]?.items[0]?.id).not.toBe(firstAssetId);
+    // 旧素材的文件一并交出去删，磁盘不残留。
+    expect(discarded).toEqual([[writtenKeys[0] as string]]);
+    // 两次运行都还在：运行历史不被删，只是产物被顶掉。
+    expect((await listExtractionRuns(id)).length).toBe(2);
   });
 });

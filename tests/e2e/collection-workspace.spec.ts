@@ -366,7 +366,7 @@ test("AC-UI-7 运行中标题下方出现进度条与百分比，进度随 progr
   expect(Math.max(...seen), "进度不会超过 100%").toBeLessThanOrEqual(100);
 
   // 结束后进度条换成状态标签。
-  await expect(page.getByTestId("extraction-run")).toContainText("已完成", { timeout: 60_000 });
+  await expect(page.getByTestId("extraction-run")).toContainText("已提取", { timeout: 60_000 });
   await expect(page.getByTestId("inline-progress")).toHaveCount(0);
 });
 
@@ -526,7 +526,7 @@ test("AC-PROG-1 AC-PROG-2 AC-PROG-3 运行中恰好一格「处理中」、其�
     .toBe(true);
 
   // 跑完不再有「处理中 / 等待中」（AC-PROG-5）。
-  await expect(page.getByTestId("extraction-run")).toContainText("已完成", { timeout: 90_000 });
+  await expect(page.getByTestId("extraction-run")).toContainText("已提取", { timeout: 90_000 });
   await expect
     .poll(
       async () =>

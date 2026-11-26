@@ -76,7 +76,15 @@ export async function writeLibraryImages(
   return stored;
 }
 
-export const libraryAssetWriter: LibraryWriter = { write: writeLibraryImages };
+/** 被新产物顶掉的旧产物：只删这些文件，同一次运行里的其它素材不受影响。 */
+export async function discardLibraryFiles(storageKeys: readonly string[]): Promise<void> {
+  for (const storageKey of storageKeys) await removeLibraryFile(storageKey);
+}
+
+export const libraryAssetWriter: LibraryWriter = {
+  write: writeLibraryImages,
+  discard: discardLibraryFiles,
+};
 
 /** 鉴权读取素材图片；文件缺失按 404 处理（与资源夹原图同一约定）。 */
 export async function readLibraryFile(storageKey: string): Promise<Buffer> {

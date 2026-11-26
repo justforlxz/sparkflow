@@ -324,7 +324,8 @@ test("AC-01-6 删除资源夹后，其提取运行与素材都不再出现", asy
 
   await loginInBrowser(page);
   await page.goto(`/collections/${created.id}`);
-  await page.getByRole("button", { name: "删除" }).click();
+  // `exact`：结果卡标题栏新增了「删除选中」，模糊匹配会同时命中两个按钮（MKACG-1006）。
+  await page.getByRole("button", { name: "删除", exact: true }).click();
 
   const dialog = page.getByRole("dialog", { name: "删除这个资源夹？" });
   await expect(dialog).toContainText("提取运行与素材会一并删除");

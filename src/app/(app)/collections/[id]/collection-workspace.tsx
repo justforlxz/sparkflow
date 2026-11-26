@@ -4,12 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/components/api";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Pill } from "@/components/ui/Pill";
+import { useToast } from "@/components/ui/Toast";
 import { COLLECTION_STATUS_TONE, EXTRACTION_STATUS_TONE } from "@/components/ui/status-tone";
 import { PAGE_SUBTITLE_CLASS, PAGE_TITLE_CLASS, TEXT_LINK_CLASS } from "@/components/ui/styles";
 import { SELECTABLE_CATEGORIES } from "@/modules/extraction/categories";
 import { EXTRACTION_POLL_INTERVAL_MS, LIBRARY_COPY } from "@/modules/extraction/constants";
 import { extractionItemKey } from "@/modules/extraction/item-key";
+import { duplicateLibraryAssets, removeLibraryAssets } from "@/modules/extraction/library-edit";
 import {
   buildResultCards,
   type ResultCardView,
@@ -62,11 +65,22 @@ export function CollectionWorkspace({
   );
   const [runs, setRuns] = useState(initialRuns);
   const [library, setLibrary] = useState(initialLibrary);
+  // 已经删掉、但撤销窗口还没结束的素材（MKACG-1006）：界面先当它们不存在，
+  // 窗口结束才真的发 DELETE。服务端那一份在这期间没变，所以撤销只是把它们放回来。
+  const [hiddenAssets, setHiddenAssets] = useState<Set<string>>(() => new Set());
+  // 勾选中的素材 id：批量删除用，与左栏「勾选原图」是两套选择。
+  const [selectedAssets, setSelectedAssets] = useState<Set<string>>(() => new Set());
+  // 待确认的删除：`delete` 是逐条/批量删除，`stale` 是「只保留最新」的重复产物清理。
+  const [confirming, setConfirming] = useState<{
+    kind: "delete" | "stale";
+    assetIds: string[];
+  } | null>(null);
   const [requirement, setRequirement] = useState<string>(EXTRACT_REQUIREMENTS[0].value);
   const [extraPrompt, setExtraPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [retrying, setRetrying] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   // 整页锁高度只对宽屏生效（AC-UI-1）：窄屏是单列流式，页面要能正常滚动（AC-UI-3、AC-UI-10）。
   useEffect(() => {
     const wide = window.matchMedia("(min-width: 1240px)");
@@ -134,9 +148,16 @@ export function CollectionWorkspace({
     };
   }, [polling, collection.id, router]);
 
+  // 撤销窗口内已经删掉的素材：界面与计数都按「看不见」算，服务端那一份不动（AC-DEL2-3）。
+  const visibleLibrary = useMemo(
+    () => removeLibraryAssets(library, hiddenAssets),
+    [library, hiddenAssets],
+  );
+  /** 重跑叠加出来的重复产物：同一张原图同一类别只留最新一条。 */
+  const staleAssets = useMemo(() => duplicateLibraryAssets(visibleLibrary), [visibleLibrary]);
   // 结果卡：纯函数算出「每张原图的三类产出」，再叠加本地点了「重试」但运行还没回来的格子。
   const cards = useMemo(() => {
-    const built = buildResultCards({ sourceAssets: assets, library, runs });
+    const built = buildResultCards({ sourceAssets: assets, library: visibleLibrary, runs });
     if (retrying.size === 0) return built;
 
     return built.map((card) => ({
@@ -147,7 +168,7 @@ export function CollectionWorkspace({
           : cell,
       ),
     }));
-  }, [assets, library, runs, retrying]);
+  }, [assets, visibleLibrary, runs, retrying]);
 
   function toggleAsset(assetId: string): void {
     setDeselected((current) => {
@@ -234,6 +255,76 @@ export function CollectionWorkspace({
     }
   }
 
+  /* ---------- 删除素材（MKACG-1006）：先只从界面拿走，撤销窗口结束才真正删除 ---------- */
+
+  function toggleSelectedAsset(assetId: string): void {
+    setSelectedAssets((current) => {
+      const next = new Set(current);
+      if (next.has(assetId)) next.delete(assetId);
+      else next.add(assetId);
+      return next;
+    });
+  }
+
+  function hideAssets(assetIds: string[]): void {
+    const ids = new Set(assetIds);
+    setHiddenAssets((current) => new Set([...current, ...ids]));
+    // 已经删掉的素材不能再留在「勾选」里，否则批量删除会在失效 id 上再次中止。
+    setSelectedAssets((current) => new Set([...current].filter((id) => !ids.has(id))));
+  }
+
+  function showAssets(assetIds: string[]): void {
+    const ids = new Set(assetIds);
+    setHiddenAssets((current) => new Set([...current].filter((id) => !ids.has(id))));
+  }
+
+  /** 撤销窗口结束：真正发删除请求。删掉的从本地素材库里去掉，失败的以服务端为准重新拉一次。 */
+  async function commitDelete(assetIds: string[]): Promise<void> {
+    setError(null);
+    try {
+      for (const assetId of assetIds) {
+        await fetchJson<{ id: string }>(`/api/library/${assetId}`, { method: "DELETE" });
+      }
+      setLibrary((current) => removeLibraryAssets(current, new Set(assetIds)));
+      showAssets(assetIds);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : LIBRARY_COPY.deleteFailed);
+      showAssets(assetIds);
+      try {
+        setLibrary(await fetchJson<LibraryView>(`/api/collections/${collection.id}/library`));
+      } catch (refreshCause) {
+        setError(refreshCause instanceof Error ? refreshCause.message : "素材库刷新失败");
+      }
+    }
+  }
+
+  /** 删除（逐条或批量）与「只保留最新」共用一条路径：先隐藏，5 秒内可撤销。 */
+  function removeWithUndo(assetIds: string[], message: string): void {
+    hideAssets(assetIds);
+    toast.show(message, {
+      tone: "success",
+      action: {
+        label: LIBRARY_COPY.undoAction,
+        onAction: () => showAssets(assetIds),
+        onExpire: () => void commitDelete(assetIds),
+      },
+    });
+  }
+
+  function confirmRemoval(): void {
+    const target = confirming;
+    if (!target) return;
+    setConfirming(null);
+    // 没有可删的素材时不弹提示：按钮本身在空集合上是禁用的，这里只是不给空操作留后路。
+    if (target.assetIds.length === 0) return;
+    removeWithUndo(
+      target.assetIds,
+      target.kind === "stale"
+        ? LIBRARY_COPY.keepLatestToast(target.assetIds.length)
+        : LIBRARY_COPY.deletedToast(target.assetIds.length),
+    );
+  }
+
   const percent = progressPercent(activeRun?.progress ?? null);
   const failureText = latestRun ? runFailureText(latestRun) : null;
 
@@ -311,7 +402,7 @@ export function CollectionWorkspace({
 
           <span>原图 {assets.length} 张</span>
           <span>
-            {LIBRARY_COPY.libraryTab} {library.total} {LIBRARY_COPY.itemCountSuffix}
+            {LIBRARY_COPY.libraryTab} {visibleLibrary.total} {LIBRARY_COPY.itemCountSuffix}
           </span>
         </div>
       </div>
@@ -335,6 +426,17 @@ export function CollectionWorkspace({
             retrying={retrying}
             onRetry={(cell) => void retryCell(cell)}
             onRerun={(card) => void rerunCard(card)}
+            selection={{
+              selected: selectedAssets,
+              staleCount: staleAssets.length,
+              onToggle: toggleSelectedAsset,
+              onClear: () => setSelectedAssets(new Set()),
+              onDeleteSelected: () =>
+                setConfirming({ kind: "delete", assetIds: [...selectedAssets] }),
+              onDeleteOne: (assetId) => setConfirming({ kind: "delete", assetIds: [assetId] }),
+              onKeepLatest: () =>
+                setConfirming({ kind: "stale", assetIds: staleAssets.map((asset) => asset.id) }),
+            }}
           />
         </div>
 
@@ -352,6 +454,30 @@ export function CollectionWorkspace({
           />
         </div>
       </div>
+
+      {/* 二次确认（AC-DEL2-2）：删除与「只保留最新」都先问一次，确认后 5 秒内还能撤销。 */}
+      <ConfirmDialog
+        open={confirming !== null}
+        danger
+        title={
+          confirming?.kind === "stale"
+            ? LIBRARY_COPY.keepLatestConfirmTitle
+            : LIBRARY_COPY.deleteConfirmTitle
+        }
+        body={
+          confirming?.kind === "stale"
+            ? LIBRARY_COPY.keepLatestConfirmBody(confirming.assetIds.length)
+            : confirming
+              ? LIBRARY_COPY.deleteConfirmBody(confirming.assetIds.length)
+              : null
+        }
+        confirmLabel={LIBRARY_COPY.confirmDelete}
+        cancelLabel={LIBRARY_COPY.cancelAction}
+        confirmTestId="library-delete-confirm"
+        cancelTestId="library-delete-cancel"
+        onConfirm={confirmRemoval}
+        onCancel={() => setConfirming(null)}
+      />
     </section>
   );
 }

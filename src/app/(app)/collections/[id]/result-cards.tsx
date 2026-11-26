@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { Panel } from "@/components/ui/Panel";
 import { Pill } from "@/components/ui/Pill";
-import { buttonClass } from "@/components/ui/styles";
+import { buttonClass, CHECKBOX_CLASS } from "@/components/ui/styles";
 import { LIBRARY_COPY } from "@/modules/extraction/constants";
 import { extractionItemKey } from "@/modules/extraction/item-key";
 import type { ResultCardView, ResultCellRetry, ResultCellState } from "@/modules/extraction/results";
@@ -16,14 +16,31 @@ import type { ResultCardView, ResultCellRetry, ResultCellState } from "@/modules
  * 完成=缩略图（点开看大图）、不存在=灰底与原因、失败=红框、原因与「重试」；
  * 运行中：处理中=扫光 + 该格原图的模糊底色，等待中=同样的模糊底色但没有扫光（MKACG-999）。
  *
+ * 删除素材（MKACG-1006）：完成的格子上有勾选框与「删除」两个入口 —— 单条删除走格子上的
+ * 删除按钮，批量删除走勾选 + 面板标题栏的「删除选中」；两者都只删素材，不动原图。
+ * 重跑叠加出来的重复产物由标题栏的「只保留最新」一次清掉。
+ *
  * 结果卡只用描边与圆角，**不带阴影** —— 外层三栏面板已经有唯一的阴影档（AC-UI-4）。
  */
+export interface ResultSelectionProps {
+  /** 勾选中的素材 id（批量删除用）。 */
+  selected: ReadonlySet<string>;
+  /** 重复堆积的旧产物条数：0 时「只保留最新」不可点。 */
+  staleCount: number;
+  onToggle(assetId: string): void;
+  onClear(): void;
+  onDeleteSelected(): void;
+  onDeleteOne(assetId: string): void;
+  onKeepLatest(): void;
+}
+
 export interface ResultCardsProps {
   cards: ResultCardView[];
   /** 刚刚点了「重试」的格子（`<原图id>|<类别>`）：这些格子显示「重试中」而不是「提取中」。 */
   retrying: ReadonlySet<string>;
   onRetry(retry: ResultCellRetry): void;
   onRerun(card: ResultCardView): void;
+  selection: ResultSelectionProps;
 }
 
 /**
@@ -44,13 +61,53 @@ const DOT_CLASS: Record<ResultCellState, string> = {
   idle: "bg-soft",
 };
 
-export function ResultCards({ cards, retrying, onRetry, onRerun }: ResultCardsProps) {
+export function ResultCards({ cards, retrying, onRetry, onRerun, selection }: ResultCardsProps) {
   return (
     <Panel
       testId="panel-results"
       title={LIBRARY_COPY.resultsPanelTitle}
       className="min-[1240px]:flex min-[1240px]:h-full min-[1240px]:min-h-0 min-[1240px]:flex-col"
       bodyClassName="min-[1240px]:min-h-0 min-[1240px]:flex-1 min-[1240px]:overflow-y-auto"
+      actions={
+        cards.length === 0 ? undefined : (
+          <>
+            <span
+              data-testid="result-selection-count"
+              className="text-footnote text-ink-secondary"
+            >
+              {LIBRARY_COPY.selectedLibraryLabel} {selection.selected.size}{" "}
+              {LIBRARY_COPY.itemCountSuffix}
+            </span>
+            <button
+              type="button"
+              data-testid="result-clear-selection"
+              onClick={selection.onClear}
+              disabled={selection.selected.size === 0}
+              className={buttonClass({ size: "sm" })}
+            >
+              {LIBRARY_COPY.clearSelection}
+            </button>
+            <button
+              type="button"
+              data-testid="result-delete-selected"
+              onClick={selection.onDeleteSelected}
+              disabled={selection.selected.size === 0}
+              className={buttonClass({ variant: "danger", size: "sm" })}
+            >
+              {LIBRARY_COPY.deleteSelectedAction}
+            </button>
+            <button
+              type="button"
+              data-testid="result-keep-latest"
+              onClick={selection.onKeepLatest}
+              disabled={selection.staleCount === 0}
+              className={buttonClass({ size: "sm" })}
+            >
+              {LIBRARY_COPY.keepLatestAction}
+            </button>
+          </>
+        )
+      }
     >
       {cards.length === 0 ? (
         <EmptyState message={LIBRARY_COPY.emptyResults} />
@@ -58,7 +115,13 @@ export function ResultCards({ cards, retrying, onRetry, onRerun }: ResultCardsPr
         <ul className="space-y-2">
           {cards.map((card) => (
             <li key={card.sourceAssetId}>
-              <ResultCard card={card} retrying={retrying} onRetry={onRetry} onRerun={onRerun} />
+              <ResultCard
+                card={card}
+                retrying={retrying}
+                onRetry={onRetry}
+                onRerun={onRerun}
+                selection={selection}
+              />
             </li>
           ))}
         </ul>
@@ -72,11 +135,13 @@ function ResultCard({
   retrying,
   onRetry,
   onRerun,
+  selection,
 }: {
   card: ResultCardView;
   retrying: ReadonlySet<string>;
   onRetry(retry: ResultCellRetry): void;
   onRerun(card: ResultCardView): void;
+  selection: ResultSelectionProps;
 }) {
   return (
     <article
@@ -149,6 +214,34 @@ function ResultCard({
                       {LIBRARY_COPY.watermarkBadge}
                     </Pill>
                   )}
+                  {/* 单条删除（AC-DEL2-1）：只删这一条素材，同一张原图的其它类别不受影响。 */}
+                  <button
+                    type="button"
+                    data-testid="result-cell-delete"
+                    data-category={cell.category}
+                    aria-label={`${LIBRARY_COPY.deleteAssetLabel}：${cell.asset.fileName}`}
+                    title={LIBRARY_COPY.deleteAssetAction}
+                    onClick={() => {
+                      if (cell.asset) selection.onDeleteOne(cell.asset.id);
+                    }}
+                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-sm border border-line bg-panel/90 text-caption leading-none text-ink-secondary transition-colors hover:border-danger/40 hover:bg-danger-soft hover:text-danger"
+                  >
+                    ×
+                  </button>
+                  {/* 批量删除（AC-DEL2-2）：勾选多条后走标题栏的「删除选中」。 */}
+                  <label className="absolute bottom-1 left-1 flex items-center rounded-sm bg-panel/90 p-0.5">
+                    <input
+                      type="checkbox"
+                      data-testid="result-cell-select"
+                      data-category={cell.category}
+                      className={CHECKBOX_CLASS}
+                      checked={selection.selected.has(cell.asset.id)}
+                      onChange={() => {
+                        if (cell.asset) selection.onToggle(cell.asset.id);
+                      }}
+                      aria-label={`${LIBRARY_COPY.librarySelectLabel}：${cell.asset.fileName}`}
+                    />
+                  </label>
                 </div>
               ) : cell.state === "failed" ? (
                 <div

@@ -1,4 +1,4 @@
-# 05 图片提取（从场景里取出目标，一图对一图，走 magpie 图片 MCP）
+# 05 图片提取（从场景里取出目标，一图对一图，走 magpie 的 REST 出图接口）
 
 > 依赖：02 网关、03 Agent 配置、04 任务编排、10 功能开关 ｜ 对端：magpie 插件 `magpie-image-edit`
 
@@ -26,43 +26,68 @@
 「提取」不是「重绘」：重绘乐于改变与美化，提取要求**不改结构、只搬运**——
 忠实保留目标自身的纹理、材质、图案与颜色，把与目标无关的场景元素全部去掉。
 
-**本项目不实现图片生成模型，也不实现图生图逻辑**：全部经由 magpie 的 MCP 工具完成
-（插件仓库 `github.com/justforlxz/magpie-image-edit`）。
+**本项目不实现图片生成模型，也不实现图生图逻辑**：全部经由 magpie 的 REST 出图接口完成
+（图生图 `POST /v1/images/edits`，见「上游接口事实」）。
 
-## 上游接口事实（2026-11-20 对线上 endpoint 实测 `tools/list`）
+## 上游接口事实（2026-11-26 对线上 endpoint 实测）
 
-线上 `https://magpie.mkacg.com/mcp/magpie/image`（serverInfo `magpie-image` v0.1.4582）暴露的工具是
-**magpie 内置的三件**，不是 `magpie-image-edit` 插件的 `edit_image` / `image_result`：
+出图走 magpie 的 **OpenAI 兼容 REST**：`POST <baseUrl>/v1/images/edits`（图生图）。
+纯文生图的 `/v1/images/generations` 同样可用（同一套 `watermark: false`），但本版本没有文生图入口，
+不实现那条调用路径 —— 需要时只是换一个路径常量。
 
-| 工具 | 必填 | 可用参数 |
+端点是现有网关 `baseUrl` 上的另一条路由（线上 `https://magpie.mkacg.com`），用同一个密钥，
+网关 `protocol` 仍是 `magpie-mcp`（连接测试仍走那条 MCP 端点），**用户不需要重新配置网关**（AC-REST-6）。
+
+图生图的请求体（一图对一图）：
+
+| 字段 | 值 | 说明 |
 | --- | --- | --- |
-| `generate_image` | `prompt` | `n`、`size`、`resolution`、`quality`、`background`、`complexity`、`model`、`reference_images` |
-| `generate_video` | `prompt` | 本版本不用 |
-| `generation_result` | `id` | 轮询未就绪的生成结果 |
+| `prompt` | 拼装好的提示词 | 见「设计契约」 |
+| `n` | `1` | ADR 0008 一图对一图 |
+| `size` | `<宽>x<高>` | 必须 32 的倍数、∈[512,4096]、比例 ≤3:1（`deriveExtractionSize`） |
+| `images` | `[{ image_url: <data URL> }]` | 原图压缩后内联，只放那一张 |
+| `watermark` | `false` | **关掉上游水印的唯一开关** |
+| `response_format` | `"b64_json"` | 要内联字节；只回 `url` 时适配器立刻取回 |
+| `model` | 快照里的模型名；留空则省略整个字段 | 省略时用网关侧默认图片模型 |
 
-因此**图生图走 `generate_image` 的 `reference_images` 参数**，不是 `edit_image`；
-轮询工具名是 `generation_result`，不是 `image_result`。
+回包：`{ created, data: [{ b64_json, mime_type, url? }], model, usage }`。
 
 要点：
 
-- `n` 上限 4；一图对一图时每次 `n = 1`、`reference_images` 只放那一张原图。
-- 生成可能同步完成，也可能返回一个 id，需要 `generation_result` 轮询；同一 id 轮询不重复计费。
-- 图片可由回包内联或由网关 URL 提供；URL 只保留约 1 小时，因此拿到就落盘。
+- **同步**：实测单张 31–208 秒（1536×1536，含上游排队），成功直接回 200 + b64；
+  没有作业 id，**不需要轮询**。
+- 单次请求超时 5 分钟（实测最长值的 1.4 倍以上）；调用发生在提取 worker 里，
+  不经过 Next.js 的路由处理，不触发热 route 超时。
+- 失败分类沿用 `IMAGE_ERROR_CODES`：401/403 → `UPSTREAM_AUTH`；5xx 与网络超时 → `UPSTREAM_TIMEOUT`；
+  其余 4xx（含「模型不存在」）→ `UPSTREAM_REJECTED`；回包结构不对 → `UPSTREAM_FORMAT`。
+- 上游原文只进日志；界面摘要由 `describeImageRejection` 说成中文（MKACG-902）。
 
-### 水印（实测结论，2026-11-20）
+### 水印（实测结论，2026-11-26，MKACG-1008）
 
-sensenova 默认模型（`sensenova-token-plan/sensenova-u1.5-lite`）出图右下角带「日日新 / senseNova」水印。
-通过 magpie 的两条路径都试过传 `watermark: false`：
+sensenova 出图右下角带「日日新 / senseNova」水印。**根因不是模型，是通道**：
+MCP `generate_image` 的工具 schema 里**没有** `watermark` 字段（可用参数只有 background、complexity、
+model、n、prompt、quality、reference_images、resolution、size），传了被静默丢弃。
 
-| 路径 | 结果 |
+| 通道 | 结果 |
 | --- | --- |
-| MCP `generate_image`（在本体参数里加 `watermark: false`） | 不报错（200，工具 schema 未拒绝未知字段），取回成品**水印仍在** |
-| REST `POST /v1/images/generations`（加 `watermark: false`） | 200 返回 b64，成品**水印仍在** |
+| MCP `generate_image` + `watermark: false` | 200，成品**水印仍在**（字段被丢） |
+| REST `/v1/images/generations` + `watermark: false` | 200，**无水印** |
+| REST `/v1/images/edits` + `watermark: false`（图生图的真实通道） | 200，**无水印** |
+
+像素核验（纯色输入，统计右下角与背景色有差异的像素占比）：
+
+| 请求 | 右下角非背景像素 |
+| --- | --- |
+| `watermark: false` | `0.00%` |
+| 不传 `watermark` | `6.45%` |
 
 因此：
 
-- **MUST NOT** 在实现里加 `watermark` 参数或以为它能关水印；magpie 与 sensenova 这条链路上无效。
-- 也不要把「不要水印」写成提示词要求然后承诺无水印——实测同模型下提示词无效。
+- 出图**必须**走 REST 并固定带 `watermark: false`；原先「作业 id + 轮询」的路径不再存在。
+- **不再做裁切后处理**（MKACG-1004 的 `watermark.ts`）：`watermark: false` 生效后它只会白损失一条
+  真实内容（无条件裁掉底部 10% 再补回）。代码与安全检测保留作兜底，**默认不注入、默认不执行**。
+- 不要指望提示词：实测同模型下把「不要水印」写进提示词无效。
+- 界面的水印说明文案保留（下一节）：用户可能换成一个不支持关水印的模型。
 - 界面必须展示定稿文案（下一节），两处共用同一个常量，不得各写一版。
 
 ### 水印提示文案（定稿，2026-11-20）
@@ -122,18 +147,16 @@ sensenova 默认模型（`sensenova-token-plan/sensenova-u1.5-lite`）出图右�
 ### MUST
 
 1. 适配器接口 `ImageGenerator.generate(input) => Promise<GeneratedImage[]>`；
-   实现 `MagpieImageGenerator`，只依赖 MCP 工具名与返回结构，不依赖具体模型。
-2. **一图对一图**：资源夹有 N 张原图，就发 N 次 `generate_image`，每次 `n = 1` 且
-   `reference_images` 只放那一张原图；成品按原图顺序写入 `sort_order`。
+   实现 `MagpieImageGenerator`，只依赖 REST 端点与回包结构，不依赖具体模型。
+2. **一图对一图**：资源夹有 N 张原图，就发 N 次 `POST /v1/images/edits`，每次 `n = 1` 且
+   `images` 只放那一张原图；成品按原图顺序写入 `sort_order`。
 3. **单任务内完成全部原图**，不拆成多个任务、不分批；一张失败不影响其它张继续。
 4. 原图传给上游前压缩：长边不超过 1536，转 JPEG（质量 85），以 **data URL**
-   （`data:image/jpeg;base64,...`）放进 `reference_images`；实测内联 b64 与 data URL 两种写法都可以，
-   本实现统一用 data URL。
-5. 超过约 20 秒没画完时，工具结果只回作业 id（`_meta["usemagpie.ai/pending"]`），
-   此时只能用 `generation_result` 轮询（间隔 3 秒，上限为任务超时）；拿到成品
-   （`content` 里的 image 块内联 b64，或 `_meta["usemagpie.ai/files"]` 与文字里的 URL）后
-   立即取回字节、写盘到 `generated-assets/<resultId>/`，写 `generated_asset`。
-6. `mimeType` 以回包为准（不写死 png；内联取 image 块的 `mimeType`，URL 取下载响应的
+   （`data:image/jpeg;base64,...`）放进 `images[].image_url`。
+5. 调用是**同步**的：单次请求超时 5 分钟（`DEFAULT_REQUEST_TIMEOUT_MS`），超时按 `UPSTREAM_TIMEOUT`
+   记到条目上，可重试、不静默。不在适配器里盲目重试（一次调用已经几十秒到几分钟，
+   而阶段总超时 45 分钟是硬上限）；重试由结果格上的「重试」重跑那一格（ADR 0005）。
+6. `mimeType` 以回包为准（不写死 png；内联取 `data[].mime_type`，URL 取下载响应的
    `content-type`）；`bytes` 与实际落盘大小不一致时按落盘大小记录。
 7. 失败如实记录到阶段 `error`：把失败的原图 id 与原因列出，阶段状态按 04 判定（部分成功即 `partial`）。
 8. 不修改、不移动、不覆盖原始图片。
@@ -159,8 +182,11 @@ sensenova 默认模型（`sensenova-token-plan/sensenova-u1.5-lite`）出图右�
 
 ## 数据与接口
 
-上游：magpie MCP（`generate_image` + `generation_result`）。网关 `protocol` 仍为 `magpie-mcp`，
-`baseUrl` 指向 magpie；工具名由适配器内置常量给出（`GENERATE_IMAGE_TOOL`、`GENERATION_RESULT_TOOL`）。
+上游：magpie 的 OpenAI 兼容 REST，`POST <baseUrl>/v1/images/edits`（config 的 `baseUrl` 指向 magpie，
+线上 `https://magpie.mkacg.com`）。网关 `protocol` 仍为 `magpie-mcp` —— REST 与 MCP 是同一台网关上的
+两条路由，共用地址与密钥，所以不需要新增协议值，也不需要用户重新配置（AC-REST-6）。
+路径、`watermark: false`、`response_format` 由适配器内置常量给出
+（`IMAGES_EDITS_PATH`、`WATERMARK_PARAM`、`RESPONSE_FORMAT`）。
 
 下游写入：`generated_asset`（id、result_id、storage_key、file_name、mime_type、sort_order、width、height、
 source_asset_id）。**新增 `source_asset_id`**：记录这张成品对应哪张原图，供界面按原图对照展示。
@@ -169,15 +195,21 @@ source_asset_id）。**新增 `source_asset_id`**：记录这张成品对应哪�
 
 | 编号 | 断言 | 自动化用例 |
 | --- | --- | --- |
-| AC-05-1 | 资源夹 3 张原图 → 任务发出 3 次 `generate_image`，每次 `n = 1` 且 `reference_images` 长度为 1，且与原图一一对应 | 单测（断言调用次数与每次入参） |
+| AC-05-1 | 资源夹 3 张原图 → 任务发出 3 次 `POST /v1/images/edits`，每次 `n = 1` 且 `images` 长度为 1，且与原图一一对应 | 单测（断言调用次数与每次入参） |
 | AC-05-2 | 每个 `generated_asset.source_asset_id` 都能在原图集合里找到，且不重复 | 集成测试 |
-| AC-05-3 | 传入上游的图片是压缩后的 JPEG、长边 ≤ 1536、以 data URL 形式放进 `reference_images` | 单测 |
-| AC-05-4 | 只回作业 id 时轮询 `generation_result` 直到拿到图片，不重复触发绘制 | 单测 |
+| AC-05-3 | 传入上游的图片是压缩后的 JPEG、长边 ≤ 1536、以 data URL 形式放进 `images[].image_url` | 单测 |
+| AC-05-4 | 回包只给 `url` 时立刻下载取回字节，并按下载响应的 `content-type` 记录；下载回来不是图片时记 `UPSTREAM_FORMAT` | 单测 |
 | AC-05-5 | 3 张中第 2 张失败：结果保留 2 张成品、`sort_order` 为 1 和 3，任务为 `partial`，错误里点名第 2 张原图 | 单测 |
 | AC-05-6 | 落盘文件字节与上游给的内容一致（内联按 b64 解码结果，URL 按下载响应字节），`mime_type` 与回包 `mimeType` 或下载响应的 `content-type` 一致 | 集成测试 |
 | AC-05-7 | 日志与阶段错误里不出现网关 key 与 base64 内容 | 单测（日志断言） |
 | AC-05-9 | 任务快照里含提取目标原文与所选提取要求；提示词同时包含「提取目标：<原文>」与提取要求描述 | 单测 |
 | AC-05-10 | 提取要求只剩 `faithful` / `flatten` / `dereflect` 三项，旧的视觉方向三项被拒绝 | 单测 |
+| AC-REST-1 | 出图请求固定带 `watermark: false`，走 `<baseUrl>/v1/images/edits`，一图对一图；三类提取产物无水印 | 单测（请求体）+ 人工像素核验 |
+| AC-REST-2 | 产物尺寸仍满足 32 的倍数 / ∈[512,4096] / 比例 ≤3:1，且长宽比与推导一致 | 人工实测 + 单测（`deriveExtractionSize`） |
+| AC-REST-3 | 裁切后处理默认不执行：产物底部条带内容与生成图一致，不被替换成纯色 | 单测 + e2e |
+| AC-REST-4 | 单次请求超时 5 分钟；超时/鉴权/被拒/格式各自分类，原因可读、可重试、不静默 | 单测 |
+| AC-REST-5 | `pnpm check` / `test:integration` / `test:e2e` 全过；mock 适配器行为不变 | 命令 |
+| AC-REST-6 | 网关协议值仍是 `magpie-mcp`，用户不需要重新配置网关 | 单测（`resolveImageGenerator`）+ 人工 |
 
 ## 验证方式
 
@@ -186,6 +218,7 @@ pnpm test
 pnpm test:e2e    # mock 适配器跑通任务链路
 ```
 
-真实连通（人工，一次性）：设置里配好 magpie 图片网关（`/mcp/magpie/image`）并选好生图模型；
-在 sparkflow 里对一个 3 张原图的资源夹发起创作，确认 3 张成品分别对应 3 张原图、可预览、可下载。
+真实连通（人工，一次性）：设置里配好 magpie 图片网关（`baseUrl` 指向 magpie，协议 `magpie-mcp`），
+生图模型留空即用网关侧默认模型；在 sparkflow 里对一个 3 张原图的资源夹发起创作，
+确认 3 张成品分别对应 3 张原图、**右下角没有「日日新 / senseNova」水印**、可预览、可下载，并记录单张耗时。
 若网关未配置或凭据无效，本项记阻塞，不得用 mock 结论替代。

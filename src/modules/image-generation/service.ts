@@ -14,11 +14,18 @@ import {
   type GatewayExecutionTarget,
 } from "@/modules/gateway/service";
 import type { VisionAnalyzer } from "@/modules/gateway/vision";
-import { MagpieImageGenerator } from "./adapters/magpie-mcp";
+import { MagpieImageGenerator } from "./adapters/magpie-rest";
 import { MockImageGenerator } from "./adapters/mock";
 import { MockVisionAnalyzer } from "./adapters/mock-vision";
 import { IMAGE_ERROR_CODES, type ImageGenerator } from "./adapters/types";
-/** 图片 Agent 必须绑在 magpie 的图片 MCP 网关上（docs/prd/02「接口形状」）。 */
+/**
+ * 图片 Agent 必须绑在 magpie 的图片网关上（docs/prd/02「接口形状」）。
+ *
+ * 协议值仍是 `magpie-mcp`：连接测试与可用性判定走的还是那条 MCP 端点，
+ * 但真正出图走同一个 `baseUrl` 上的 REST（`/v1/images/edits`）。
+ * 之所以不新增协议值：换协议值等于要求用户重新配置网关，而 REST 与 MCP 共用同一个地址与密钥
+ * （MKACG-1008 AC-REST-6）。
+ */
 export const MAGPIE_IMAGE_PROTOCOL = "magpie-mcp";
 
 export interface ImageGeneratorConfig {

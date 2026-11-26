@@ -123,7 +123,7 @@ function context(
 const readSize = async () => ({ width: 900, height: 600 });
 const compress = async () => "data:image/jpeg;base64,AA==";
 
-/** 单测注入：默认「去水印成功且字节不变」，这样不用真 sharp 也能断言后处理的三种结局。 */
+/** 单测注入：默认「去水印成功且字节不变」，只给需要断言后处理三种结局的用例用。 */
 const watermark = async (bytes: Buffer) => ({
   bytes,
   removed: true,
@@ -131,8 +131,12 @@ const watermark = async (bytes: Buffer) => ({
   subjectRatio: 0,
 });
 
+/**
+ * 生产默认值：**不注入**去水印后处理 —— 新通道（REST + `watermark:false`）出图本身没有水印，
+ * 裁切默认不执行（MKACG-1008 AC-REST-3）。
+ */
 function deps(generator: ImageGenerator, absent: readonly string[] = []) {
-  return { generator, vision: vision(absent), compress, readSize, watermark };
+  return { generator, vision: vision(absent), compress, readSize };
 }
 
 /** 提取粒度 = 原图 × 类别（docs/prd/12 MUST 2、AC-LIB-1、AC-LIB-2）。 */
@@ -405,10 +409,23 @@ describe("提取处理器", () => {
 });
 
 /**
- * 去水印后处理（MKACG-1004）：出图后、入库前处理一次，三种结局都不阻断提取。
+ * 去水印后处理（MKACG-1004、MKACG-1008）：**注入时才执行**，三种结局都不阻断提取。
  * 后处理本身的行为由 `watermark.test.ts` 覆盖；这里只锁处理器怎么用它、怎么标注素材。
  */
-describe("去水印后处理（MKACG-1004）", () => {
+describe("去水印后处理（MKACG-1004、MKACG-1008）", () => {
+  it("AC-REST-3 默认不执行裁切：产物字节与上游给的完全一致，标成不含水印", async () => {
+    const plain = await extractImages(context(["topdown"]), deps(countingGenerator()));
+
+    expect(plain.failures).toEqual([]);
+    expect(plain.images).toHaveLength(2);
+    for (const image of plain.images) {
+      // 字节没有被裁过、也没有被补边：与适配器交出的字节一致。
+      expect(image.bytes.equals(Buffer.from("png"))).toBe(true);
+      expect(image.watermarkRemoved).toBe(true);
+      expect(image.watermarkNote).toBeNull();
+    }
+  });
+
   it("AC-WM-3 安全检测拒绝时：原图字节照常交出，标成未去水印并带上原因", async () => {
     const reason = "未去水印：底部 10% 条带里主体像素占 80.0%，裁掉会切掉主体，已保留原图";
 

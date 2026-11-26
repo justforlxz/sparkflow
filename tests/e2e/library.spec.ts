@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import sharp from "sharp";
 import { PROMPT_ONLY_TERMS } from "../../src/modules/extraction/categories";
 import { MOCK_SCRIPT_HINTS } from "../../src/modules/image-generation/mock-script";
 import { loginInBrowser } from "./support/auth";
@@ -177,44 +178,39 @@ test("AC-LIB-2 界面：部分失败标注「部分失败」、失败项数量�
   await expect(page.getByTestId("column-results").getByTestId("image-thumbnail")).toHaveCount(5);
 });
 
-test("AC-WM-3 界面：主体贴底时不去水印，结果格标「含水印」并给出原因", async ({
+test("AC-REST-3 默认不执行裁切后处理：产物底部条带与生成图一致，不再标「含水印」", async ({
   page,
   request,
 }) => {
   await createGateway(request);
-  const collection = await createCollection(request, uniqueName("AC-WM-3-ui"), 1);
+  const collection = await createCollection(request, uniqueName("AC-REST-3"), 1);
 
-  // mock 适配器按脚本把主体画到底边：安全检测拒绝裁切，产物保留原图（AC-WM-3）。
+  // mock 适配器按脚本把主体画到底边 20%：旧版后处理会裁掉底部 10% 再补成采样背景色（白）。
+  // 现在默认不执行后处理，所以产物底部必须还是生成图里的主体色（AC-REST-3）。
   const run = await extractAndWait(request, collection, {
     categories: ["topdown"],
     extraPrompt: MOCK_SCRIPT_HINTS.subjectToBottom,
   });
   expect(run.status).toBe("succeeded");
 
+  // 直接读落盘的产物字节：底部条带的最底一行仍应是主体色，不是被补回的背景色。
+  const library = await listLibrary(request, collection.id);
+  const item = library.groups[0]?.items[0];
+  expect(item).toBeDefined();
+  const file = await request.get(item!.url);
+  expect(file.status()).toBe(200);
+  const { data, info } = await sharp(await file.body()).raw().toBuffer({ resolveWithObject: true });
+  const index = ((info.height - 1) * info.width + Math.floor(info.width / 2)) * info.channels;
+  expect([data[index], data[index + 1], data[index + 2]]).not.toEqual([255, 255, 255]);
+
   await loginInBrowser(page);
   await page.goto(`/collections/${collection.id}`);
 
-  const badge = page.getByTestId("library-watermark-badge");
-  await expect(badge).toHaveCount(1);
-  await expect(badge).toHaveText("含水印");
-  // 原因的三条出口：title（鼠标悬停）、aria-label（读屏）、可聚焦（键盘）。
-  // 断言**完整句式**而不是关键词：原因文案是界面上唯一的一句解释，功能检测在这一句里抓到过
-  // `100.0%%`（百分号写两遍），只查关键词的用例漏了它。
-  const note = "未去水印：底部 10% 条带里主体像素占 100.0%，裁掉会切掉主体，已保留原图";
-  await expect(badge).toHaveAttribute("title", note);
-  await expect(badge).toHaveAttribute("aria-label", `含水印：${note}`);
-  await expect(badge).toHaveAttribute("tabindex", "0");
-
-  // 真实命中：角标必须自己能被指到，否则浏览器显示的是下面缩略图的 title「查看大图」，
-  // 这条原因就永远看不到（评审阻断项）。用真实 Chromium 的命中测试断言，不信 DOM 属性。
-  await badge.scrollIntoViewIfNeeded();
-  const hit = await badge.evaluate((node) => {
-    const rect = node.getBoundingClientRect();
-    const found = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    if (found === node) return "badge";
-    return found instanceof HTMLElement ? `${found.tagName}:${found.getAttribute("title") ?? ""}` : "none";
-  });
-  expect(hit).toBe("badge");
+  // 产物不含上游水印，界面上不该再出现「含水印」角标。
+  await expect(page.getByTestId("library-watermark-badge")).toHaveCount(0);
+  await expect(
+    page.getByTestId("column-results").getByTestId("image-thumbnail").first(),
+  ).toBeVisible();
 });
 
 test("AC-LIB-10 三栏各管一件事：左栏只有原图、中栏只有结果、右栏有来源信息", async ({

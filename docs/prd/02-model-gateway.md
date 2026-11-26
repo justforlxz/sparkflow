@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | `openai-chat` | 文本 | `POST <baseUrl>/chat/completions` |
 | `anthropic-messages` | 文本 | `POST <baseUrl>/messages` |
-| `magpie-mcp` | 图片 | `POST <baseUrl>/mcp/magpie/image`（JSON-RPC `tools/call`；工具 `generate_image`、`generation_result`） |
+| `magpie-mcp` | 图片 | 出图走 `POST <baseUrl>/v1/images/edits`（OpenAI 兼容 REST，固定带 `watermark: false`，见 `docs/prd/05`）；连接测试仍探 `POST <baseUrl>/mcp/magpie/image`（JSON-RPC `initialize` + `tools/list`） |
 | `magpie-vision` | 图片理解 | `POST <baseUrl>/mcp/magpie/vision`（JSON-RPC `tools/call`；工具 `analyze_image`） |
 
 新增一种形状 = 新增一个适配器并登记，不改业务代码。

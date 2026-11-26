@@ -58,7 +58,11 @@ export interface ExtractedImage {
   sourceAssetId: string;
   /** 同一张原图下的序号（从 1 开始），`sort_order` 用它。 */
   sortOrder: number;
-  /** 是否已经去掉上游模型自带的水印（MKACG-1004）：`true` 是处理过，`false` 是保留原图。 */
+  /**
+   * 产物是否不含上游模型自带的水印（MKACG-1004、MKACG-1008）：
+   * 新通道（REST + `watermark:false`）出图本身没有水印，直接是 `true`；
+   * 注入后处理时，`true` 表示裁切补边成功，`false` 表示保留了带水印的原图。
+   */
   watermarkRemoved: boolean;
   /** 没去水印的原因；去掉时是 null。界面据此说明为什么带着水印。 */
   watermarkNote: string | null;

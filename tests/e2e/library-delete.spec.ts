@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import pg from "pg";
 import { loginInBrowser } from "./support/auth";
@@ -179,12 +180,38 @@ test("AC-DEL2-3 5 秒内撤销：条目回到界面，服务端一直没有删",
   await expect(page.getByTestId("toast")).toHaveCount(0);
 });
 
-test("只保留最新：同一张原图同一类别的重复产物只留最新一条", async ({ page, request }) => {
+/** 直接补一条更旧的重复产物：重跑已经不叠加（MKACG-1007 AC-UX-3），老数据只能这样还原。 */
+async function seedLegacyDuplicate(assetId: string): Promise<string> {
+  const duplicateId = randomUUID();
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    await pool.query(
+      `INSERT INTO "library_asset"
+         (id, collection_id, extraction_run_id, source_asset_id, category, storage_key,
+          file_name, mime_type, width, height, sort_order, watermark_removed, watermark_note, created_at)
+       SELECT $1, collection_id, extraction_run_id, source_asset_id, category,
+              'library-assets/legacy/' || $1 || '.png',
+              file_name, mime_type, width, height, sort_order, watermark_removed, watermark_note,
+              created_at - interval '1 hour'
+       FROM "library_asset" WHERE id = $2`,
+      [duplicateId, assetId],
+    );
+  } finally {
+    await pool.end();
+  }
+  return duplicateId;
+}
+
+test("只保留最新：改动前留下的重复产物只留最新一条", async ({ page, request }) => {
   await createGateway(request);
   const collection = await createCollection(request, uniqueName("AC-DEL2-keep"), 1);
-  await extractAndWait(request, collection, { categories: ["topdown"] });
-  // 再跑一次：`library_asset` 每次运行各写一条，同一格堆两条。
-  await extractAndWait(request, collection, { categories: ["topdown"] });
+  const run = await extractAndWait(request, collection, { categories: ["topdown"] });
+  expect(run.status).toBe("succeeded");
+
+  const first = await listLibrary(request, collection.id);
+  const seed = first.groups.find((group) => group.category === "topdown")?.items[0];
+  expect(seed).toBeDefined();
+  await seedLegacyDuplicate(seed!.id);
 
   const before = await listLibrary(request, collection.id);
   expect(before.total).toBe(2);

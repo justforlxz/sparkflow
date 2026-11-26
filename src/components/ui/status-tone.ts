@@ -7,7 +7,7 @@
  * tone 名（`pendingPublish` / `published`）是设计变量里的颜色名，不是业务状态：
  * 资源夹状态已经没有「已发布」，但提取运行的「部分失败」仍借用橙色、「成功」仍借用绿色（MKACG-976）。
  */
-import type { ExtractionStatus } from "@/modules/extraction/constants";
+import type { ExtractionOverviewState } from "@/modules/extraction/constants";
 import type { CollectionStatus } from "@/modules/media-collection/constants";
 import type { PillTone } from "./Pill";
 
@@ -18,13 +18,15 @@ export const COLLECTION_STATUS_TONE: Record<CollectionStatus, PillTone> = {
   has_results: "pendingPublish",
 };
 
-/** 提取运行状态（`queued` / `running` / `succeeded` / `partial` / `failed`）。 */
-export const EXTRACTION_STATUS_TONE: Record<ExtractionStatus, PillTone> = {
-  queued: "neutral",
-  running: "generating",
-  succeeded: "published",
+/**
+ * 资源夹详情的页头「提取状态」（MKACG-1007 AC-UX-2）：全部出图=绿、有失败=红、
+ * 部分完成=橙、一格产物都没有=蓝、判定为不存在=中性（不是错误，MUST 2c）。
+ */
+export const EXTRACTION_OVERVIEW_TONE: Record<ExtractionOverviewState, PillTone> = {
+  ready: "published",
   partial: "pendingPublish",
   failed: "danger",
-  /** 「未发现可提取内容」不是失败：用中性色，不显示为错误（MUST 2c）。 */
-  empty: "neutral",
+  absent: "neutral",
+  idle: "draft",
 };
+

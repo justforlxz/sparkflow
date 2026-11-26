@@ -28,6 +28,8 @@ export interface LibraryAsset {
   width: number | null;
   height: number | null;
   url: string;
+  /** 入库时间：同一张原图同一类别多次运行各写一条，「只保留最新」按它判断谁最新。 */
+  createdAt: string;
 }
 
 /** 判定为不存在的条目（AC-LIB-11）：挂在对应组里，带模型原话。 */

@@ -133,6 +133,22 @@ export const LIBRARY_COPY = {
   /** 来源原图已被解除关联时如实说明，不猜编号。 */
   noSourceAssetLabel: "原图已解除关联",
   failureCountLabel: "失败项",
+  /** 素材删除（MKACG-1006）：结果格上的逐条删除、批量删除与「只保留最新」。 */
+  deleteAssetAction: "删除",
+  deleteAssetLabel: "删除这条素材",
+  deleteSelectedAction: "删除选中",
+  keepLatestAction: "只保留最新",
+  deleteConfirmTitle: "删除素材",
+  deleteConfirmBody: (count: number) =>
+    `将删除 ${count} 条素材，5 秒内可以撤销。原图与资源夹不受影响。`,
+  keepLatestConfirmTitle: "只保留最新",
+  keepLatestConfirmBody: (count: number) =>
+    `将删除 ${count} 条重复的旧产物，每张原图每个类别只留最新一条，5 秒内可以撤销。`,
+  confirmDelete: "删除",
+  deletedToast: (count: number) => `已删除 ${count} 条素材`,
+  keepLatestToast: (count: number) => `已清理 ${count} 条重复素材`,
+  undoAction: "撤销",
+  deleteFailed: "删除素材失败",
   itemCountSuffix: "条",
   /** 被视觉判定为不存在的条目（ADR 0011 第 3 条）：组内如实说明，模型原话可折叠展开。 */
   skippedLabel: "判定为不存在",

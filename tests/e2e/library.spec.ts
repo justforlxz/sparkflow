@@ -271,6 +271,10 @@ test("AC-PROMPT-6 右栏「固定三类」显示简短中文说明，不出现�
   }
   // 界面说明用中文写：夹英文字母就是提示词文本漏出来了。
   expect(text).not.toMatch(/[A-Za-z]/);
+  // 界面文案不得再承诺「正面平视」这类模型做不到的事（AC-FID-3，MKACG-1016）。
+  for (const promise of ["正面平视", "正面俯视"]) {
+    expect(text, `界面说明又承诺了「${promise}」`).not.toContain(promise);
+  }
   // 简短：三类各一句，整块列表不该长成一段提示词。
   expect(text.length).toBeLessThan(200);
 });

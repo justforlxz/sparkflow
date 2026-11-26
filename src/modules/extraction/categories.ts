@@ -9,7 +9,9 @@
  *
  * - `description`：给**用户**看，渲染在资源夹详情右栏「提取设置」→「固定三类」列表里，
  *   必须是一句简短中文，**不得**出现提示词工程术语（AC-PROMPT-6）；
- * - `promptDescription`：拼进**生图**提示词，写可判定的几何约束（AC-PROMPT-1、AC-PROMPT-2）；
+ * - `promptDescription`：拼进**生图**提示词，写成给图片模型看的要求。`topdown` / `texture` 写可判定的
+ *   几何约束（AC-PROMPT-1、AC-PROMPT-2）；`graphic` 写保真约束（不改文字、不添加元素、不摆正，
+ *   MKACG-1016）—— 几何约束会把图生图模型逼成整幅重画，文字随之变乱码；
  * - `presenceQuestion`：给**视觉判定**模型，只问「这张原图里有没有该主体」。
  *
  * 三项都**必须分开写**：
@@ -39,6 +41,10 @@ export interface ExtractionCategoryDefinition {
 
 /**
  * 只允许出现在提示词里的术语（AC-PROMPT-6）：界面文案一条都不许出现。
+ *
+ * `topdown` / `texture` 的提示词仍在用这几句正交几何约束；`graphic` 从 MKACG-1016 起改成保真约束，
+ * 不再使用其中任何一条 —— 实测「摆正透视」这类指令会把图生图模型逼成整幅重画（文字变乱码、
+ * 凭空添标题）。名单保留给仍在用它们的两个类别，界面断言照旧一条都不许出现。
  *
  * 单测（`categories.test.ts`）与端到端用例（`tests/e2e/library.spec.ts`）都从这一份取，
  * 增加术语只改这里一处。
@@ -76,9 +82,9 @@ export const EXTRACTION_CATEGORIES = [
   {
     value: "graphic",
     label: "形象设计",
-    description: "只取印刷在桌垫上的图案（卡通人物、插画、物品），正面平视、背景干净",
+    description: "只取印刷在桌垫上的图案（卡通人物、插画、物品），文字照原样、背景干净",
     promptDescription:
-      "只取印刷在桌垫上的图案（卡通人物、插画、物品），单一主体、正面平视（front-on orthographic view，zero perspective，zero foreshortening）；图案里的横线与竖线必须 exactly horizontal or vertical，不倾斜；完整保留图案的原始轮廓；均匀漫射光，no shadows、无高光、无倒影；纯色背景，去掉桌垫边缘与场景；保持图案自身的长宽比，不补画、不拉伸、不裁切",
+      "把这张照片里桌垫上印制的图案原样抠出来，铺在纯色背景上。严格保持图案里的一切不变：角色与动物的造型、表情、动作、线条、配色，以及全部文字的字形与拼写，必须与照片里完全一致。不要重新绘制、不要风格化、不要补全、不要添加照片里没有的任何元素（包括标题、边框、装饰、散落的点缀）。保留图案原本的倾斜与透视，不要旋转或摆正。不拉伸、不裁切",
     presenceQuestion: "这张照片里的桌垫上是否印有图案（卡通人物、插画、物品之类）？",
     selectable: true,
   },

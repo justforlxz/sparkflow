@@ -18,7 +18,7 @@
 | --- | --- | --- | --- |
 | `topdown` | 桌面俯视图 | 从正上方看桌面或桌垫的完整画面，去掉摆件与杂物，被遮挡处按周围材质补全 | 完美平整的俯视图（perfectly flat orthographic view，zero perspective，zero foreshortening）；所有长边与纹理走向必须 exactly horizontal or vertical；均匀漫射光，no shadows、无高光、无景深；去掉桌面上的摆件与杂物，被遮挡处按周围材质补全；保持桌面自身的长宽比，不拉伸、不裁切 |
 | `texture` | 基本纹理 | 只取重复出现的那一块纹理单元，纹理均匀、四边可拼接，不出现桌垫边缘与场景 | 只取重复出现的那一块纹理单元，四边可无缝拼接（matching opposite edges）；这是材质不是场景（This is a material texture, not a scene）；perfectly flat orthographic view，zero perspective，zero foreshortening；所有线与纹理走向必须 exactly horizontal or vertical；均匀漫射光，no shadows、无高光；不要出现桌垫边缘与场景；保持纹理自身的长宽比，不拉伸、不裁切 |
-| `graphic` | 形象设计 | 只取印刷在桌垫上的图案（卡通人物、插画、物品），正面平视、背景干净 | 只取印刷在桌垫上的图案（卡通人物、插画、物品），单一主体、正面平视（front-on orthographic view，zero perspective，zero foreshortening）；图案里的横线与竖线必须 exactly horizontal or vertical，不倾斜；完整保留图案的原始轮廓；均匀漫射光，no shadows、无高光、无倒影；纯色背景，去掉桌垫边缘与场景；保持图案自身的长宽比，不补画、不拉伸、不裁切 |
+| `graphic` | 形象设计 | 只取印刷在桌垫上的图案（卡通人物、插画、物品），文字照原样、背景干净 | 把这张照片里桌垫上印制的图案原样抠出来，铺在纯色背景上。严格保持图案里的一切不变：角色与动物的造型、表情、动作、线条、配色，以及全部文字的字形与拼写，必须与照片里完全一致。不要重新绘制、不要风格化、不要补全、不要添加照片里没有的任何元素（包括标题、边框、装饰、散落的点缀）。保留图案原本的倾斜与透视，不要旋转或摆正。不拉伸、不裁切 |
 
 **有就提取，没有就不提取**：每个（原图 × 类别）先用视觉模型判定是否存在，不存在记 `skipped`，
 不发起图生图（ADR 0011 第 2 条）。
@@ -134,6 +134,12 @@ model、n、prompt、quality、reference_images、resolution、size），传了�
   （画布比例按原照片推导，见 `deriveExtractionSize`；命令模型「铺满画面」等于命令它拉伸）；
 - 不添加原图里没有的文字、水印或标识；
 - 收尾一句框定产品属性：`This is a material texture, not a scene.`
+
+**`graphic`（形象设计）是例外**（MKACG-1016）：这一类改成**保真约束**，不再要求摆正透视。
+实测在同一张桌垫照片上，上面那几句正交几何词会把图生图模型逼成**整幅重画**——`luck day` 写成
+`turck day`、英文整段乱码、凭空添上原图没有的标题；换成保真约束后文字逐字正确、凭空元素基本消除。
+代价是这一类仍会被模型重画角色、也拦不住摆正，**故界面文案不得再承诺「正面平视」**；
+像素级的原样还原由 MKACG-1001（四角框选 + 单应矫正）负责，不能靠生图模型。
 
 ### 材质描述（两段式提示词的第一段）
 

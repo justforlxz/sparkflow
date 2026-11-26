@@ -77,7 +77,7 @@ describe("提取类别登记表", () => {
       "只取重复出现的那一块纹理单元，纹理均匀、四边可拼接，不出现桌垫边缘与场景",
     );
     expect(findCategory("graphic")?.description).toBe(
-      "只取印刷在桌垫上的图案（卡通人物、插画、物品），正面平视、背景干净",
+      "只取印刷在桌垫上的图案（卡通人物、插画、物品），文字照原样、背景干净",
     );
 
     expect(findCategory("topdown")?.promptDescription).toBe(
@@ -87,7 +87,7 @@ describe("提取类别登记表", () => {
       "只取重复出现的那一块纹理单元，四边可无缝拼接（matching opposite edges）；这是材质不是场景（This is a material texture, not a scene）；perfectly flat orthographic view，zero perspective，zero foreshortening；所有线与纹理走向必须 exactly horizontal or vertical；均匀漫射光，no shadows、无高光；不要出现桌垫边缘与场景；保持纹理自身的长宽比，不拉伸、不裁切",
     );
     expect(findCategory("graphic")?.promptDescription).toBe(
-      "只取印刷在桌垫上的图案（卡通人物、插画、物品），单一主体、正面平视（front-on orthographic view，zero perspective，zero foreshortening）；图案里的横线与竖线必须 exactly horizontal or vertical，不倾斜；完整保留图案的原始轮廓；均匀漫射光，no shadows、无高光、无倒影；纯色背景，去掉桌垫边缘与场景；保持图案自身的长宽比，不补画、不拉伸、不裁切",
+      "把这张照片里桌垫上印制的图案原样抠出来，铺在纯色背景上。严格保持图案里的一切不变：角色与动物的造型、表情、动作、线条、配色，以及全部文字的字形与拼写，必须与照片里完全一致。不要重新绘制、不要风格化、不要补全、不要添加照片里没有的任何元素（包括标题、边框、装饰、散落的点缀）。保留图案原本的倾斜与透视，不要旋转或摆正。不拉伸、不裁切",
     );
   });
 
@@ -100,12 +100,26 @@ describe("提取类别登记表", () => {
     }
   });
 
-  it("形象设计的提取目标描述要求正面平视、保持长宽比、不拉伸（AC-PROMPT-2）", () => {
+  it("形象设计的提取目标描述改成保真约束，不再要求摆正透视（AC-FID-1、AC-FID-2、AC-FID-3）", () => {
     const graphic = findCategory("graphic")?.promptDescription ?? "";
-    expect(graphic).toContain("正面平视");
-    expect(graphic).toContain("zero perspective");
-    expect(graphic).toContain("长宽比");
-    expect(graphic).toContain("不拉伸");
+    // 保真：原样抠出、文字逐字一致、不加原图没有的元素、不摆正透视。
+    expect(graphic).toContain("原样抠出来");
+    expect(graphic).toContain("全部文字的字形与拼写");
+    expect(graphic).toContain("不要重新绘制");
+    expect(graphic).toContain("不要添加照片里没有的任何元素");
+    expect(graphic).toContain("不要旋转或摆正");
+    expect(graphic).toContain("不拉伸、不裁切");
+    // 逼模型整幅重画的那几句一条都不许回来（MKACG-1016 的根因）。
+    for (const term of PROMPT_ONLY_TERMS) {
+      expect(graphic, `形象设计的提示词又出现了「${term}」`).not.toContain(term);
+    }
+    expect(graphic).not.toContain("正面平视");
+    expect(graphic).not.toContain("front-on");
+    expect(graphic).not.toContain("不倾斜");
+    // 界面说明同样不许再承诺「正面平视」：模型做不到，写了就是假承诺（AC-FID-3）。
+    const description = findCategory("graphic")?.description ?? "";
+    expect(description).not.toContain("平视");
+    expect(description).not.toContain("俯视");
   });
 
   it("AC-PROMPT-6 界面说明是简短中文，不含任何提示词工程术语", () => {

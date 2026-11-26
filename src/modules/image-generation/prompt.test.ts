@@ -34,11 +34,16 @@ function prompt(category: string, extractRequirement = "faithful", material: str
 
 /** 提取提示词拼装（docs/prd/05 SHOULD、MKACG-1000）。 */
 describe("提取提示词拼装", () => {
-  it("AC-PROMPT-1 三类提示词都含五组可判定的几何词，且不含「铺满画面」", () => {
+  it("AC-PROMPT-1 桌面俯视图与基本纹理的提示词含五组可判定的几何词，且三类都不含「铺满画面」", () => {
+    // 几何约束只属于需要「摆正成俯视/平铺」的两类；形象设计从 MKACG-1016 起改成保真约束，
+    // 这几句在它那里是逼模型整幅重画的元凶（见下一条用例）。
     for (const definition of SELECTABLE_CATEGORIES) {
       const text = prompt(definition.value);
-      for (const phrase of GEOMETRY_PHRASES) {
-        expect(text, `${definition.value} 的提示词缺少「${phrase}」`).toContain(phrase);
+      const geometryCategories = ["topdown", "texture"];
+      if (geometryCategories.includes(definition.value)) {
+        for (const phrase of GEOMETRY_PHRASES) {
+          expect(text, `${definition.value} 的提示词缺少「${phrase}」`).toContain(phrase);
+        }
       }
       expect(text, `${definition.value} 的提示词仍命令模型铺满画面`).not.toContain("铺满画面");
     }
@@ -55,13 +60,22 @@ describe("提取提示词拼装", () => {
     }
   });
 
-  it("AC-PROMPT-2 形象设计的提示词带正面平视、保持长宽比、不拉伸", () => {
+  it("AC-PROMPT-2 形象设计的提示词改成保真约束，不再要求摆正透视", () => {
     const text = prompt("graphic");
     expect(text).toContain("形象设计——");
     expect(text).toContain(describeCategory("graphic"));
-    expect(text).toContain("正面平视");
-    expect(text).toContain("长宽比");
-    expect(text).toContain("不拉伸");
+    // 保真约束：原样抠出、文字逐字一致、不加元素、不摆正、不拉伸。
+    expect(text).toContain("原样抠出来");
+    expect(text).toContain("全部文字的字形与拼写");
+    expect(text).toContain("不要添加照片里没有的任何元素");
+    expect(text).toContain("不要旋转或摆正");
+    expect(text).toContain("不拉伸、不裁切");
+    // 类别那一段里不许再出现逼模型整幅重画的正交措辞（MKACG-1016 的根因）。
+    const categorySection = describeCategory("graphic");
+    for (const phrase of GEOMETRY_PHRASES) {
+      expect(categorySection, `形象设计的类别描述又出现了「${phrase}」`).not.toContain(phrase);
+    }
+    expect(categorySection).not.toContain("正面平视");
   });
 
   it("AC-PROMPT-3 有材质描述时拼成 `Material:` 段，并排在提取要求之前", () => {

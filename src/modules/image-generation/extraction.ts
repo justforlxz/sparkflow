@@ -12,8 +12,9 @@
  * 6. 图生图前先向视觉模型要一句材质描述，作为 `Material:` 段拼进提示词；拿不到就跳过该段、
  *    **不阻断**提取（MKACG-1000、AC-PROMPT-3）；
  * 7. 落盘与写库不在这里（提取模块的 runner 负责），本文件只交图片、跳过项与失败清单；
- * 8. 出图后、交出去之前去一次上游水印（`watermark.ts`）：去不成也交原图并注明原因，
- *    **不阻断**提取（MKACG-1004、AC-WM-3、AC-WM-4）。
+ * 8. 新通道（REST + `watermark:false`）出图本身不带水印，**不再做裁切后处理**（MKACG-1008
+ *    AC-REST-3）：那一步会无条件裁掉底部 10% 再用采样色补回，属真实内容损失。
+ *    `watermark.ts` 与它的安全检测保留为兜底，只在单测显式注入时才执行。
  */
 import { logger } from "@/lib/logger";
 import { StageError } from "@/lib/job-failure";
@@ -25,7 +26,7 @@ import { buildMaterialPrompt, parseMaterialDescription } from "./material";
 import { buildImagePrompt } from "./prompt";
 import { resolveImageGenerator, resolveVisionAnalyzer } from "./service";
 import { buildExistencePrompt, deriveExtractionSize, parseExistenceVerdict } from "./vision-judgment";
-import { WATERMARK_NOTES, removeUpstreamWatermark, type WatermarkRemovalResult } from "./watermark";
+import { WATERMARK_NOTES, type WatermarkRemovalResult } from "./watermark";
 import { IMAGE_ERROR_CODES } from "./adapters/types";
 import { extractionItemKey } from "@/modules/extraction/item-key";
 import { EXTRACTION_ERROR_CODES, LIBRARY_COPY } from "@/modules/extraction/constants";
@@ -50,8 +51,10 @@ export interface ExtractionHandlerDeps {
   /** 单测注入：跳过 sharp，直接把原图字节当成 base64 用。 */
   compress?: (bytes: Buffer) => Promise<string>;
   /**
-   * 单测注入：产物去水印的后处理。不传时用 `removeUpstreamWatermark`（真 sharp 处理）。
-   * 抛错不阻断提取：调用方保留原图、记 warn、把素材标成「未去水印」（AC-WM-4）。
+   * 单测注入：产物去水印的后处理。**默认不注入** —— 新通道（REST + `watermark:false`）
+   * 出图本身不带水印，裁切后处理默认不执行（MKACG-1008 AC-REST-3）。
+   * 注入了就照注入的做：抛错不阻断提取，调用方保留原图、记 warn、把素材标成「未去水印」
+   * （AC-WM-4）。
    */
   watermark?: (bytes: Buffer) => Promise<WatermarkRemovalResult>;
   /** 单测注入：跳过 sharp，直接给出原图像素尺寸。 */
@@ -172,7 +175,7 @@ interface WatermarkOutcome {
 }
 
 /**
- * 出图后、入库前去一次上游水印（MKACG-1004）。
+ * 出图后、入库前去一次上游水印（MKACG-1004）。新通道下**默认不调用**（MKACG-1008）：
  *
  * 三种结局都不阻断提取：
  * - 去掉了：用处理后的字节，`note` 为空；
@@ -232,7 +235,8 @@ export async function extractImages(
   const vision = deps.vision !== undefined ? deps.vision : await resolveVisionAnalyzer(context.extraPrompt);
   const compress = deps.compress ?? compressForReferenceImage;
   const readSize = deps.readSize ?? readImageDimensions;
-  const watermark = deps.watermark ?? removeUpstreamWatermark;
+  // 裁切后处理默认关掉：REST + watermark:false 的产物本身没有水印（MKACG-1008 AC-REST-3）。
+  const watermark = deps.watermark ?? null;
   const model = context.agent.modelId ?? null;
   const total = assets.length * categories.length;
 
@@ -302,11 +306,11 @@ export async function extractImages(
               `上游没有返回原图「${asset.fileName}」的提取图`,
             );
           }
-          // 入库前先去掉上游模型自带的水印；去不成也照常交出原图（AC-WM-3、AC-WM-4）。
-          const removal = await removeWatermark(first.bytes, watermark, {
-            sourceAssetId: asset.id,
-            category,
-          });
+          // 产物本身没有水印（REST + watermark:false），默认原样入库；
+          // 只有单测显式注入后处理时才走裁切（AC-REST-3、AC-WM-3、AC-WM-4）。
+          const removal: WatermarkOutcome = watermark
+            ? await removeWatermark(first.bytes, watermark, { sourceAssetId: asset.id, category })
+            : { bytes: first.bytes, removed: true, note: null };
 
           images.push({
             ...first,

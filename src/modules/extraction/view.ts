@@ -5,7 +5,12 @@
 import { extractRequirementLabel } from "@/modules/image-generation/styles";
 import { DEFAULT_THUMBNAIL_WIDTH } from "@/modules/media-collection/constants";
 import { EXTRACTION_CATEGORIES, categoryLabel } from "./categories";
-import { EXTRACTION_STATUS_LABELS, type ExtractionStatus } from "./constants";
+import {
+  EXTRACTION_STATUS_LABELS,
+  LIBRARY_ASSET_SOURCE_LABELS,
+  type ExtractionStatus,
+  type LibraryAssetSource,
+} from "./constants";
 import type {
   ExtractionErrorRecord,
   ExtractionItemRecord,
@@ -41,6 +46,13 @@ export interface LibraryAssetView {
   watermarkRemoved: boolean;
   /** 没去水印的原因（可空），界面作为角标的提示文字。 */
   watermarkNote: string | null;
+  /**
+   * 产物来源（MKACG-1001 AC-QUAD-9 / AC-QUAD-11）：`model` 是模型提取（可能重画），
+   * `rectified` 是单应几何矫正的原像素（文字与角色必然原样）。
+   */
+  source: LibraryAssetSource;
+  /** 来源的中文说明，界面直接显示，不再自己拼文案。 */
+  sourceLabel: string;
   createdAt: string;
 }
 
@@ -174,6 +186,8 @@ export function toLibraryAssetView(
     thumbnailUrl: libraryAssetUrl(asset.id, DEFAULT_THUMBNAIL_WIDTH),
     watermarkRemoved: asset.watermarkRemoved,
     watermarkNote: asset.watermarkNote,
+    source: asset.source,
+    sourceLabel: LIBRARY_ASSET_SOURCE_LABELS[asset.source] ?? asset.source,
     createdAt: asset.createdAt.toISOString(),
   };
 }

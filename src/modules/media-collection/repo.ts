@@ -5,6 +5,7 @@
  * 照片与资源夹的关系在 `collection_asset` 关联表上（ADR 0012 第 1 条）：
  * 「夹里的照片」是关联行，「总资源库」是 `media_asset` 全表，两者不能混着查。
  */
+import { Prisma } from "@/generated/prisma/client";
 import { getDb } from "@/lib/db";
 
 export interface CollectionRow {
@@ -28,6 +29,23 @@ export interface AssetRow {
   mimeType: string;
   size: number;
   createdAt: Date;
+  /** 归一化四点 `[[x,y]×4]` 的原始 jsonb：形状校验在 `quad.ts` 的 `parseQuad`。 */
+  quad: unknown;
+  /** `surface` | `pattern`，与 `quad` 同时存在或同时为空。 */
+  quadKind: string | null;
+  quadRealWidth: number | null;
+  quadRealHeight: number | null;
+  /** 矫正图的 storage_key；没框选或矫正失败时为 null。 */
+  rectifiedKey: string | null;
+}
+
+/** 一次框选要落库的字段；`null` 表示清除框选。 */
+export interface AssetQuadUpdate {
+  quad: unknown;
+  quadKind: string | null;
+  quadRealWidth: number | null;
+  quadRealHeight: number | null;
+  rectifiedKey: string | null;
 }
 
 /** 夹里的照片：多一个「在这个夹里的顺序」。 */
@@ -64,6 +82,11 @@ const ASSET_SELECT = {
   mimeType: true,
   size: true,
   createdAt: true,
+  quad: true,
+  quadKind: true,
+  quadRealWidth: true,
+  quadRealHeight: true,
+  rectifiedKey: true,
 } as const;
 
 const COLLECTION_SELECT = {
@@ -219,6 +242,29 @@ export async function listAssetsByCollection(collectionId: string): Promise<Coll
 /** 总资源库里的一张照片（与它属于哪个夹无关）。 */
 export async function findAsset(assetId: string): Promise<AssetRow | null> {
   return getDb().mediaAsset.findUnique({ where: { id: assetId }, select: ASSET_SELECT });
+}
+
+/**
+ * 写一次框选结果（MKACG-1001）：四点、用途、手输尺寸与矫正图的 storage_key 一次替换。
+ * `rectifiedKey` 由调用方在矫正成功后传入，矫正失败时传 null（四角仍然保留）。
+ * 返回改动的行数：0 表示这张照片已经不存在（例如同时被从总资源库删掉）。
+ */
+export async function updateAssetQuad(
+  assetId: string,
+  update: AssetQuadUpdate,
+): Promise<number> {
+  const { count } = await getDb().mediaAsset.updateMany({
+    where: { id: assetId },
+    data: {
+      // 清除框选时四列一起清空，不留「有四点但没有用途」这样的半截状态。
+      quad: update.quad === null ? Prisma.DbNull : (update.quad as Prisma.InputJsonValue),
+      quadKind: update.quadKind,
+      quadRealWidth: update.quadRealWidth,
+      quadRealHeight: update.quadRealHeight,
+      rectifiedKey: update.rectifiedKey,
+    },
+  });
+  return count;
 }
 
 export async function findAssetsByIds(ids: readonly string[]): Promise<AssetRow[]> {

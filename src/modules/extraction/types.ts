@@ -7,13 +7,19 @@
  */
 import type { AgentSnapshot } from "@/modules/agent-config/snapshot";
 import type { FailureRecord } from "@/lib/job-failure";
-import type { ExtractionItemStatus, ExtractionStatus } from "./constants";
+import type { QuadKind } from "@/modules/media-collection/quad";
+import type { ExtractionItemStatus, ExtractionStatus, LibraryAssetSource } from "./constants";
 
 /** 一张原图，只给标识与展示信息；字节按需单独读取。 */
 export interface SourceAssetRef {
   id: string;
   fileName: string;
   mimeType: string;
+  /**
+   * 这张原图已保存的框选用途（MKACG-1001）：`surface` 时矫正图当桌面俯视图/纹理的模型输入，
+   * `pattern` 时矫正图**直接**就是形象设计的产物（不经模型）。没框选为 null。
+   */
+  rectifiedKind: QuadKind | null;
 }
 
 /** 读出来的一张原图字节。 */
@@ -66,6 +72,8 @@ export interface ExtractedImage {
   watermarkRemoved: boolean;
   /** 没去水印的原因；去掉时是 null。界面据此说明为什么带着水印。 */
   watermarkNote: string | null;
+  /** 产物来源（MKACG-1001）：模型提取或几何矫正。界面必须把两者分开（AC-QUAD-9、AC-QUAD-11）。 */
+  source: LibraryAssetSource;
 }
 
 /** 提取执行上下文：与运行相关的输入全都显式给出，处理器不查别的模块的表。 */
@@ -84,6 +92,11 @@ export interface ExtractionContext {
   signal: AbortSignal;
   /** 按 id 读一张原图的字节（由 runner 接到资源夹模块）。 */
   readSourceImage(assetId: string): Promise<SourceImageBytes>;
+  /**
+   * 读一张原图的**矫正图**字节（MKACG-1001）：没框选或矫正失败时返回 null，
+   * 调用方按「未校正」处理。由 runner 接到资源夹模块，本模块不直接查它的表。
+   */
+  readRectifiedImage(assetId: string): Promise<SourceImageBytes | null>;
   /**
    * 写执行进度，同时记下正在处理的那一格（`<sourceAssetId>|<category>`）：
    * 界面据此把「处理中」与「等待中」分开（MKACG-999）。还没轮到的项与终态都写 null。
@@ -171,6 +184,8 @@ export interface LibraryAssetInput {
   watermarkRemoved: boolean;
   /** 没去水印的原因；去掉时是 null。 */
   watermarkNote: string | null;
+  /** 产物来源（MKACG-1001）：model | rectified。 */
+  source: LibraryAssetSource;
 }
 
 export interface LibraryAssetRecord {
@@ -189,5 +204,7 @@ export interface LibraryAssetRecord {
   watermarkRemoved: boolean;
   /** 没去水印的原因；去掉时是 null。 */
   watermarkNote: string | null;
+  /** 产物来源（MKACG-1001）：model | rectified。 */
+  source: LibraryAssetSource;
   createdAt: Date;
 }

@@ -15,6 +15,10 @@
  * 8. 新通道（REST + `watermark:false`）出图本身不带水印，**不再做裁切后处理**（MKACG-1008
  *    AC-REST-3）：那一步会无条件裁掉底部 10% 再用采样色补回，属真实内容损失。
  *    `watermark.ts` 与它的安全检测保留为兜底，只在单测显式注入时才执行。
+ * 9. **几何矫正的产物不经模型**（MKACG-1001 MUST、AC-QUAD-9、AC-QUAD-10）：原图已框选
+ *    「图案四个角」时，`graphic` 类别的产物就是单应矫正后的裁切图 —— 连视觉判定与材质描述
+ *    都不调用，纯代码路径，所以文字与角色必然原样、两次运行字节一致。
+ *    框选「桌面四个角」时，矫正图只当 `topdown` / `texture` 的**模型输入**（`graphic` 不动）。
  */
 import { logger } from "@/lib/logger";
 import { StageError } from "@/lib/job-failure";
@@ -207,8 +211,91 @@ async function removeWatermark(
 
 /** 一张原图准备好的一次性输入：字节压缩结果与按长宽比推导的尺寸，同一张原图的多个类别共用。 */
 interface PreparedSource {
+  /** 传给上游的 `data:` URL。 */
   image: string;
+  /** 上游输出尺寸（`1536x1024`），按这张图的真实长宽比推导。 */
   size: string;
+  /** 原像素字节：几何矫正的产物直接用它入库，不经过模型。 */
+  bytes: Buffer;
+  /** 像素尺寸。 */
+  width: number;
+  height: number;
+}
+
+/** 一张原图的两种输入：原图 + （已框选时的）矫正图。用不到的那一份为 null。 */
+interface PreparedAssetSource {
+  original: PreparedSource | null;
+  /** 没框选、还是矫正图读不到：为 null，模型路径退回原图。 */
+  rectified: PreparedSource | null;
+}
+
+/**
+ * 这张原图在这个类别上怎么用矫正图（MKACG-1001）：
+ * - `direct`：产物**就是**矫正图，全程不调用模型（图案四角 × 形象设计）；
+ * - `input`：矫正图当成模型输入（桌面四角 × 俯视图 / 纹理）；
+ * - `none`：用原图。
+ *
+ * 用途与类别不匹配时退回 `none`：框了图案却要俯视图，拿图案的裁切图喂模型只会更糟。
+ */
+function rectificationMode(
+  asset: SourceAssetRef,
+  category: string,
+): "direct" | "input" | "none" {
+  if (asset.rectifiedKind === "pattern" && category === "graphic") return "direct";
+  if (asset.rectifiedKind === "surface" && (category === "topdown" || category === "texture")) {
+    return "input";
+  }
+  return "none";
+}
+
+/** 压缩一张图并推导上游输出尺寸。几何矫正直接入库时不需要压缩，只读尺寸。 */
+async function prepareSource(
+  bytes: Buffer,
+  compress: (source: Buffer) => Promise<string>,
+  readSize: (source: Buffer) => Promise<{ width: number; height: number }>,
+  options: { compress: boolean } = { compress: true },
+): Promise<PreparedSource> {
+  const [dimensions, image] = await Promise.all([
+    readSize(bytes),
+    options.compress ? compress(bytes) : Promise.resolve(""),
+  ]);
+  return {
+    image,
+    size: deriveExtractionSize(dimensions.width, dimensions.height),
+    bytes,
+    width: dimensions.width,
+    height: dimensions.height,
+  };
+}
+
+/**
+ * 一张原图的两种输入各准备一次；矫正图读不到不当失败，只是没有它。
+ *
+ * 只压缩真的会当模型输入的那一份：几何矫正的产物直接入库，不需要 `data:` URL，
+ * 白压缩一次 1536² 的图在批量提取里是实打实的浪费。
+ */
+async function prepareAsset(
+  context: ExtractionContext,
+  asset: SourceAssetRef,
+  categories: readonly string[],
+  compress: (source: Buffer) => Promise<string>,
+  readSize: (source: Buffer) => Promise<{ width: number; height: number }>,
+): Promise<PreparedAssetSource> {
+  const modes = categories.map((category) => rectificationMode(asset, category));
+  const rectifiedBytes = modes.some((mode) => mode === "input")
+    ? await context.readRectifiedImage(asset.id)
+    : null;
+
+  // 原图在「有类别要用原图」或「矫正图读不到（退回原图）」时才需要。
+  const needsOriginal = modes.some((mode) => mode !== "input") || rectifiedBytes === null;
+  const original = needsOriginal
+    ? await prepareSource((await context.readSourceImage(asset.id)).bytes, compress, readSize)
+    : null;
+  const rectified = rectifiedBytes
+    ? await prepareSource(rectifiedBytes.bytes, compress, readSize)
+    : null;
+
+  return { original, rectified };
 }
 
 /**
@@ -249,13 +336,11 @@ export async function extractImages(
   await context.reportProgress({ done, total }, extractionItemKey(assets[0].id, categories[0] ?? ""));
 
   for (const [offset, asset] of assets.entries()) {
-    // 原图字节每张只读一次：同一张原图的多个类别共用压缩结果与尺寸。
-    let prepared: PreparedSource | null = null;
+    // 原图与矫正图每张各准备一次：同一张原图的多个类别共用压缩结果与尺寸。
+    let prepared: PreparedAssetSource | null = null;
     let prepareError: unknown = null;
     try {
-      const source = await context.readSourceImage(asset.id);
-      const [image, dimensions] = await Promise.all([compress(source.bytes), readSize(source.bytes)]);
-      prepared = { image, size: deriveExtractionSize(dimensions.width, dimensions.height) };
+      prepared = await prepareAsset(context, asset, categories, compress, readSize);
     } catch (error) {
       prepareError = error;
     }
@@ -275,53 +360,92 @@ export async function extractImages(
           );
         }
 
-        // 第一段：判定目标是否存在。不存在就记 skipped，不消耗生图调用（MUST 2b、AC-LIB-11）。
-        const verdict = await judgeExistence(vision, prepared.image, category, context.signal);
-        if (!verdict.exists) {
-          skipped.push({
-            category,
-            sourceAssetId: asset.id,
-            reason: verdict.reason,
-          });
-        } else {
-          // 图生图之前先要一句材质描述，拿不到就跳过该段，不阻断（AC-PROMPT-3）。
-          const material = await describeMaterial(vision, prepared.image, category, context.signal);
-          // 第二段：判定存在才发起图生图，提示词按该类别描述拼装。
-          const prompt = buildImagePrompt({
-            agents: context.agent,
-            category,
-            extractRequirement: context.requirement,
-            material,
-            extraPrompt: context.extraPrompt,
-          });
-          const generated = await generator.generate(
-            { prompt, image: prepared.image, size: prepared.size, model },
-            { signal: context.signal },
-          );
+        const mode = rectificationMode(asset, category);
 
-          const first = generated[0];
-          if (!first) {
+        if (mode === "direct") {
+          // MUST（AC-QUAD-9、AC-QUAD-10）：几何矫正的原样产物。这里**不调用任何模型** ——
+          // 不判定、不要材质描述、不生图，所以文字与角色与原图逐字一致，两次运行字节完全一致。
+          const geometry = await context.readRectifiedImage(asset.id);
+          if (!geometry) {
             throw new StageError(
-              IMAGE_ERROR_CODES.rejected,
-              `上游没有返回原图「${asset.fileName}」的提取图`,
+              EXTRACTION_ERROR_CODES.jobFailed,
+              `原图「${asset.fileName}」的矫正图读不到，请重新保存四个角后再提取`,
             );
           }
-          // 产物本身没有水印（REST + watermark:false），默认原样入库；
-          // 只有单测显式注入后处理时才走裁切（AC-REST-3、AC-WM-3、AC-WM-4）。
-          const removal: WatermarkOutcome = watermark
-            ? await removeWatermark(first.bytes, watermark, { sourceAssetId: asset.id, category })
-            : { bytes: first.bytes, removed: true, note: null };
-
+          const dimensions = await readSize(geometry.bytes);
           images.push({
-            ...first,
-            bytes: removal.bytes,
-            watermarkRemoved: removal.removed,
-            watermarkNote: removal.note,
+            bytes: geometry.bytes,
+            mimeType: geometry.mimeType,
+            width: dimensions.width,
+            height: dimensions.height,
             category,
             sourceAssetId: asset.id,
             // 序号用原图位置：同一张原图的多个类别共用同一个序号，界面据此对上来源原图。
             sortOrder: offset + 1,
+            // 原像素的重采样结果：没有模型参与，也没有上游水印。
+            watermarkRemoved: true,
+            watermarkNote: null,
+            source: "rectified",
           });
+        } else {
+          // 桌面四角已框选时，俯视图与纹理用矫正图当模型输入：比例与正视图都由代码保证。
+          const input = (mode === "input" ? prepared.rectified : null) ?? prepared.original;
+          if (!input) {
+            throw new StageError(
+              EXTRACTION_ERROR_CODES.jobFailed,
+              `读不到原图「${asset.fileName}」的字节`,
+            );
+          }
+
+          // 第一段：判定目标是否存在。不存在就记 skipped，不消耗生图调用（MUST 2b、AC-LIB-11）。
+          const verdict = await judgeExistence(vision, input.image, category, context.signal);
+          if (!verdict.exists) {
+            skipped.push({
+              category,
+              sourceAssetId: asset.id,
+              reason: verdict.reason,
+            });
+          } else {
+            // 图生图之前先要一句材质描述，拿不到就跳过该段，不阻断（AC-PROMPT-3）。
+            const material = await describeMaterial(vision, input.image, category, context.signal);
+            // 第二段：判定存在才发起图生图，提示词按该类别描述拼装。
+            const prompt = buildImagePrompt({
+              agents: context.agent,
+              category,
+              extractRequirement: context.requirement,
+              material,
+              extraPrompt: context.extraPrompt,
+            });
+            const generated = await generator.generate(
+              { prompt, image: input.image, size: input.size, model },
+              { signal: context.signal },
+            );
+
+            const first = generated[0];
+            if (!first) {
+              throw new StageError(
+                IMAGE_ERROR_CODES.rejected,
+                `上游没有返回原图「${asset.fileName}」的提取图`,
+              );
+            }
+            // 产物本身没有水印（REST + watermark:false），默认原样入库；
+            // 只有单测显式注入后处理时才走裁切（AC-REST-3、AC-WM-3、AC-WM-4）。
+            const removal: WatermarkOutcome = watermark
+              ? await removeWatermark(first.bytes, watermark, { sourceAssetId: asset.id, category })
+              : { bytes: first.bytes, removed: true, note: null };
+
+            images.push({
+              ...first,
+              bytes: removal.bytes,
+              watermarkRemoved: removal.removed,
+              watermarkNote: removal.note,
+              category,
+              sourceAssetId: asset.id,
+              sortOrder: offset + 1,
+              // 模型产物：界面必须标成「模型提取（可能重画）」（AC-QUAD-11）。
+              source: "model",
+            });
+          }
         }
       } catch (error) {
         if (context.signal.aborted) {

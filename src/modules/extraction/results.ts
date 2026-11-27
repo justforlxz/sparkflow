@@ -24,6 +24,11 @@ export interface ResultSourceAsset {
   id: string;
   fileName: string;
   thumbnailUrl: string;
+  /**
+   * 这张原图已保存的框选用途（MKACG-1001）：null 表示未校正，卡片上要标「未校正」（AC-QUAD-7）。
+   * 已校正时用它显示「已校正 · 桌面四角 / 图案四角」。
+   */
+  quadKind: string | null;
 }
 
 export interface ResultCellAsset {
@@ -35,6 +40,13 @@ export interface ResultCellAsset {
   watermarkRemoved: boolean;
   /** 没去水印的原因（可空），作为角标的提示文字。 */
   watermarkNote: string | null;
+  /**
+   * 产物来源（MKACG-1001）：`model` 是模型提取（可能重画），`rectified` 是几何矫正（原样）。
+   * 界面上两者必须能看出来，不能让用户以为模型产物是原样（AC-QUAD-9、AC-QUAD-11）。
+   */
+  source: string;
+  /** 来源的中文说明（来自模块常量，界面不自己拼）。 */
+  sourceLabel: string;
 }
 
 /**
@@ -71,6 +83,8 @@ export interface ResultCardView {
   sourceAssetId: string;
   fileName: string;
   thumbnailUrl: string;
+  /** 已保存的框选用途；null 表示这张原图未校正（AC-QUAD-7）。界面据此显示角标。 */
+  quadKind: string | null;
   cells: ResultCellView[];
   /** 已完成的格数（卡片右上角 `2/3` 的分子）。 */
   done: number;
@@ -159,6 +173,8 @@ function collectAttempts(input: ResultCardsInput): Map<string, Attempt> {
           thumbnailUrl: asset.thumbnailUrl,
           watermarkRemoved: asset.watermarkRemoved,
           watermarkNote: asset.watermarkNote,
+          source: asset.source,
+          sourceLabel: asset.sourceLabel,
         },
         reason: null,
         retry: null,
@@ -244,6 +260,7 @@ export function buildResultCards(input: ResultCardsInput): ResultCardView[] {
       sourceAssetId: source.id,
       fileName: source.fileName,
       thumbnailUrl: source.thumbnailUrl,
+      quadKind: source.quadKind,
       cells,
       done: cells.filter((cell) => cell.state === "done").length,
       total: cells.length,

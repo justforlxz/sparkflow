@@ -28,9 +28,13 @@ const AGENT: AgentSnapshot = {
 };
 
 const ASSETS: SourceAssetRef[] = [
-  { id: "asset-1", fileName: "a.png", mimeType: "image/png" },
-  { id: "asset-2", fileName: "b.png", mimeType: "image/png" },
+  { id: "asset-1", fileName: "a.png", mimeType: "image/png", rectifiedKind: null },
+  { id: "asset-2", fileName: "b.png", mimeType: "image/png", rectifiedKind: null },
 ];
+
+/** 单测里「原图」与「矫正图」的字节刻意不同：产物到底来自哪一个，一看字节就知道。 */
+const ORIGINAL_BYTES = Buffer.from("src");
+const RECTIFIED_BYTES = Buffer.from("rectified-png");
 
 interface Counted extends ImageGenerator {
   calls: GenerateImageInput[];
@@ -89,12 +93,28 @@ function vision(
   };
 }
 
+interface ContextOptions {
+  /** 这张原图已保存的框选用途（MKACG-1001）。 */
+  rectifiedKind?: "surface" | "pattern" | null;
+  /** 矫正图字节；`null` 表示矫正图读不到。 */
+  rectified?: Buffer | null;
+}
+
 function context(
   categories: readonly string[],
   progress: ExtractionProgress[] = [],
   extraPrompt: string | null = null,
   currentKeys: Array<string | null> = [],
+  options: ContextOptions = {},
 ): ExtractionContext {
+  const rectifiedKind = options.rectifiedKind ?? null;
+  const rectified =
+    options.rectified === undefined
+      ? rectifiedKind === null
+        ? null
+        : RECTIFIED_BYTES
+      : options.rectified;
+
   return {
     runId: "run-1",
     collectionId: "collection-1",
@@ -108,10 +128,12 @@ function context(
       platform: null,
       sourceTitle: null,
       sourceBody: null,
-      assets: ASSETS,
+      assets: ASSETS.map((asset) => ({ ...asset, rectifiedKind })),
     },
     signal: new AbortController().signal,
-    readSourceImage: async () => ({ bytes: Buffer.from("src"), mimeType: "image/png" }),
+    readSourceImage: async () => ({ bytes: ORIGINAL_BYTES, mimeType: "image/png" }),
+    readRectifiedImage: async () =>
+      rectified === null ? null : { bytes: rectified, mimeType: "image/png" },
     reportProgress: async (value, currentItemKey) => {
       progress.push(value);
       currentKeys.push(currentItemKey);
@@ -498,5 +520,127 @@ describe("去水印后处理（MKACG-1004、MKACG-1008）", () => {
     expect(outcome.images).toEqual([]);
     expect(outcome.skipped).toHaveLength(2);
     expect(processed).toEqual([]);
+  });
+});
+
+/**
+ * 四角框选后的几何矫正路径（MKACG-1001）。
+ *
+ * 本单存在的意义就在这里：`graphic` 的产物必须是**原图像素的几何变换结果**，
+ * 全程不调用生成模型，所以文字与角色必然原样（AC-QUAD-9），两次运行字节一致（AC-QUAD-10）。
+ * 断言全部落在「调用次数」与「产物字节」上，不靠肉眼。
+ */
+describe("几何矫正路径（AC-QUAD-9、AC-QUAD-10、AC-QUAD-11）", () => {
+  it("框选「图案四角」后 graphic 不经模型：生成与视觉判定都是 0 次调用", async () => {
+    const generator = countingGenerator();
+    const counted = vision();
+
+    await extractImages(context(["graphic"], [], null, [], { rectifiedKind: "pattern" }), {
+      generator,
+      vision: counted,
+      compress,
+      readSize,
+    });
+
+    // MUST：全程不调用生成模型，连视觉判定与材质描述也不调用。
+    expect(generator.calls).toHaveLength(0);
+    expect(counted.prompts).toHaveLength(0);
+    expect(counted.materialPrompts).toHaveLength(0);
+  });
+
+  it("产物就是矫正图的字节，来源标记为 rectified（AC-QUAD-9）", async () => {
+    const outcome = await extractImages(
+      context(["graphic"], [], null, [], { rectifiedKind: "pattern" }),
+      deps(countingGenerator()),
+    );
+
+    expect(outcome.images).toHaveLength(2);
+    for (const image of outcome.images) {
+      expect(image.bytes.equals(RECTIFIED_BYTES)).toBe(true);
+      expect(image.mimeType).toBe("image/png");
+      expect(image.source).toBe("rectified");
+      expect(image.category).toBe("graphic");
+      // 原像素的重采样结果：没有模型参与，也没有上游水印。
+      expect(image.watermarkRemoved).toBe(true);
+      expect(image.watermarkNote).toBeNull();
+    }
+  });
+
+  it("同一张图连跑两次几何矫正，产物字节完全一致（AC-QUAD-10）", async () => {
+    const build = () =>
+      extractImages(
+        context(["graphic"], [], null, [], { rectifiedKind: "pattern" }),
+        deps(countingGenerator()),
+      );
+
+    const first = await build();
+    const second = await build();
+
+    expect(first.images.map((image) => image.bytes.toString("base64"))).toEqual(
+      second.images.map((image) => image.bytes.toString("base64")),
+    );
+  });
+
+  it("未框选时 graphic 走模型路径，来源标记为 model（AC-QUAD-11）", async () => {
+    const generator = countingGenerator();
+
+    const outcome = await extractImages(context(["graphic"]), deps(generator));
+
+    expect(generator.calls).toHaveLength(2);
+    expect(outcome.images).toHaveLength(2);
+    for (const image of outcome.images) {
+      expect(image.source).toBe("model");
+    }
+  });
+
+  it("框选「桌面四角」时俯视图用矫正图当模型输入，来源仍是 model", async () => {
+    const generator = countingGenerator();
+    const compressed: Buffer[] = [];
+
+    await extractImages(context(["topdown"], [], null, [], { rectifiedKind: "surface" }), {
+      generator,
+      vision: vision(),
+      compress: async (bytes) => {
+        compressed.push(bytes);
+        return bytes === RECTIFIED_BYTES ? "data:image/jpeg;base64,REVTVA==" : "data:image/jpeg;base64,QUJD";
+      },
+      readSize,
+    });
+
+    // 每张原图只压缩矫正图（不再压缩原图），模型拿到的就是矫正结果。
+    expect(compressed.every((bytes) => bytes.equals(RECTIFIED_BYTES))).toBe(true);
+    expect(generator.calls[0]?.image).toBe("data:image/jpeg;base64,REVTVA==");
+  });
+
+  it("框选「图案四角」时俯视图仍用原图，不被图案框选影响", async () => {
+    const generator = countingGenerator();
+    const compressed: Buffer[] = [];
+
+    await extractImages(context(["topdown"], [], null, [], { rectifiedKind: "pattern" }), {
+      generator,
+      vision: vision(),
+      compress: async (bytes) => {
+        compressed.push(bytes);
+        return "data:image/jpeg;base64,QUJD";
+      },
+      readSize,
+    });
+
+    expect(compressed.every((bytes) => bytes.equals(ORIGINAL_BYTES))).toBe(true);
+  });
+
+  it("矫正图读不到时，几何路径记失败并说明原因，不退化成模型重画", async () => {
+    const generator = countingGenerator();
+
+    const outcome = await extractImages(
+      context(["graphic"], [], null, [], { rectifiedKind: "pattern", rectified: null }),
+      deps(generator),
+    );
+
+    // 退回模型就等于悄悄重画，这正是本单要根治的事：宁可失败也不画。
+    expect(generator.calls).toHaveLength(0);
+    expect(outcome.images).toHaveLength(0);
+    expect(outcome.failures).toHaveLength(2);
+    expect(outcome.failures[0]?.message).toContain("矫正图读不到");
   });
 });

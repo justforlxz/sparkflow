@@ -21,6 +21,9 @@ export const COLLECTION_ERROR_MESSAGES = {
   saveFailed: "保存失败，资源夹没有发生改动，请重试",
   poolUploadFailed: "上传失败，总资源库没有新增照片，请重试",
   unknownPoolAsset: "有照片不在总资源库里，请刷新页面后重试",
+  /** 四角框选（MKACG-1001 AC-QUAD-4）：凹四边形与自交四边形不给保存。 */
+  invalidQuadShape: "四个角的位置读不出来，请重新框选",
+  invalidQuad: "这四个角连成的不是凸四边形（有凹陷或边框交叉），请把四个角拖到图案的四个角落",
 } as const;
 
 /** 把字节数写成人能读的上限，供错误提示说明「具体上限」（AC-02-9）。 */

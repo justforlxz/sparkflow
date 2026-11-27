@@ -14,6 +14,17 @@ import { ASSET_STORAGE_PREFIX, IMAGE_EXTENSION, type ImageMime } from "./constan
 
 export { resolveStoragePath };
 
+/**
+ * 矫正图的 storage_key：`media-assets/<assetId>-rectified.png`。
+ *
+ * 与原图放在同一层、以原图 id 为前缀：删除原图时一起清掉，不需要额外的引用记录；
+ * 后缀固定 `.png`，与 `rectify.ts` 只输出 PNG 一致（无损，保证字节可复现）。
+ */
+export function buildRectifiedStorageKey(assetId: string): string {
+  assertStorageSegment(assetId, "图片标识不合法");
+  return `${ASSET_STORAGE_PREFIX}/${assetId}-rectified.png`;
+}
+
 /** 生成 storage_key。`assetId` 可注入，便于测试断言路径形状。 */
 export function buildAssetStorageKey(
   mimeType: ImageMime,

@@ -30,6 +30,9 @@ extraction_run
   current_item_key: text  -- 正在处理的那一格：<source_asset_id>|<category>，运行进终态时置空
   error: jsonb, extra_prompt: text, created_at, finished_at
 
+media_asset 的四角框选与矫正图（quad / quad_kind / quad_real_width / quad_real_height /
+rectified_key）见 `prd/13-quad-rectify.md`：它是提取的上游输入，不属于本文件的口径。
+
 extraction_item
   id, extraction_run_id, source_asset_id,
   category: topdown | texture | graphic | other,
@@ -39,6 +42,7 @@ extraction_item
 library_asset
   id, collection_id, extraction_run_id, source_asset_id,
   category: topdown | texture | graphic | other,
+  source: model | rectified,   -- 产物来源：模型提取 / 单应几何矫正（见 prd/13）
   storage_key, file_name, mime_type, width, height, sort_order, created_at
 
 copy_version

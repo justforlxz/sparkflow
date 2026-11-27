@@ -168,6 +168,7 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
                 sortOrder: assetIndex + 1,
                 watermarkRemoved: true,
                 watermarkNote: null,
+                source: "model",
               });
             }
             call += 1;
@@ -192,6 +193,7 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
             sortOrder: image.sortOrder,
             watermarkRemoved: image.watermarkRemoved,
             watermarkNote: image.watermarkNote,
+            source: image.source,
           })),
       },
       handler,
@@ -204,9 +206,11 @@ describe("AC-LIB-2 部分失败：成功的照常入库，整体记 partial", ()
           id: assetId,
           fileName: `asset-${index}.png`,
           mimeType: "image/png",
+          rectifiedKind: null,
         })),
       }),
       loadSourceImage: async () => ({ bytes: Buffer.from("src"), mimeType: "image/png" }),
+      loadRectifiedImage: async () => null,
       loadAgent: async () => AGENT,
     });
 
@@ -259,6 +263,7 @@ describe("AC-WM-3 素材记录带上「是否去水印」与原因", () => {
         sortOrder: 1,
         watermarkRemoved: false,
         watermarkNote: note,
+        source: "model",
       },
     ]);
 

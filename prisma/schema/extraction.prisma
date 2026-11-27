@@ -84,6 +84,10 @@ model LibraryAsset {
   width           Int?
   height          Int?
   sortOrder       Int            @default(0) @map("sort_order")
+  // 产物的来源（MKACG-1001）：`model` = 生成模型提取（可能重画），
+  // `rectified` = 单应几何矫正的原像素裁切（文字与角色必然原样）。取值登记在
+  // src/modules/extraction/constants.ts 的 LIBRARY_ASSET_SOURCES。默认 model：老素材全是模型产物。
+  source          String         @default("model")
   // 是否已经去掉上游模型自带的水印（MKACG-1004）。默认 false：老素材确实都还带着水印。
   watermarkRemoved Boolean       @default(false) @map("watermark_removed")
   // 没去水印时的原因（主体贴底、后处理失败）；去掉时为空。

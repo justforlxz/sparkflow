@@ -28,6 +28,8 @@ function asset(
     url: `/api/files/library/${id}`,
     thumbnailUrl: `/api/files/library/${id}?w=400`,
     watermarkRemoved: true,
+    source: "model",
+    sourceLabel: "模型提取（可能重画）",
     watermarkNote: null,
     createdAt,
   };

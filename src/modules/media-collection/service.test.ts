@@ -58,6 +58,12 @@ function assetRow(id: string, sortOrder: number): CollectionAssetRow {
     size: PNG_BYTES.length,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     sortOrder,
+    // 没框选四角的原图：与老照片一致（AC-QUAD-7）。
+    quad: null,
+    quadKind: null,
+    quadRealWidth: null,
+    quadRealHeight: null,
+    rectifiedKey: null,
   };
 }
 

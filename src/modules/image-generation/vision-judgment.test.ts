@@ -6,6 +6,7 @@ import {
   MIN_EXTRACTION_EDGE,
   buildExistencePrompt,
   deriveExtractionSize,
+  deriveExtractionSizeFromRatio,
   parseExistenceVerdict,
 } from "./vision-judgment";
 
@@ -120,6 +121,42 @@ describe("输出尺寸跟随原图长宽比（AC-LIB-13）", () => {
     expect(deriveExtractionSize(0, 0)).toBe("1536x1536");
     expect(deriveExtractionSize(Number.NaN, 600)).toBe("1536x1536");
     expect(deriveExtractionSize(-10, 600)).toBe("1536x1536");
+  });
+});
+
+describe("按长宽比推导输出尺寸（AC-QUAD-3）", () => {
+  it("比例决定宽高，且满足与 AC-LIB-17 同一套约束", () => {
+    expect(deriveExtractionSizeFromRatio(2)).toEqual({ width: 1536, height: 768 });
+    expect(deriveExtractionSizeFromRatio(0.5)).toEqual({ width: 768, height: 1536 });
+    expect(deriveExtractionSizeFromRatio(1)).toEqual({ width: 1536, height: 1536 });
+    // 超出 3:1 的比例被夹到 512（与 `deriveExtractionSize` 同一条下界）。
+    expect(deriveExtractionSizeFromRatio(5)).toEqual({ width: 1536, height: 512 });
+  });
+
+  it("比例非法时退回正方形，不产生非法尺寸", () => {
+    expect(deriveExtractionSizeFromRatio(0)).toEqual({ width: 1536, height: 1536 });
+    expect(deriveExtractionSizeFromRatio(-2)).toEqual({ width: 1536, height: 1536 });
+    expect(deriveExtractionSizeFromRatio(Number.NaN)).toEqual({ width: 1536, height: 1536 });
+  });
+
+  it("推导出的每个尺寸都满足上游三条硬约束", () => {
+    for (const ratio of [0.2, 0.35, 0.5, 0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5]) {
+      const { width, height } = deriveExtractionSizeFromRatio(ratio);
+      expectUpstreamAcceptable(`${width}x${height}`);
+    }
+  });
+
+  it("比例在 3:1 以内时，输出比例与推算值的误差 ≤ 10%（钳制范围之外按 3:1 处理）", () => {
+    for (const ratio of [0.4, 0.5, 0.8, 1, 1.25, 1.5, 2, 2.5, 3]) {
+      const { width, height } = deriveExtractionSizeFromRatio(ratio);
+      const actual = width / height;
+      const normalized = ratio >= 1 ? ratio : 1 / ratio;
+      const actualNormalized = Math.max(actual, 1 / actual);
+      // 误差只来自「向下取到 32 的倍数」这一档（32/1536 ≈ 2.1%）。
+      expect(Math.abs(actualNormalized - normalized) / normalized).toBeLessThan(0.1);
+    }
+    // 超过 3:1 的比例被下界 512 钳到 3:1，这是约束要求，不是误差。
+    expect(deriveExtractionSizeFromRatio(5)).toEqual({ width: 1536, height: 512 });
   });
 });
 

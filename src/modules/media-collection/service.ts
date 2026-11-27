@@ -15,8 +15,21 @@ import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { countCollectionUsage, countDraftCollections } from "@/modules/extraction/service";
+import { readImageDimensions } from "@/modules/image-generation/compress";
+import { deriveExtractionSizeFromRatio } from "@/modules/image-generation/vision-judgment";
 import { DEFAULT_THUMBNAIL_WIDTH, type CollectionStatus } from "./constants";
 import { readAssetFile, removeAssetFile, writeAssetBytes } from "./files";
+import {
+  estimateAspectRatio,
+  isValidQuad,
+  parseQuad,
+  resolveAspectRatio,
+  toQuadPoints,
+  type AspectSource,
+  type QuadKind,
+  type QuadPoints,
+} from "./quad";
+import { rectifyImage, RECTIFIED_MIME_TYPE } from "./rectify";
 import * as repo from "./repo";
 import { assertCollectionMutable, COLLECTION_ERROR_MESSAGES } from "./rules";
 import type {
@@ -24,8 +37,9 @@ import type {
   CollectionFieldsInput,
   ListCollectionsQuery,
   ListPoolAssetsQuery,
+  SaveQuadInput,
 } from "./schema";
-import { buildAssetStorageKey } from "./storage-key";
+import { buildAssetStorageKey, buildRectifiedStorageKey } from "./storage-key";
 import { deriveCollectionStatus, type CollectionCounts } from "./status";
 import { scaleImage } from "./thumbnails";
 import { prepareImages, type IncomingFile, type PreparedImage } from "./uploads";
@@ -40,6 +54,38 @@ export interface CollectionAssetView {
   url: string;
   /** 网格用的缩略图地址（`?w=400`）：弹窗里加载 `url` 原图（docs/prd/07 SHOULD）。 */
   thumbnailUrl: string;
+  /** 已保存的四角（归一化 `[[x,y]×4]`）；没框选为 null（MKACG-1001）。 */
+  quad: QuadPoints | null;
+  /** `surface`（桌面/桌垫四角）或 `pattern`（图案四角）；没框选为 null。 */
+  quadKind: QuadKind | null;
+  /** 用户手输的实际尺寸（毫米）；没填为 null。 */
+  realSize: { width: number; height: number } | null;
+  /** 矫正图的可读地址；没框选或矫正失败为 null（界面据此显示「未校正」）。 */
+  rectifiedUrl: string | null;
+}
+
+/**
+ * 一次框选的保存结果（`PUT /api/library/assets/[id]/quad`）。
+ *
+ * 界面靠 `aspectSource` 区分「比例是怎么来的」：手输 / 估算了 / 估算失败退回了原图比例，
+ * 第三种要显示「比例未能估算」并且**不阻断**后续提取（AC-QUAD-5）。
+ */
+export interface AssetRectificationView {
+  assetId: string;
+  quad: QuadPoints | null;
+  quadKind: QuadKind | null;
+  realSize: { width: number; height: number } | null;
+  /** 实际用于推导输出尺寸的长宽比（宽 / 高）。 */
+  aspectRatio: number;
+  aspectSource: AspectSource;
+  /** 消失点法给出的估算值；估算失败或手输覆盖时仍然给出，便于对照。 */
+  estimatedAspectRatio: number | null;
+  /** 矫正图的可读地址；矫正失败为 null。 */
+  rectifiedUrl: string | null;
+  rectifiedWidth: number | null;
+  rectifiedHeight: number | null;
+  /** 矫正失败的可读原因；成功为 null。四角在失败时仍然保存。 */
+  rectifiedError: string | null;
 }
 
 /** 总资源库里的一张照片：多带它被归到了哪些资源夹（AC-POOL-2）。 */
@@ -122,6 +168,12 @@ export function assetFileUrl(assetId: string, width?: number): string {
   return width ? `${base}?w=${width}` : base;
 }
 
+/** 矫正图的鉴权读取地址（MKACG-1001）：路径多一段 `/rectified`，读的是另一份落盘文件。 */
+export function rectifiedFileUrl(assetId: string, width?: number): string {
+  const base = `/api/files/assets/${assetId}/rectified`;
+  return width ? `${base}?w=${width}` : base;
+}
+
 function toSummary(row: repo.CollectionRow, counts: CollectionCounts): CollectionSummaryView {
   return {
     id: row.id,
@@ -142,6 +194,34 @@ function toSummary(row: repo.CollectionRow, counts: CollectionCounts): Collectio
   };
 }
 
+/** 库里存的四列 → 界面要的形状。坏数据（形状不对、用途认不出）按「未框选」处理。 */
+export function quadFieldsOf(asset: {
+  id: string;
+  quad: unknown;
+  quadKind: string | null;
+  quadRealWidth: number | null;
+  quadRealHeight: number | null;
+  rectifiedKey: string | null;
+}): Pick<CollectionAssetView, "quad" | "quadKind" | "realSize" | "rectifiedUrl"> {
+  const points = parseQuad(asset.quad);
+  const kind = points && (asset.quadKind === "surface" || asset.quadKind === "pattern")
+    ? asset.quadKind
+    : null;
+  // 四点与用途必须成对存在：只有一半就当作没框选，避免界面显示「已校正」却用不了。
+  const usable = points !== null && kind !== null;
+  const realSize =
+    usable && asset.quadRealWidth && asset.quadRealHeight
+      ? { width: asset.quadRealWidth, height: asset.quadRealHeight }
+      : null;
+
+  return {
+    quad: usable ? toQuadPoints(points) : null,
+    quadKind: usable ? kind : null,
+    realSize,
+    rectifiedUrl: usable && asset.rectifiedKey ? rectifiedFileUrl(asset.id) : null,
+  };
+}
+
 function toAssetView(asset: repo.CollectionAssetRow): CollectionAssetView {
   return {
     id: asset.id,
@@ -151,6 +231,7 @@ function toAssetView(asset: repo.CollectionAssetRow): CollectionAssetView {
     sortOrder: asset.sortOrder,
     url: assetFileUrl(asset.id),
     thumbnailUrl: assetFileUrl(asset.id, DEFAULT_THUMBNAIL_WIDTH),
+    ...quadFieldsOf(asset),
   };
 }
 
@@ -330,6 +411,8 @@ export async function deletePoolAsset(assetId: string): Promise<void> {
 
   await repo.deletePoolAsset(assetId);
   await removeAssetFile(asset.storageKey);
+  // 矫正图是这张照片的派生文件，随原图一起清掉（MKACG-1001）。
+  if (asset.rectifiedKey) await removeAssetFile(asset.rectifiedKey);
 }
 
 /**
@@ -506,6 +589,107 @@ export async function listRecentCollections(limit: number): Promise<CollectionSu
     rows.map(async (row) => ({ row, counts: await relatedCounts(row.id) })),
   );
   return decorated.map(({ row, counts }) => toSummary(row, counts));
+}
+
+/**
+ * 保存四角框选并生成矫正图（MKACG-1001 AC-QUAD-1、AC-QUAD-4、AC-QUAD-5、AC-QUAD-6）。
+ *
+ * 顺序固定：**先校验四角，再算比例，再矫正落盘，最后写库**。
+ * 矫正失败时仍然保存四角，`rectified_key` 留空并把原因回报给界面（issue「存储」节）——
+ * 四角是用户拖了半天的成果，不能因为一次重采样失败就丢掉。
+ *
+ * 凹四边形与自交四边形在这里被拒（`isValidQuad`），保存按钮在前端也会禁用（AC-QUAD-4）：
+ * 前端禁用是提示，后端拒绝才是保证。
+ */
+export async function saveAssetQuad(
+  assetId: string,
+  input: SaveQuadInput,
+): Promise<AssetRectificationView> {
+  const asset = await repo.findAsset(assetId);
+  if (!asset) throw AppError.notFound("图片不存在");
+
+  const quad = parseQuad(input.points);
+  if (!quad) throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.invalidQuadShape);
+  if (!isValidQuad(quad)) throw AppError.validationFailed(COLLECTION_ERROR_MESSAGES.invalidQuad);
+
+  const original = await readAssetFile(asset.storageKey);
+  const dimensions = await readImageDimensions(original);
+  const realSize = input.realSize ?? null;
+
+  const resolved = resolveAspectRatio({
+    quad,
+    imageWidth: dimensions.width,
+    imageHeight: dimensions.height,
+    realSize,
+  });
+  const estimatedAspectRatio = estimateAspectRatio(quad, dimensions.width, dimensions.height);
+  const target = deriveExtractionSizeFromRatio(resolved.ratio);
+
+  let rectifiedKey: string | null = null;
+  let rectifiedError: string | null = null;
+  try {
+    const bytes = await rectifyImage({ sourceBytes: original, quad, target });
+    const storageKey = buildRectifiedStorageKey(assetId);
+    await writeAssetBytes(storageKey, bytes);
+    rectifiedKey = storageKey;
+  } catch (error) {
+    rectifiedError = error instanceof Error ? error.message : "矫正失败";
+    // 只记「哪张、什么原因」，不记图片字节（docs/prd/05 MUST 9）。
+    logger.warn("单应矫正失败，保留四角不写图", { assetId, reason: rectifiedError });
+  }
+
+  const updated = await repo.updateAssetQuad(assetId, {
+    quad: toQuadPoints(quad),
+    quadKind: input.kind,
+    quadRealWidth: realSize?.width ?? null,
+    quadRealHeight: realSize?.height ?? null,
+    rectifiedKey,
+  });
+  if (updated === 0) throw AppError.notFound("图片不存在");
+
+  return {
+    assetId,
+    quad: toQuadPoints(quad),
+    quadKind: input.kind,
+    realSize,
+    aspectRatio: resolved.ratio,
+    aspectSource: resolved.source,
+    estimatedAspectRatio,
+    rectifiedUrl: rectifiedKey ? rectifiedFileUrl(assetId) : null,
+    rectifiedWidth: rectifiedKey ? target.width : null,
+    rectifiedHeight: rectifiedKey ? target.height : null,
+    rectifiedError,
+  };
+}
+
+/** 清除四角框选（`DELETE /api/library/assets/[id]/quad`）：四列一起清空，矫正图一并删掉。 */
+export async function clearAssetQuad(assetId: string): Promise<void> {
+  const asset = await repo.findAsset(assetId);
+  if (!asset) throw AppError.notFound("图片不存在");
+
+  const updated = await repo.updateAssetQuad(assetId, {
+    quad: null,
+    quadKind: null,
+    quadRealWidth: null,
+    quadRealHeight: null,
+    rectifiedKey: null,
+  });
+  if (updated === 0) throw AppError.notFound("图片不存在");
+  if (asset.rectifiedKey) await removeAssetFile(asset.rectifiedKey);
+}
+
+/**
+ * 鉴权读取矫正图（MKACG-1001）。没框选或矫正失败时给 404：
+ * 界面按 `rectifiedUrl` 是否为 null 决定要不要显示，不会走到这里。
+ */
+export async function getRectifiedImage(assetId: string, width?: number): Promise<AssetBytes> {
+  const asset = await repo.findAsset(assetId);
+  if (!asset) throw AppError.notFound("图片不存在");
+  if (!asset.rectifiedKey) throw AppError.notFound("这张原图还没有做四角矫正");
+
+  const original = await readAssetFile(asset.rectifiedKey);
+  const bytes = width ? await scaleImage(original, width) : original;
+  return { bytes, mimeType: RECTIFIED_MIME_TYPE, fileName: `${asset.fileName}-rectified.png` };
 }
 
 /** 鉴权读取原图字节（AC-01-7）；`width` 有值时当场缩放成缩略图。 */

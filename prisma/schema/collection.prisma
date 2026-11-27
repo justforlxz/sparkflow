@@ -47,17 +47,33 @@ model MediaCollection {
 //
 // 从原图派生的素材（library_asset）不在此声明反向关系：素材只记 `source_asset_id` 字符串，
 // 原图被解除关联后素材要留在库里（docs/prd/12 MUST 4）。
+//
+// 四角框选与单应矫正（MKACG-1001、docs/prd/13-quad-rectify.md）：
+// - `quad`：用户框选的四个角，归一化 `[[x,y]×4]`，顺序「左上、右上、右下、左下」；未框选为 NULL。
+// - `quadKind`：这次框选用途 —— `surface`（桌面/桌垫四角）或 `pattern`（图案本身的四角）。
+//   两种用法对提取的类别不同，所以必须记下来（issue SHOULD）。
+// - `quadRealWidth` / `quadRealHeight`：用户手输的实际尺寸（毫米），有值时以它的比例为准，
+//   比估算更可靠（AC-QUAD-6）。未填为 NULL。
+// - `rectifiedKey`：单应矫正后的图片 storage_key；没框选、或矫正失败时为 NULL
+//   （失败只保留四角，不写图，并把原因回报给界面）。
+//
+// 四列都可空、都不回填：老照片本来就没有框选，行为与之前完全一致（AC-QUAD-7）。
 model MediaAsset {
-  id           String            @id @default(uuid())
-  collectionId String?           @map("collection_id")
-  sortOrder    Int               @default(0) @map("sort_order")
-  storageKey   String            @map("storage_key")
-  fileName     String            @map("file_name")
-  mimeType     String            @map("mime_type")
-  size         Int
-  createdAt    DateTime          @default(now()) @map("created_at")
-  collection   MediaCollection?  @relation(fields: [collectionId], references: [id], onDelete: SetNull)
-  collections  CollectionAsset[]
+  id             String            @id @default(uuid())
+  collectionId   String?           @map("collection_id")
+  sortOrder      Int               @default(0) @map("sort_order")
+  storageKey     String            @map("storage_key")
+  fileName       String            @map("file_name")
+  mimeType       String            @map("mime_type")
+  size           Int
+  quad           Json?
+  quadKind       String?           @map("quad_kind")
+  quadRealWidth  Int?              @map("quad_real_width")
+  quadRealHeight Int?              @map("quad_real_height")
+  rectifiedKey   String?           @map("rectified_key")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  collection     MediaCollection?  @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  collections    CollectionAsset[]
 
   @@index([collectionId, sortOrder])
   @@map("media_asset")

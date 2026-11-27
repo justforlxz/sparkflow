@@ -10,7 +10,12 @@
 import { logger } from "@/lib/logger";
 import { listGatewayViews } from "@/modules/gateway/service";
 import { requireAgentSnapshotOf } from "@/modules/agent-config/service";
-import { getAssetImage, getCollection } from "@/modules/media-collection/service";
+import {
+  getAssetImage,
+  getCollection,
+  getRectifiedImage,
+} from "@/modules/media-collection/service";
+import { isAppError } from "@/lib/errors";
 import { DEFAULT_POLL_INTERVAL_MS } from "@/modules/extraction/constants";
 import { extractionStore } from "@/modules/extraction/repo";
 import { createExtractionRunner, type ExtractionRunner } from "@/modules/extraction/runner";
@@ -39,6 +44,8 @@ export async function loadStageCollectionContext(collectionId: string): Promise<
       id: asset.id,
       fileName: asset.fileName,
       mimeType: asset.mimeType,
+      // 已保存的框选用途决定这一张走「矫正图当输入」还是「矫正图直接当产物」（MKACG-1001）。
+      rectifiedKind: asset.quadKind,
     })),
   };
 }
@@ -50,6 +57,26 @@ export async function loadSourceImage(
 ): Promise<SourceImageBytes> {
   const asset = await getAssetImage(assetId);
   return { bytes: asset.bytes, mimeType: asset.mimeType };
+}
+
+/**
+ * 读一张原图的**矫正图**字节（MKACG-1001）。没框选或矫正失败时返回 null：
+ * 提取按「未校正」走原来的路径，不让一张图的框选问题挡住整条运行。
+ */
+export async function loadRectifiedImage(
+  _collectionId: string,
+  assetId: string,
+): Promise<SourceImageBytes | null> {
+  try {
+    const rectified = await getRectifiedImage(assetId);
+    return { bytes: rectified.bytes, mimeType: rectified.mimeType };
+  } catch (error) {
+    // 只有「还没有矫正图」是正常情形；其它错误（磁盘读失败）也退回原图，但记一条日志。
+    if (!isAppError(error) || error.code !== "NOT_FOUND") {
+      logger.warn("读取矫正图失败，按未校正处理", { assetId, error });
+    }
+    return null;
+  }
 }
 
 /** 执行时现取图片 Agent 配置（`extraction_run` 不落 Agent 快照，PRD 12 的字段清单里没有）。 */
@@ -64,6 +91,7 @@ function buildExtractionRunner(): ExtractionRunner {
     handler: createExtractionHandler(),
     loadCollection: loadStageCollectionContext,
     loadSourceImage,
+    loadRectifiedImage,
     loadAgent: loadImageAgent,
   });
 }

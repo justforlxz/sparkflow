@@ -81,15 +81,21 @@ export async function createCollection(
   request: APIRequestContext,
   name: string,
   imageCount: number,
-  options: { imageSize?: { width: number; height: number } } = {},
+  options: {
+    imageSize?: { width: number; height: number };
+    /** 自定义图片字节：四角框选的验收需要一张有内容的图（纯色图矫正前后看不出差别）。 */
+    imageBytes?: Buffer;
+  } = {},
 ): Promise<{ id: string; assetIds: string[] }> {
   const multipart: Record<string, string | { name: string; mimeType: string; buffer: Buffer }> = {
     name,
     platform: "小红书",
   };
-  const bytes = options.imageSize
-    ? await pngOfSize(options.imageSize.width, options.imageSize.height)
-    : PNG_ONE_PIXEL;
+  const bytes =
+    options.imageBytes ??
+    (options.imageSize
+      ? await pngOfSize(options.imageSize.width, options.imageSize.height)
+      : PNG_ONE_PIXEL);
   for (let index = 0; index < imageCount; index += 1) {
     multipart[`images-${index}`] = {
       name: `a${index}.png`,

@@ -47,6 +47,11 @@ export interface ExtractionRunnerOptions {
   /** 按 id 读一张原图的字节：逐张读，不把整个资源夹的图片一次性载入内存。 */
   loadSourceImage: (collectionId: string, assetId: string) => Promise<SourceImageBytes>;
   /**
+   * 按 id 读一张原图的矫正图字节（MKACG-1001）：没框选或矫正失败时返回 null，
+   * 处理器按「未校正」走原来的路径。与 `loadSourceImage` 一样逐张读。
+   */
+  loadRectifiedImage: (collectionId: string, assetId: string) => Promise<SourceImageBytes | null>;
+  /**
    * 取执行时用的图片 Agent 快照。`extraction_run` 不落 Agent 快照（PRD 12 的字段清单里没有），
    * 因此每条运行执行时现取一次当前配置。
    */
@@ -94,7 +99,8 @@ export function describeAllFailed(failures: readonly ExtractionFailure[]): strin
 }
 
 export function createExtractionRunner(options: ExtractionRunnerOptions): ExtractionRunner {
-  const { store, files, handler, loadCollection, loadSourceImage, loadAgent } = options;
+  const { store, files, handler, loadCollection, loadSourceImage, loadRectifiedImage, loadAgent } =
+    options;
   const now = options.now ?? (() => new Date());
   const timeoutMs = options.timeoutMs ?? DEFAULT_EXTRACTION_TIMEOUT_MS;
 
@@ -215,6 +221,7 @@ export function createExtractionRunner(options: ExtractionRunnerOptions): Extrac
       collection,
       signal: controller.signal,
       readSourceImage: (assetId: string) => loadSourceImage(run.collectionId, assetId),
+      readRectifiedImage: (assetId: string) => loadRectifiedImage(run.collectionId, assetId),
       reportProgress: async (progress, currentItemKey) => {
         // 进度写入失败不该让整条运行失败：界面最多少刷新一次。
         const written = await store

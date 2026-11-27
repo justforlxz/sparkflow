@@ -25,6 +25,8 @@
 | 工作台 | [prd/09](prd/09-dashboard.md) | `dashboard.spec.ts` |
 | 功能开关 | [prd/10](prd/10-feature-flags.md) | `features.spec.ts` |
 | 账号与会话 | [prd/11](prd/11-accounts.md) | `accounts.spec.ts` |
+| 素材库与提取运行 | [prd/12](prd/12-asset-library.md) | `library.spec.ts` |
+| 四角框选与单应矫正 | [prd/13](prd/13-quad-rectify.md) | `quad-rectify.spec.ts` |
 | 全量 | 本文第 5 节 | `full-flow.spec.ts` |
 
 写用例的要求：

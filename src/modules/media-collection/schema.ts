@@ -9,6 +9,7 @@ import {
   MAX_PAGE_SIZE,
   MAX_THUMBNAIL_WIDTH,
 } from "./constants";
+import type { QuadKind, QuadPoints } from "./quad";
 
 /** 可选文本：缺省、空串、纯空白都归一成 `null`，便于 `platform` 等字段在库里只有一种「没有值」。 */
 function optionalText(label: string, max: number) {
@@ -93,6 +94,56 @@ export const thumbnailWidthSchema = z.preprocess(
   emptyToUndefined,
   z.coerce.number().int().min(1).max(MAX_THUMBNAIL_WIDTH).optional(),
 );
+
+/**
+ * 保存四角框选（`PUT /api/library/assets/[id]/quad`，MKACG-1001）。
+ *
+ * `points` 是归一化的四点 `[[x,y]×4]`，顺序「左上、右上、右下、左下」；
+ * 每个分量都夹在 0–1 —— 拖动只在图上发生，越界坐标一定是界面算错了，直接拒掉。
+ * `realSize` 是可选的手输实际尺寸（毫米）：有值时以它的比例为准（AC-QUAD-6）。
+ */
+const quadCoord = z.number().min(0, "四角坐标必须在图片范围内").max(1, "四角坐标必须在图片范围内");
+
+export const quadPointsSchema = z.tuple([
+  z.tuple([quadCoord, quadCoord]),
+  z.tuple([quadCoord, quadCoord]),
+  z.tuple([quadCoord, quadCoord]),
+  z.tuple([quadCoord, quadCoord]),
+]);
+
+export const quadRealSizeSchema = z.object({
+  width: z.number().int().positive("实际宽度必须是正整数毫米"),
+  height: z.number().int().positive("实际高度必须是正整数毫米"),
+});
+
+export const saveQuadSchema = z.object({
+  kind: z.enum(["surface", "pattern"]),
+  points: quadPointsSchema,
+  /** 没填或填 null 表示按估算比例；填了就以它为准。 */
+  realSize: quadRealSizeSchema.nullable().optional(),
+});
+
+/** 保存四角的服务层入参：四点是只读的 4 元组（与 `toQuadPoints` 同一个形状）。 */
+export interface SaveQuadInput {
+  kind: QuadKind;
+  points: QuadPoints;
+  realSize: { width: number; height: number } | null;
+}
+
+/**
+ * 解析请求体。
+ *
+ * zod 的 `z.tuple` 推出来的是可变元组，服务层用的是只读元组（`QuadPoints`）：
+ * 这里做唯一一次形状转换，调用方拿到的就是服务层的类型，不用各自再断言一遍。
+ */
+export function parseSaveQuadBody(value: unknown): SaveQuadInput {
+  const body = saveQuadSchema.parse(value);
+  return {
+    kind: body.kind,
+    points: body.points as unknown as QuadPoints,
+    realSize: body.realSize ?? null,
+  };
+}
 
 /**
  * 整组保存（`POST /api/collections/[id]/save`）的图片清单。

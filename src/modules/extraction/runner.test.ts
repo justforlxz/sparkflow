@@ -32,8 +32,8 @@ const COLLECTION: CollectionContext = {
   sourceTitle: "原始标题",
   sourceBody: null,
   assets: [
-    { id: "asset-1", fileName: "a.png", mimeType: "image/png" },
-    { id: "asset-2", fileName: "b.png", mimeType: "image/png" },
+    { id: "asset-1", fileName: "a.png", mimeType: "image/png", rectifiedKind: null },
+    { id: "asset-2", fileName: "b.png", mimeType: "image/png", rectifiedKind: null },
   ],
 };
 
@@ -97,6 +97,7 @@ function harness(claimed: ExtractionRunRecord | null): Harness {
             sortOrder: asset.sortOrder,
             watermarkRemoved: asset.watermarkRemoved,
             watermarkNote: asset.watermarkNote,
+            source: asset.source,
             createdAt: new Date("2026-11-21T00:00:00Z"),
           }) satisfies LibraryAssetRecord,
       );
@@ -118,6 +119,7 @@ function harness(claimed: ExtractionRunRecord | null): Harness {
         sortOrder: image.sortOrder,
         watermarkRemoved: image.watermarkRemoved,
         watermarkNote: image.watermarkNote,
+        source: image.source,
       })),
     ),
   };
@@ -133,6 +135,7 @@ function image(sourceAssetId: string, category: string, sortOrder: number): Extr
     sortOrder,
     watermarkRemoved: true,
     watermarkNote: null,
+    source: "model",
   };
 }
 
@@ -143,6 +146,7 @@ function makeRunner(parts: Harness, handler: ExtractionHandler) {
     handler,
     loadCollection: async () => COLLECTION,
     loadSourceImage: async () => ({ bytes: Buffer.from("src"), mimeType: "image/png" }),
+    loadRectifiedImage: async () => null,
     loadAgent: async () => AGENT,
   });
 }
@@ -326,6 +330,7 @@ describe("提取运行执行器", () => {
         throw AppError.notFound("资源夹不存在");
       },
       loadSourceImage: async () => ({ bytes: Buffer.from(""), mimeType: "image/png" }),
+      loadRectifiedImage: async () => null,
       loadAgent: async () => AGENT,
     });
 

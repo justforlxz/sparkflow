@@ -7,6 +7,7 @@ import { Pill } from "@/components/ui/Pill";
 import { buttonClass, CHECKBOX_CLASS } from "@/components/ui/styles";
 import { LIBRARY_COPY } from "@/modules/extraction/constants";
 import { extractionItemKey } from "@/modules/extraction/item-key";
+import { QUAD_KIND_LABELS, type QuadKind } from "@/modules/media-collection/quad";
 import type { ResultCardView, ResultCellRetry, ResultCellState } from "@/modules/extraction/results";
 
 /**
@@ -149,7 +150,9 @@ function ResultCard({
       data-source-asset-id={card.sourceAssetId}
       className="min-h-[154px] rounded-lg border border-line bg-panel p-2.5"
     >
-      <div className="flex items-center gap-2">
+      {/* 卡头允许换行：320px 下文件名 + 三个状态点 + 校正角标 + 计数 + 「重跑」放不进一行，
+          不换行就会把按钮挤到视口外（AC-900-2）。 */}
+      <div className="flex flex-wrap items-center gap-2">
         {/* 原图缩略图 30px：卡头的锚点，告诉用户这张卡属于哪张图。 */}
         {/* eslint-disable-next-line @next/next/no-img-element -- 鉴权路由，不走 Next 图片优化器 */}
         <img
@@ -171,6 +174,12 @@ function ResultCard({
             />
           ))}
         </span>
+        {/* 这张原图校正了没有（AC-QUAD-7）：未校正时如实标注，用户才知道比例来自原照片。 */}
+        <Pill data-testid="result-card-quad" tone={card.quadKind ? "published" : "neutral"}>
+          {card.quadKind
+            ? LIBRARY_COPY.correctedBadge(QUAD_KIND_LABELS[card.quadKind as QuadKind] ?? card.quadKind)
+            : LIBRARY_COPY.uncorrectedBadge}
+        </Pill>
         <span data-testid="result-card-count" className="shrink-0 text-footnote text-ink-secondary">
           {card.done}/{card.total}
         </span>
@@ -214,6 +223,20 @@ function ResultCard({
                       {LIBRARY_COPY.watermarkBadge}
                     </Pill>
                   )}
+                  {/* 产物来源（AC-QUAD-9、AC-QUAD-11）：几何矫正与模型提取必须能一眼分开。
+                      模型产物可能重画，不标出来用户会以为它是原样。 */}
+                  <Pill
+                    data-testid="library-source-badge"
+                    data-source={cell.asset.source}
+                    tone={cell.asset.source === "rectified" ? "published" : "neutral"}
+                    title={cell.asset.sourceLabel}
+                    aria-label={`${LIBRARY_COPY.sourceLabel}：${cell.asset.sourceLabel}`}
+                    className="absolute bottom-1 right-1"
+                  >
+                    {cell.asset.source === "rectified"
+                      ? LIBRARY_COPY.sourceRectifiedBadge
+                      : LIBRARY_COPY.sourceModelBadge}
+                  </Pill>
                   {/* 单条删除（AC-DEL2-1）：只删这一条素材，同一张原图的其它类别不受影响。 */}
                   <button
                     type="button"

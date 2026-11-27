@@ -5,9 +5,11 @@ import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { Panel } from "@/components/ui/Panel";
 import { CHECKBOX_CLASS } from "@/components/ui/styles";
 import { LIBRARY_COPY } from "@/modules/extraction/constants";
-import { COLLECTION_COPY } from "@/modules/media-collection/constants";
+import { COLLECTION_COPY, QUAD_COPY } from "@/modules/media-collection/constants";
+import { QUAD_KIND_LABELS, type QuadKind } from "@/modules/media-collection/quad";
 import type { CollectionAssetView } from "@/modules/media-collection/service";
 import { AddAssetsDialog } from "./add-assets-dialog";
+import { QuadEditor } from "./quad-editor";
 
 /**
  * 左栏「原始材料」（MKACG-974 范围 2）：网格缩略图、全选、已选计数与「添加」。
@@ -22,7 +24,13 @@ export interface SourceAssetsPanelProps {
   selected: ReadonlySet<string>;
   onToggle(assetId: string): void;
   onToggleAll(): void;
+  /** 图片增删或四角保存后重新拉一次服务端数据。 */
   onAdded(): void;
+}
+
+/** 原图上的框选状态：已校正时说明这次框的是哪种四角，未校正时如实说明（AC-QUAD-7）。 */
+function quadBadge(kind: QuadKind | null): string {
+  return kind ? QUAD_COPY.correctedBadge(QUAD_KIND_LABELS[kind]) : QUAD_COPY.uncorrectedBadge;
 }
 
 export function SourceAssetsPanel({
@@ -93,6 +101,25 @@ export function SourceAssetsPanel({
                   />
                   <span className="block min-w-0 truncate">{asset.fileName}</span>
                 </label>
+                {/* 框选四角（MKACG-1001）：入口与状态放在一起，用户一眼能看出这张图校正了没有。 */}
+                <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                  <span
+                    data-testid="asset-quad-badge"
+                    data-corrected={asset.quadKind ? "true" : "false"}
+                    className="min-w-0 truncate"
+                  >
+                    {quadBadge(asset.quadKind)}
+                  </span>
+                  <QuadEditor
+                    assetId={asset.id}
+                    imageUrl={asset.url}
+                    fileName={asset.fileName}
+                    quad={asset.quad}
+                    quadKind={asset.quadKind}
+                    realSize={asset.realSize}
+                    onSaved={onAdded}
+                  />
+                </div>
               </li>
             ))}
           </ul>

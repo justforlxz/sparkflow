@@ -18,6 +18,8 @@ function asset(overrides: Partial<LibraryAssetView> & { sourceAssetId: string; c
     thumbnailUrl: "/api/files/library/x?w=400",
     watermarkRemoved: true,
     watermarkNote: null,
+    source: "model",
+    sourceLabel: "模型提取（可能重画）",
     createdAt: "2026-11-24T10:00:00.000Z",
     ...overrides,
   };
@@ -75,8 +77,8 @@ function run(overrides: Partial<ExtractionRunView> & { id: string }): Extraction
 }
 
 const SOURCES = [
-  { id: "a1", fileName: "a1.png", thumbnailUrl: "/a1?w=400" },
-  { id: "a2", fileName: "a2.png", thumbnailUrl: "/a2?w=400" },
+  { id: "a1", fileName: "a1.png", thumbnailUrl: "/a1?w=400", quadKind: null },
+  { id: "a2", fileName: "a2.png", thumbnailUrl: "/a2?w=400", quadKind: null },
 ];
 
 function build(input: Partial<ResultCardsInput>): ReturnType<typeof buildResultCards> {

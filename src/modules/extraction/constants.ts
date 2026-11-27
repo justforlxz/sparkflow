@@ -41,6 +41,21 @@ export const EXTRACTION_ITEM_STATUSES = ["succeeded", "skipped", "failed"] as co
 export type ExtractionItemStatus = (typeof EXTRACTION_ITEM_STATUSES)[number];
 
 
+/**
+ * 产物来源（MKACG-1001）：
+ * - `model`：生成模型提取。模型会重画，文字与角色**可能**与原文不一致，界面必须说清楚；
+ * - `rectified`：单应几何矫正的原像素裁切。全程不调用模型，文字与角色必然原样（AC-QUAD-9）。
+ */
+export const LIBRARY_ASSET_SOURCES = ["model", "rectified"] as const;
+
+export type LibraryAssetSource = (typeof LIBRARY_ASSET_SOURCES)[number];
+
+/** 来源的中文说明：界面用来说明「这张是不是原样」的角标。 */
+export const LIBRARY_ASSET_SOURCE_LABELS: Record<LibraryAssetSource, string> = {
+  model: "模型提取（可能重画）",
+  rectified: "几何矫正（原样）",
+};
+
 /** 作业错误的业务子码（写进 `extraction_run.error.code`）。 */
 export const EXTRACTION_ERROR_CODES = {
   /** 服务重启时把残留的 running 记为失败。 */
@@ -128,6 +143,18 @@ export const LIBRARY_COPY = {
   viewImage: "查看大图",
   /** 上游水印没能去掉的素材角标（MKACG-1004）：悬停时用 `watermarkNote` 说明原因。 */
   watermarkBadge: "含水印",
+  /**
+   * 产物来源角标（MKACG-1001 AC-QUAD-9 / AC-QUAD-11）：界面上必须能分清
+   * 「几何矫正（原样）」与「模型提取（可能重画）」，不能让用户以为模型产物是原样。
+   */
+  sourceLabel: "来源",
+  /** 产物来源的短角标：贴在 72px 的格子上，完整说明挂在 `title` 与 `aria-label` 上。 */
+  sourceRectifiedBadge: "原样",
+  sourceModelBadge: "可能重画",
+  /** 原图未框选时，结果卡上的标注（AC-QUAD-7）。 */
+  uncorrectedBadge: "未校正",
+  /** 已框选时原图卡片上的标注。 */
+  correctedBadge: (kind: string) => `已校正 · ${kind}`,
   closePreview: "关闭",
   sourceAssetLabelPrefix: "原图",
   /** 来源原图已被解除关联时如实说明，不猜编号。 */

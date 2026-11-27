@@ -17,6 +17,7 @@ function asset(id: string, category: string, createdAt: string): LibraryAssetRec
     sortOrder: 1,
     watermarkRemoved: true,
     watermarkNote: null,
+    source: "model",
     createdAt: new Date(createdAt),
   };
 }

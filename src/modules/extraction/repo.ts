@@ -6,7 +6,11 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 import { getDb } from "@/lib/db";
 import type { ExtractionStore } from "./store";
-import type { ExtractionStatus } from "./constants";
+import {
+  LIBRARY_ASSET_SOURCES,
+  type ExtractionStatus,
+  type LibraryAssetSource,
+} from "./constants";
 import type {
   ExtractionErrorRecord,
   ExtractionItemInput,
@@ -83,8 +87,24 @@ const LIBRARY_SELECT = {
   sortOrder: true,
   watermarkRemoved: true,
   watermarkNote: true,
+  source: true,
   createdAt: true,
 } as const;
+
+/** 库里的 `source` 是 TEXT：认不出的值按 `model` 处理 —— 那是老数据的真实来源。 */
+function toLibraryAssetSource(value: string): LibraryAssetSource {
+  return (LIBRARY_ASSET_SOURCES as readonly string[]).includes(value)
+    ? (value as LibraryAssetSource)
+    : "model";
+}
+
+interface RawLibraryRow extends Omit<LibraryAssetRecord, "source"> {
+  source: string;
+}
+
+function toLibraryAssetRecord(row: RawLibraryRow): LibraryAssetRecord {
+  return { ...row, source: toLibraryAssetSource(row.source) };
+}
 
 const ITEM_SELECT = {
   id: true,
@@ -263,10 +283,11 @@ export async function saveAssets(
       sortOrder: asset.sortOrder,
       watermarkRemoved: asset.watermarkRemoved,
       watermarkNote: asset.watermarkNote,
+      source: asset.source,
     })),
     select: LIBRARY_SELECT,
   });
-  return rows as LibraryAssetRecord[];
+  return (rows as RawLibraryRow[]).map(toLibraryAssetRecord);
 }
 
 /** 写这一批提取条目：三种结局各一条，一次写入（ADR 0011 第 3 条）。 */
@@ -306,15 +327,17 @@ export async function listSkippedItemsByCollection(
 
 /** 素材库：组内按生成时间倒序（docs/prd/12 SHOULD）。 */
 export async function listLibraryByCollection(collectionId: string): Promise<LibraryAssetRecord[]> {
-  return getDb().libraryAsset.findMany({
+  const rows = await getDb().libraryAsset.findMany({
     where: { collectionId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: LIBRARY_SELECT,
   });
+  return (rows as RawLibraryRow[]).map(toLibraryAssetRecord);
 }
 
 export async function findLibraryAsset(assetId: string): Promise<LibraryAssetRecord | null> {
-  return getDb().libraryAsset.findUnique({ where: { id: assetId }, select: LIBRARY_SELECT });
+  const row = await getDb().libraryAsset.findUnique({ where: { id: assetId }, select: LIBRARY_SELECT });
+  return row ? toLibraryAssetRecord(row as RawLibraryRow) : null;
 }
 
 /** 删除一张素材；返回被删的 storage_key 与运行 id，供调用方清理磁盘。 */

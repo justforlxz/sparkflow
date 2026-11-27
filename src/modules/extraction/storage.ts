@@ -70,6 +70,8 @@ export async function writeLibraryImages(
       // 去水印的结局原样落库：界面据此标「含水印」并说明原因（MKACG-1004）。
       watermarkRemoved: image.watermarkRemoved,
       watermarkNote: image.watermarkNote,
+      // 产物来源原样落库：界面据此区分「几何矫正（原样）」与「模型提取（可能重画）」（MKACG-1001）。
+      source: image.source,
     });
   }
 

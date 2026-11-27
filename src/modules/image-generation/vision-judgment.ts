@@ -74,8 +74,25 @@ export const EXTRACTION_EDGE_STEP = 32;
  * 宽高不合法（0、负数、NaN）时退回正方形，不把「读不到尺寸」变成一次上游参数错误。
  */
 export function deriveExtractionSize(width: number, height: number): string {
+  const size = deriveExtractionDimensions(width, height);
+  return `${size.width}x${size.height}`;
+}
+
+/** 输出尺寸的像素值（`deriveExtractionSize` 的数值形式：矫正图的落盘尺寸也用它）。 */
+export interface ExtractionDimensions {
+  width: number;
+  height: number;
+}
+
+/**
+ * `deriveExtractionSize` 的数值形式：同一套约束（32 的倍数、∈[512,1536]、≤3:1），
+ * 只是把结果拆成宽高两个数。**MUST NOT** 另写一份算式，否则两处口径会漂移。
+ */
+export function deriveExtractionDimensions(width: number, height: number): ExtractionDimensions {
   const valid = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
-  if (!valid) return `${EXTRACTION_LONG_EDGE}x${EXTRACTION_LONG_EDGE}`;
+  if (!valid) {
+    return { width: EXTRACTION_LONG_EDGE, height: EXTRACTION_LONG_EDGE };
+  }
 
   const long = Math.max(width, height);
   const short = Math.min(width, height);
@@ -84,7 +101,23 @@ export function deriveExtractionSize(width: number, height: number): string {
   const scaledShort = Math.min(EXTRACTION_LONG_EDGE, Math.max(MIN_EXTRACTION_EDGE, stepped));
 
   return width >= height
-    ? `${EXTRACTION_LONG_EDGE}x${scaledShort}`
-    : `${scaledShort}x${EXTRACTION_LONG_EDGE}`;
+    ? { width: EXTRACTION_LONG_EDGE, height: scaledShort }
+    : { width: scaledShort, height: EXTRACTION_LONG_EDGE };
+}
+
+/**
+ * 按**长宽比**推导输出尺寸（MKACG-1001 AC-QUAD-3）：矫正图的长宽比来自消失点估算或用户手输，
+ * 不再是原照片的比例，约束与 `deriveExtractionSize` 完全一致。
+ *
+ * 比例非法（非有限、≤ 0）时退回正方形 —— 与「读不到尺寸」同一条取舍，不把内部错误变成上游 400。
+ */
+export function deriveExtractionSizeFromRatio(ratio: number): ExtractionDimensions {
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    return { width: EXTRACTION_LONG_EDGE, height: EXTRACTION_LONG_EDGE };
+  }
+  // `deriveExtractionDimensions(宽, 高)` 只关心短/长之比与哪个方向更长，因此传「比例, 1」即可。
+  return ratio >= 1
+    ? deriveExtractionDimensions(ratio, 1)
+    : deriveExtractionDimensions(1, 1 / ratio);
 }
 
